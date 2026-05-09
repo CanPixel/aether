@@ -400,18 +400,6 @@ function App(): React.JSX.Element {
               <StatusPill status={status} />
             </header>
 
-            <div className="intel-tabs" role="tablist" aria-label="Aether intelligence modes">
-              <button className="active" type="button">
-                <SparkIcon /> Capture
-              </button>
-              <button type="button">
-                <SearchIcon /> Search
-              </button>
-              <button type="button">
-                <ChatIcon /> Ask
-              </button>
-            </div>
-
             <section className="panel-section">
               <div className="section-heading">
                 <h2>Capture</h2>
@@ -621,65 +609,9 @@ function Dashboard({
                   <strong>{collection.chunkCount} chunks</strong>
                   <small>{collection.captureCount} captures</small>
                 </span>
-                <span className="row-menu">
-                  <DotsIcon />
-                </span>
               </button>
             ))}
           </div>
-        </section>
-
-        <section className="collection-detail concept-card">
-          {selectedCollection ? (
-            <>
-              <div className="detail-header">
-                <div>
-                  <p>{selectedCollection.description || 'No description'}</p>
-                  <h2>{selectedCollection.name}</h2>
-                </div>
-                <div className="detail-actions">
-                  <button type="button" onClick={renameCollection}>
-                    Rename
-                  </button>
-                  <button type="button" className="danger-button" onClick={deleteCollection}>
-                    Delete
-                  </button>
-                </div>
-              </div>
-              <div className="capture-table">
-                {captures.length === 0 ? (
-                  <div className="empty-state">
-                    <h3>No captures yet</h3>
-                    <p>Open a web app from the rail, then capture the page into this collection.</p>
-                  </div>
-                ) : (
-                  captures.map((capture) => (
-                    <article className="capture-row-item" key={capture.id}>
-                      <div>
-                        <h3>{capture.title}</h3>
-                        <p>{capture.url}</p>
-                        <span>
-                          {new Date(capture.capturedAt).toLocaleString()} · {capture.chunkCount}{' '}
-                          chunks
-                        </span>
-                      </div>
-                      <button type="button" onClick={() => deleteCapture(capture.id)}>
-                        Delete
-                      </button>
-                    </article>
-                  ))
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="empty-state large">
-              <h2>Create your first gathering</h2>
-              <p>
-                Collections persist captured websites and let Aether answer across all indexed pages
-                inside them.
-              </p>
-            </div>
-          )}
         </section>
       </div>
 
@@ -690,7 +622,6 @@ function Dashboard({
             <h2>Recent Captures</h2>
             <p>Your latest additions, automatically captured and ready.</p>
           </div>
-          <button type="button">View all</button>
         </div>
         <div className="recent-card-grid">
           {(captures.length ? captures.slice(0, 3) : placeholderCaptures).map((capture) => (
@@ -708,9 +639,7 @@ function Dashboard({
                     <TrashIcon />
                   </button>
                 ) : (
-                  <span className="recent-delete ghost">
-                    <DotsIcon />
-                  </span>
+                  <span className="recent-placeholder-mark" aria-hidden="true" />
                 )}
               </div>
               <h3>{capture.title}</h3>
@@ -858,35 +787,6 @@ function SparkIcon(): React.JSX.Element {
   )
 }
 
-function SearchIcon(): React.JSX.Element {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <circle cx="10.8" cy="10.8" r="5.8" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <path
-        d="m15.2 15.2 4.1 4.1"
-        fill="none"
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeWidth="1.8"
-      />
-    </svg>
-  )
-}
-
-function ChatIcon(): React.JSX.Element {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path
-        d="M6.5 17.5h-.2A3.3 3.3 0 0 1 3 14.2V8.8a3.3 3.3 0 0 1 3.3-3.3h11.4A3.3 3.3 0 0 1 21 8.8v5.4a3.3 3.3 0 0 1-3.3 3.3H11l-4.5 3v-3Z"
-        fill="none"
-        stroke="currentColor"
-        strokeLinejoin="round"
-        strokeWidth="1.7"
-      />
-    </svg>
-  )
-}
-
 function CubeIcon(): React.JSX.Element {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -926,16 +826,6 @@ function BookIcon(): React.JSX.Element {
         strokeLinejoin="round"
         strokeWidth="1.7"
       />
-    </svg>
-  )
-}
-
-function DotsIcon(): React.JSX.Element {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20">
-      <circle cx="4" cy="10" r="1.4" fill="currentColor" />
-      <circle cx="10" cy="10" r="1.4" fill="currentColor" />
-      <circle cx="16" cy="10" r="1.4" fill="currentColor" />
     </svg>
   )
 }
