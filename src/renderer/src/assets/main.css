@@ -177,8 +177,13 @@ button:disabled {
 .brand-mark svg,
 .app-button > svg,
 .app-initial svg {
+  display: block;
   width: 27px;
   height: 27px;
+}
+
+.app-button:not(.active) > svg {
+  transform: translateY(1px);
 }
 
 .brand-mark.active,
@@ -203,6 +208,8 @@ button:disabled {
 }
 
 .app-button {
+  display: grid;
+  place-items: center;
   position: relative;
   width: 50px;
   height: 50px;
@@ -212,19 +219,128 @@ button:disabled {
     linear-gradient(145deg, #ffffff, #dbeeff);
 }
 
+.tooltip-host {
+  position: relative;
+}
+
+.tooltip-host::after,
+.tooltip-host::before {
+  position: absolute;
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    opacity 90ms ease,
+    transform 90ms ease;
+  content: '';
+}
+
+.tooltip-host::after {
+  content: attr(data-tooltip);
+  min-width: max-content;
+  max-width: 180px;
+  border: 1px solid rgba(130, 163, 207, 0.3);
+  border-radius: 11px;
+  padding: 4px 8px;
+  color: #3d5b84;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.2;
+  background:
+    radial-gradient(circle at 35% 26%, rgba(255, 255, 255, 0.98), transparent 45%),
+    linear-gradient(145deg, #ffffff, #e8f2ff);
+  box-shadow: 0 10px 24px rgba(82, 126, 188, 0.18);
+}
+
+.tooltip-host::before {
+  width: 8px;
+  height: 8px;
+  border-left: 1px solid rgba(130, 163, 207, 0.3);
+  border-bottom: 1px solid rgba(130, 163, 207, 0.3);
+  background: linear-gradient(145deg, #ffffff, #edf5ff);
+}
+
+.tooltip-host:not([data-tooltip])::after,
+.tooltip-host:not([data-tooltip])::before {
+  display: none;
+}
+
+.tooltip-host[data-tooltip-side='right']::after {
+  top: 50%;
+  left: calc(100% + 10px);
+  transform: translateY(-50%) translateX(-2px);
+}
+
+.tooltip-host[data-tooltip-side='right']::before {
+  top: 50%;
+  left: calc(100% + 7px);
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.tooltip-host[data-tooltip-side='left']::after {
+  top: 50%;
+  right: calc(100% + 10px);
+  transform: translateY(-50%) translateX(2px);
+}
+
+.tooltip-host[data-tooltip-side='left']::before {
+  top: 50%;
+  right: calc(100% + 7px);
+  transform: translateY(-50%) rotate(-135deg);
+}
+
+.tooltip-host:not([data-tooltip-side])::after {
+  bottom: calc(100% + 9px);
+  left: 50%;
+  transform: translateX(-50%) translateY(2px);
+}
+
+.tooltip-host:not([data-tooltip-side])::before {
+  bottom: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%) rotate(-45deg);
+}
+
+.tooltip-host:hover::after,
+.tooltip-host:hover::before,
+.tooltip-host:focus-visible::after,
+.tooltip-host:focus-visible::before {
+  opacity: 1;
+}
+
+.tooltip-host[data-tooltip-side='right']:hover::after,
+.tooltip-host[data-tooltip-side='right']:focus-visible::after {
+  transform: translateY(-50%) translateX(0);
+}
+
+.tooltip-host[data-tooltip-side='left']:hover::after,
+.tooltip-host[data-tooltip-side='left']:focus-visible::after {
+  transform: translateY(-50%) translateX(0);
+}
+
+.tooltip-host:not([data-tooltip-side]):hover::after,
+.tooltip-host:not([data-tooltip-side]):focus-visible::after {
+  transform: translateX(-50%) translateY(0);
+}
+
 .app-initial {
   display: grid;
   place-items: center;
 }
 
-.app-button.active .app-dot {
+.app-button .app-dot {
   position: absolute;
+  display: none;
   right: -7px;
   width: 5px;
   height: 28px;
   border-radius: 6px;
   background: linear-gradient(#95c3ff, #5b91e1);
   box-shadow: 0 0 18px rgba(85, 137, 217, 0.45);
+}
+
+.app-button.active .app-dot {
+  display: block;
 }
 
 .workspace {
@@ -470,6 +586,10 @@ button {
 .hero-copy {
   position: relative;
   z-index: 2;
+}
+
+.hero-copy p {
+  margin-left: 30px;
 }
 
 .dashboard-hero h1 {
