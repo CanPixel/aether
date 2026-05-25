@@ -777,7 +777,7 @@ class AppContainerManager {
   private activeAppId = APP_DEFINITIONS[0].id
   private activeTabId = ''
   private dashboardOpen = true
-  private panelCollapsed = false
+  private panelCollapsed = true
 
   constructor(private readonly mainWindow: BrowserWindow) {
     for (const definition of APP_DEFINITIONS) {
