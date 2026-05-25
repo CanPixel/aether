@@ -11,6 +11,27 @@ export interface AppSummary {
   canGoForward: boolean
 }
 
+export interface BrowserTabSummary {
+  id: string
+  appId: string
+  title: string
+  url: string
+  host: string
+  isActive: boolean
+  isLoading: boolean
+  canGoBack: boolean
+  canGoForward: boolean
+  favicon?: string
+}
+
+export interface HubShortcutSummary {
+  id: string
+  title: string
+  url: string
+  host: string
+  createdAt: string
+}
+
 export interface CollectionSummary {
   id: string
   name: string
@@ -67,7 +88,9 @@ export interface SystemStatus {
 
 export interface AetherState {
   apps: AppSummary[]
+  tabs: BrowserTabSummary[]
   activeAppId: string
+  activeTabId: string
   dashboardOpen: boolean
   panelCollapsed: boolean
 }
@@ -80,8 +103,22 @@ export interface AetherApi {
     goBack(appId: string): Promise<void>
     goForward(appId: string): Promise<void>
   }
+  tabs: {
+    list(): Promise<BrowserTabSummary[]>
+    create(input?: { url?: string }): Promise<BrowserTabSummary>
+    activate(tabId: string): Promise<void>
+    close(tabId: string): Promise<void>
+    navigate(tabId: string, url: string): Promise<void>
+    goBack(tabId: string): Promise<void>
+    goForward(tabId: string): Promise<void>
+  }
   dashboard: {
     open(): Promise<void>
+  }
+  hub: {
+    list(): Promise<HubShortcutSummary[]>
+    create(input: { title: string; url: string }): Promise<HubShortcutSummary>
+    delete(id: string): Promise<void>
   }
   collections: {
     list(): Promise<CollectionSummary[]>
@@ -110,6 +147,7 @@ export interface AetherApi {
   }
   system: {
     status(): Promise<SystemStatus>
+    updateModels(input: { embeddingModel?: string; chatModel?: string }): Promise<SystemStatus>
   }
   layout: {
     setIntelligencePanelCollapsed(collapsed: boolean): Promise<void>
