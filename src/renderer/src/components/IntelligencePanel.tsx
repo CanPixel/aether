@@ -277,7 +277,13 @@ function AskContextControls({
                 <span>
                   <CollectionIcon icon={collection.icon} />
                 </span>
-                <strong>{collection.name}</strong>
+                <span className="ask-hub-copy">
+                  <strong>{collection.name}</strong>
+                  <small>
+                    {collection.captureCount}{' '}
+                    {collection.captureCount === 1 ? 'capture' : 'captures'}
+                  </small>
+                </span>
               </button>
             ))}
           </div>
