@@ -374,12 +374,50 @@ function renderAnswerMarkdown(markdown: string): React.ReactNode[] {
 }
 
 function renderInlineMarkdown(text: string): React.ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={index}>{part.slice(2, -2)}</strong>
+  const nodes: React.ReactNode[] = []
+  const pattern = /(\*\*[^*]+\*\*|\$[^$]+\$|\\\([^)]*\\\))/g
+  let cursor = 0
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(text))) {
+    if (match.index > cursor) {
+      nodes.push(text.slice(cursor, match.index))
     }
-    return part
-  })
+
+    const token = match[0]
+    if (token.startsWith('**') && token.endsWith('**')) {
+      nodes.push(<strong key={nodes.length}>{renderInlineMarkdown(token.slice(2, -2))}</strong>)
+    } else {
+      nodes.push(
+        <span className="answer-inline-math" key={nodes.length}>
+          {formatInlineMath(token)}
+        </span>
+      )
+    }
+
+    cursor = match.index + token.length
+  }
+
+  if (cursor < text.length) {
+    nodes.push(text.slice(cursor))
+  }
+
+  return nodes
+}
+
+function formatInlineMath(token: string): string {
+  const inner = token.startsWith('$')
+    ? token.slice(1, -1)
+    : token.startsWith('\\(')
+      ? token.slice(2, -2)
+      : token
+
+  return inner
+    .replace(/\\text\{([^}]+)\}/g, '$1')
+    .replace(/\\mathrm\{([^}]+)\}/g, '$1')
+    .replace(/\\mathbf\{([^}]+)\}/g, '$1')
+    .replace(/\\,/g, ' ')
+    .replace(/\\/g, '')
 }
 
 function StatusPill({ status }: { status: SystemStatus | null }): React.JSX.Element {
