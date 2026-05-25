@@ -1622,6 +1622,7 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  margin: -2px;
 }
 
 .ask-hub-picker strong {

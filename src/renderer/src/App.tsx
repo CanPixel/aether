@@ -16,7 +16,7 @@ import { CollectionDialog, CollectionDialogState } from './components/Collection
 import { Dashboard } from './components/Dashboard'
 import { GlobeIcon, CloudIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
-import { PanelMode, QuickAction } from './types/ui'
+import { QuickAction } from './types/ui'
 import { getQuickActions } from './utils/aether-ui'
 
 function App(): React.JSX.Element {
@@ -33,7 +33,6 @@ function App(): React.JSX.Element {
   const [selectedCollectionId, setSelectedCollectionId] = useState('')
   const [addressDraft, setAddressDraft] = useState('aether://dashboard')
   const [addressFocused, setAddressFocused] = useState(false)
-  const [panelMode, setPanelMode] = useState<PanelMode>('ask')
   const [searchQuery, setSearchQuery] = useState('')
   const [chatPrompt, setChatPrompt] = useState('')
   const [askCollectionId, setAskCollectionId] = useState('')
@@ -175,13 +174,6 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const handler = (event: KeyboardEvent): void => {
       const key = event.key.toLowerCase()
-      if ((event.metaKey || event.ctrlKey) && key === 'k') {
-        event.preventDefault()
-        setPanelCollapsed(false)
-        setPanelMode('search')
-        window.aether.layout.setIntelligencePanelCollapsed(false)
-        window.setTimeout(() => searchInputRef.current?.focus(), 0)
-      }
       if ((event.metaKey || event.ctrlKey) && key === 'l') {
         event.preventDefault()
         if (!dashboardOpen) addressInputRef.current?.select()
@@ -368,7 +360,6 @@ function App(): React.JSX.Element {
     const includeCurrentPage = !hasKnowledgeHubs || askCurrentPageOnly || askIncludeCurrentPage
 
     if (!collectionId && !includeCurrentPage) {
-      setPanelMode('ask')
       setPanelCollapsed(false)
       await window.aether.layout.setIntelligencePanelCollapsed(false)
       setChatPrompt(prompt)
@@ -402,13 +393,7 @@ function App(): React.JSX.Element {
       return
     }
 
-    if (action.mode) {
-      setPanelMode(action.mode)
-      return
-    }
-
     if (!action.prompt) return
-    setPanelMode('ask')
     setChatPrompt(action.prompt)
     await askPrompt(action.prompt)
   }
@@ -585,7 +570,6 @@ function App(): React.JSX.Element {
         collections={collections}
         dashboardOpen={dashboardOpen}
         chatResult={chatResult}
-        mode={panelMode}
         notice={notice}
         panelCollapsed={panelCollapsed}
         searchInputRef={searchInputRef}
@@ -594,7 +578,6 @@ function App(): React.JSX.Element {
         selectedCollection={selectedCollection}
         status={status}
         onAsk={ask}
-        onModeChange={setPanelMode}
         onSearch={search}
         onSearchQueryChange={setSearchQuery}
         onTogglePanel={togglePanel}

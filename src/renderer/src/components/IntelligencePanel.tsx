@@ -1,6 +1,5 @@
 import { CSSProperties, FormEvent, useState } from 'react'
 import { ChatResult, CollectionSummary, SearchResult, SystemStatus } from '../../../shared/aether'
-import { PanelMode } from '../types/ui'
 import { CollectionIcon } from '../utils/collection-icons'
 import { getCaptureHost } from '../utils/aether-ui'
 import { ChevronRightIcon, SparkIcon } from './icons'
@@ -16,7 +15,6 @@ type IntelligencePanelProps = {
   collections: CollectionSummary[]
   dashboardOpen: boolean
   chatResult: ChatResult | null
-  mode: PanelMode
   notice: string | null
   panelCollapsed: boolean
   searchInputRef: React.RefObject<HTMLInputElement | null>
@@ -25,7 +23,6 @@ type IntelligencePanelProps = {
   selectedCollection?: CollectionSummary
   status: SystemStatus | null
   onAsk: (event: FormEvent) => Promise<void>
-  onModeChange: (mode: PanelMode) => void
   onSearch: (event?: FormEvent) => Promise<void>
   onSearchQueryChange: (value: string) => void
   onTogglePanel: () => Promise<void>
@@ -48,18 +45,10 @@ export function IntelligencePanel({
   collections,
   dashboardOpen,
   chatResult,
-  mode,
   notice,
   panelCollapsed,
-  searchInputRef,
-  searchQuery,
-  searchResults,
-  selectedCollection,
   status,
   onAsk,
-  onModeChange,
-  onSearch,
-  onSearchQueryChange,
   onTogglePanel,
   onChatPromptChange,
   onAskCollectionChange,
@@ -115,89 +104,44 @@ export function IntelligencePanel({
           </div>
         </header>
 
-        <div className="panel-tabs" role="tablist" aria-label="Aether modes">
-          {(['search', 'ask'] as PanelMode[]).map((item) => (
-            <button
-              className={mode === item ? 'active' : ''}
-              key={item}
-              onClick={() => onModeChange(item)}
-              role="tab"
-              type="button"
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-
-        {mode === 'search' && (
-          <section className="panel-section mode-section">
-            <div className="section-heading">
-              <h2>Search</h2>
-              <span>{selectedCollection?.captureCount ?? 0} captures</span>
-            </div>
-            <form className="search-form" onSubmit={onSearch}>
-              <input
-                ref={searchInputRef}
-                value={searchQuery}
-                onChange={(event) => onSearchQueryChange(event.target.value)}
-                placeholder="Search selected collection"
-              />
-              <button
-                type="submit"
-                disabled={
-                  Boolean(busy) ||
-                  !searchQuery.trim() ||
-                  !selectedCollection ||
-                  !status?.ollamaReachable
-                }
-              >
-                Search
-              </button>
-            </form>
-            <ResultList results={searchResults} />
-          </section>
-        )}
-
-        {mode === 'ask' && (
-          <section className="panel-section mode-section chat-section">
-            <div className="section-heading">
-              <h2>Ask</h2>
-              <span>{status?.chatModel ?? 'No model'}</span>
-            </div>
-            <AskContextControls
-              askCollectionId={askCollectionId}
-              askCurrentPageOnly={askCurrentPageOnly}
-              askIncludeCurrentPage={askIncludeCurrentPage}
-              canUseCurrentPage={canUseCurrentPage}
-              collections={askCollections}
-              onAskCollectionChange={onAskCollectionChange}
-              onAskCurrentPageOnlyChange={onAskCurrentPageOnlyChange}
-              onAskIncludeCurrentPageChange={onAskIncludeCurrentPageChange}
+        <section className="panel-section mode-section chat-section">
+          <div className="section-heading">
+            <h2>Ask</h2>
+            <span>{status?.chatModel ?? 'No model'}</span>
+          </div>
+          <AskContextControls
+            askCollectionId={askCollectionId}
+            askCurrentPageOnly={askCurrentPageOnly}
+            askIncludeCurrentPage={askIncludeCurrentPage}
+            canUseCurrentPage={canUseCurrentPage}
+            collections={askCollections}
+            onAskCollectionChange={onAskCollectionChange}
+            onAskCurrentPageOnlyChange={onAskCurrentPageOnlyChange}
+            onAskIncludeCurrentPageChange={onAskIncludeCurrentPageChange}
+          />
+          <form className="chat-form" onSubmit={onAsk}>
+            <textarea
+              value={chatPrompt}
+              onChange={(event) => onChatPromptChange(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || event.shiftKey || !chatPrompt.trim()) return
+                event.preventDefault()
+                event.currentTarget.form?.requestSubmit()
+              }}
+              placeholder="Ask this collection and current page"
             />
-            <form className="chat-form" onSubmit={onAsk}>
-              <textarea
-                value={chatPrompt}
-                onChange={(event) => onChatPromptChange(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key !== 'Enter' || event.shiftKey || !chatPrompt.trim()) return
-                  event.preventDefault()
-                  event.currentTarget.form?.requestSubmit()
-                }}
-                placeholder="Ask this collection and current page"
-              />
-              <button
-                type="submit"
-                disabled={Boolean(busy) || !chatPrompt.trim() || !hasAskContext || chatBlocked}
-              >
-                Ask ÆTHER
-              </button>
-            </form>
-            {busy === 'Asking Æther' && <AnswerLoading />}
-            {chatResult && busy !== 'Asking Æther' && (
-              <AnswerCard result={chatResult} onOpenCitation={onOpenCitation} />
-            )}
-          </section>
-        )}
+            <button
+              type="submit"
+              disabled={Boolean(busy) || !chatPrompt.trim() || !hasAskContext || chatBlocked}
+            >
+              Ask ÆTHER
+            </button>
+          </form>
+          {busy === 'Asking Æther' && <AnswerLoading />}
+          {chatResult && busy !== 'Asking Æther' && (
+            <AnswerCard result={chatResult} onOpenCitation={onOpenCitation} />
+          )}
+        </section>
 
         <footer className="panel-footer">
           <span>{busy ?? notice ?? ''}</span>
@@ -373,27 +317,6 @@ function OllamaSettings({
         </select>
       </label>
     </section>
-  )
-}
-
-function ResultList({ results }: { results: SearchResult[] }): React.JSX.Element {
-  if (results.length === 0) {
-    return <div className="empty-row">Search results will appear here.</div>
-  }
-  return (
-    <div className="results-list">
-      {results.slice(0, 6).map((result) => (
-        <article className="result-item" key={result.id}>
-          <div>
-            <h3>{result.title}</h3>
-            <span>
-              {getCaptureHost(result.url)} - chunk {result.chunkIndex + 1}
-            </span>
-          </div>
-          <p>{result.text}</p>
-        </article>
-      ))}
-    </div>
   )
 }
 
