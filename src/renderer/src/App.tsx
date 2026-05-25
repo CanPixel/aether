@@ -112,6 +112,7 @@ function App(): React.JSX.Element {
       try {
         const tab = await window.aether.tabs.create(input)
         setActiveTabId(tab.id)
+        setDashboardOpen(false)
         await refreshShell()
       } catch (error) {
         setNotice(error instanceof Error ? error.message : 'Æther hit an unexpected error.')
@@ -221,7 +222,11 @@ function App(): React.JSX.Element {
     })
   }
 
-  async function saveCollectionDialog(input: { name: string; description: string }): Promise<void> {
+  async function saveCollectionDialog(input: {
+    name: string
+    description: string
+    icon: string
+  }): Promise<void> {
     if (!collectionDialog || collectionDialog.mode === 'delete') return
 
     await runTask(
@@ -233,7 +238,8 @@ function App(): React.JSX.Element {
             : await window.aether.collections.update({
                 id: collectionDialog.collection.id,
                 name: input.name,
-                description: input.description
+                description: input.description,
+                icon: input.icon
               })
         setCollectionDialog(null)
         await refreshCollections(collection.id)
@@ -373,6 +379,12 @@ function App(): React.JSX.Element {
 
   async function openShortcut(shortcut: HubShortcutSummary): Promise<void> {
     await createTab({ url: shortcut.url })
+    setDashboardOpen(false)
+  }
+
+  async function openCitation(citation: SearchResult): Promise<void> {
+    await createTab({ url: citation.url })
+    setDashboardOpen(false)
   }
 
   async function deleteShortcut(shortcutId: string): Promise<void> {
@@ -462,7 +474,7 @@ function App(): React.JSX.Element {
           collections={collections}
           dashboardOpen={dashboardOpen}
           lastCapture={lastCapture}
-          quickActions={quickActions}
+          quickActions={dashboardOpen ? [] : quickActions}
           selectedCollection={selectedCollection}
           selectedCollectionId={selectedCollectionId}
           tabs={tabs}
@@ -508,6 +520,7 @@ function App(): React.JSX.Element {
         busy={busy}
         chatBlocked={chatBlocked}
         chatPrompt={chatPrompt}
+        dashboardOpen={dashboardOpen}
         chatResult={chatResult}
         mode={panelMode}
         notice={notice}
@@ -524,6 +537,7 @@ function App(): React.JSX.Element {
         onTogglePanel={togglePanel}
         onChatPromptChange={setChatPrompt}
         onUpdateModels={updateOllamaModels}
+        onOpenCitation={openCitation}
       />
 
       {collectionDialog && (

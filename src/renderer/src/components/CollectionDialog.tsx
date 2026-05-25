@@ -1,5 +1,7 @@
 import { FormEvent, useState } from 'react'
 import { CollectionSummary } from '../../../shared/aether'
+import { COLLECTION_ICON_OPTIONS, normalizeCollectionIcon } from '../utils/collection-icon-data'
+import { CollectionIcon } from '../utils/collection-icons'
 import { CloseIcon } from './icons'
 
 export type CollectionDialogState =
@@ -13,7 +15,7 @@ type CollectionDialogProps = {
   state: CollectionDialogState
   onClose: () => void
   onDelete: () => Promise<void>
-  onSave: (input: { name: string; description: string }) => Promise<void>
+  onSave: (input: { name: string; description: string; icon: string }) => Promise<void>
 }
 
 export function CollectionDialog({
@@ -26,6 +28,13 @@ export function CollectionDialog({
   const collection = state && 'collection' in state ? state.collection : null
   const [name, setName] = useState(collection?.name ?? '')
   const [description, setDescription] = useState(collection?.description ?? '')
+  const [icon, setIcon] = useState(normalizeCollectionIcon(collection?.icon))
+  const [iconQuery, setIconQuery] = useState('')
+
+  const filteredIcons = COLLECTION_ICON_OPTIONS.filter((option) => {
+    const query = iconQuery.trim().toLowerCase()
+    return !query || `${option.label} ${option.keywords}`.toLowerCase().includes(query)
+  })
 
   if (!state) return null
 
@@ -35,7 +44,7 @@ export function CollectionDialog({
       await onDelete()
       return
     }
-    await onSave({ name, description })
+    await onSave({ name, description, icon })
   }
 
   return (
@@ -80,6 +89,31 @@ export function CollectionDialog({
                 placeholder="Research notes, references, and captured pages"
               />
             </label>
+            <label>
+              Icon
+              <input
+                value={iconQuery}
+                onChange={(event) => setIconQuery(event.target.value)}
+                placeholder="Search icons"
+              />
+            </label>
+            <div className="icon-picker" role="listbox" aria-label="Knowledge hub icon">
+              {filteredIcons.map((option) => (
+                <button
+                  aria-label={option.label}
+                  aria-selected={icon === option.id}
+                  className={icon === option.id ? 'active' : ''}
+                  key={option.id}
+                  onClick={() => setIcon(option.id)}
+                  role="option"
+                  title={option.label}
+                  type="button"
+                >
+                  <CollectionIcon icon={option.id} />
+                  <span>{option.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
 

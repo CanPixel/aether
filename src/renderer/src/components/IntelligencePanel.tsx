@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react'
+import { CSSProperties, FormEvent, useState } from 'react'
 import { ChatResult, CollectionSummary, SearchResult, SystemStatus } from '../../../shared/aether'
 import { PanelMode } from '../types/ui'
 import { getCaptureHost } from '../utils/aether-ui'
@@ -8,6 +8,7 @@ type IntelligencePanelProps = {
   busy: string | null
   chatBlocked: boolean
   chatPrompt: string
+  dashboardOpen: boolean
   chatResult: ChatResult | null
   mode: PanelMode
   notice: string | null
@@ -23,6 +24,7 @@ type IntelligencePanelProps = {
   onSearchQueryChange: (value: string) => void
   onTogglePanel: () => Promise<void>
   onChatPromptChange: (value: string) => void
+  onOpenCitation: (citation: SearchResult) => Promise<void>
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
 }
 
@@ -30,6 +32,7 @@ export function IntelligencePanel({
   busy,
   chatBlocked,
   chatPrompt,
+  dashboardOpen,
   chatResult,
   mode,
   notice,
@@ -45,30 +48,27 @@ export function IntelligencePanel({
   onSearchQueryChange,
   onTogglePanel,
   onChatPromptChange,
+  onOpenCitation,
   onUpdateModels
 }: IntelligencePanelProps): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
-
-  if (panelCollapsed) {
-    return (
-      <aside className="intelligence-panel collapsed">
-        <button
-          className="panel-icon-toggle tooltip-host"
-          data-tooltip="Open AI Sidepanel"
-          data-tooltip-side="left"
-          onClick={onTogglePanel}
-          title="Open AI sidepanel"
-          type="button"
-        >
-          <SparkIcon />
-        </button>
-      </aside>
-    )
-  }
+  const showTooltips = dashboardOpen
 
   return (
-    <aside className="intelligence-panel">
-      <div className="panel-content">
+    <aside className={`intelligence-panel ${panelCollapsed ? 'collapsed' : ''}`}>
+      <button
+        className="panel-icon-toggle tooltip-host"
+        data-tooltip={showTooltips ? 'Open AI Sidepanel' : undefined}
+        data-tooltip-side={showTooltips ? 'left' : undefined}
+        aria-hidden={!panelCollapsed}
+        onClick={onTogglePanel}
+        tabIndex={panelCollapsed ? 0 : -1}
+        title="Open AI sidepanel"
+        type="button"
+      >
+        <SparkIcon />
+      </button>
+      <div className="panel-content" aria-hidden={panelCollapsed} inert={panelCollapsed}>
         <header className="panel-header">
           <div>
             <p>ÆTHER</p>
@@ -78,8 +78,8 @@ export function IntelligencePanel({
             <StatusPill status={status} />
             <button
               className="panel-close tooltip-host"
-              data-tooltip="Collapse AI Sidepanel"
-              data-tooltip-side="left"
+              data-tooltip={showTooltips ? 'Collapse AI Sidepanel' : undefined}
+              data-tooltip-side={showTooltips ? 'left' : undefined}
               onClick={onTogglePanel}
               title="Collapse AI sidepanel"
               type="button"
@@ -156,16 +156,19 @@ export function IntelligencePanel({
                 Ask ÆTHER
               </button>
             </form>
-            {chatResult && <AnswerCard result={chatResult} />}
+            {busy === 'Asking Æther' && <AnswerLoading />}
+            {chatResult && busy !== 'Asking Æther' && (
+              <AnswerCard result={chatResult} onOpenCitation={onOpenCitation} />
+            )}
           </section>
         )}
 
         <footer className="panel-footer">
-          <span>{busy ?? notice ?? 'Cmd+T new tab - Cmd+K search - Cmd+L address'}</span>
+          <span>{busy ?? notice ?? ''}</span>
           <button
             className="model-settings-button tooltip-host"
-            data-tooltip="Model Settings"
-            data-tooltip-side="left"
+            data-tooltip={showTooltips ? 'Model Settings' : undefined}
+            data-tooltip-side={showTooltips ? 'left' : undefined}
             onClick={() => setSettingsOpen((current) => !current)}
             title="Model settings"
             type="button"
@@ -178,6 +181,23 @@ export function IntelligencePanel({
         )}
       </div>
     </aside>
+  )
+}
+
+function AnswerLoading(): React.JSX.Element {
+  return (
+    <div className="answer-loading" role="status" aria-live="polite">
+      <div className="answer-loading-haze" aria-hidden="true" />
+      <div className="answer-loading-ring" aria-hidden="true">
+        {Array.from({ length: 14 }).map((_, index) => (
+          <span key={index} style={{ '--particle-index': index } as CSSProperties} />
+        ))}
+      </div>
+      <div className="answer-loading-copy">
+        <strong>Composing answer</strong>
+        <span>Gathering local context</span>
+      </div>
+    </div>
   )
 }
 
@@ -261,20 +281,105 @@ function ResultList({ results }: { results: SearchResult[] }): React.JSX.Element
   )
 }
 
-function AnswerCard({ result }: { result: ChatResult }): React.JSX.Element {
+function AnswerCard({
+  result,
+  onOpenCitation
+}: {
+  result: ChatResult
+  onOpenCitation: (citation: SearchResult) => Promise<void>
+}): React.JSX.Element {
+  const [copied, setCopied] = useState(false)
+
+  async function copyAnswer(): Promise<void> {
+    await navigator.clipboard.writeText(result.answer)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1400)
+  }
+
   return (
     <article className="answer-card">
-      <p>{result.answer}</p>
+      <div className="answer-markdown">{renderAnswerMarkdown(result.answer)}</div>
       <div className="citation-list">
         {result.citations.slice(0, 5).map((citation, index) => (
-          <span key={citation.id}>
+          <button key={citation.id} onClick={() => onOpenCitation(citation)} type="button">
             [{index + 1}] {citation.title} - {getCaptureHost(citation.url)}
-          </span>
+          </button>
         ))}
       </div>
-      <footer>{result.citations.length} local citations</footer>
+      <footer>
+        <span>{result.citations.length} local citations</span>
+        <button className="answer-copy-button" onClick={copyAnswer} type="button">
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </footer>
     </article>
   )
+}
+
+function renderAnswerMarkdown(markdown: string): React.ReactNode[] {
+  const blocks: React.ReactNode[] = []
+  const lines = markdown.split(/\r?\n/)
+  let listItems: React.ReactNode[] = []
+  let orderedItems: React.ReactNode[] = []
+
+  function flushLists(): void {
+    if (listItems.length > 0) {
+      blocks.push(<ul key={`ul-${blocks.length}`}>{listItems}</ul>)
+      listItems = []
+    }
+    if (orderedItems.length > 0) {
+      blocks.push(<ol key={`ol-${blocks.length}`}>{orderedItems}</ol>)
+      orderedItems = []
+    }
+  }
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      flushLists()
+      return
+    }
+
+    const heading = /^(#{1,4})\s+(.+)$/.exec(trimmed)
+    if (heading) {
+      flushLists()
+      blocks.push(
+        <h3 key={`h-${index}`} className={`answer-heading level-${heading[1].length}`}>
+          {renderInlineMarkdown(heading[2])}
+        </h3>
+      )
+      return
+    }
+
+    const bullet = /^[-*]\s+(.+)$/.exec(trimmed)
+    if (bullet) {
+      orderedItems = []
+      listItems.push(<li key={`li-${index}`}>{renderInlineMarkdown(bullet[1])}</li>)
+      return
+    }
+
+    const numbered = /^\d+\.\s+(.+)$/.exec(trimmed)
+    if (numbered) {
+      listItems = []
+      orderedItems.push(<li key={`oli-${index}`}>{renderInlineMarkdown(numbered[1])}</li>)
+      return
+    }
+
+    flushLists()
+    blocks.push(<p key={`p-${index}`}>{renderInlineMarkdown(trimmed)}</p>)
+  })
+
+  flushLists()
+  return blocks
+}
+
+function renderInlineMarkdown(text: string): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>
+    }
+    return part
+  })
 }
 
 function StatusPill({ status }: { status: SystemStatus | null }): React.JSX.Element {

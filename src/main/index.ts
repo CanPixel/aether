@@ -172,6 +172,7 @@ class LibraryStore {
   async createCollection(input: {
     name: string
     description?: string
+    icon?: string
   }): Promise<CollectionSummary> {
     const name = input.name.trim()
     if (!name) {
@@ -187,6 +188,7 @@ class LibraryStore {
       ),
       name,
       description: input.description?.trim() ?? '',
+      icon: input.icon?.trim() || 'book',
       createdAt: now,
       updatedAt: now,
       captureCount: 0,
@@ -202,6 +204,7 @@ class LibraryStore {
     id: string
     name?: string
     description?: string
+    icon?: string
   }): Promise<CollectionSummary> {
     const data = await this.load()
     const collection = data.collections.find((item) => item.id === input.id)
@@ -218,6 +221,9 @@ class LibraryStore {
     }
     if (typeof input.description === 'string') {
       collection.description = input.description.trim()
+    }
+    if (typeof input.icon === 'string') {
+      collection.icon = input.icon.trim() || 'book'
     }
     collection.updatedAt = new Date().toISOString()
 
@@ -1267,11 +1273,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle('aether:collections:list', () => getLibrary().listCollections())
   ipcMain.handle(
     'aether:collections:create',
-    (_event, input: { name: string; description?: string }) => getLibrary().createCollection(input)
+    (_event, input: { name: string; description?: string; icon?: string }) =>
+      getLibrary().createCollection(input)
   )
   ipcMain.handle(
     'aether:collections:update',
-    (_event, input: { id: string; name?: string; description?: string }) =>
+    (_event, input: { id: string; name?: string; description?: string; icon?: string }) =>
       getLibrary().updateCollection(input)
   )
   ipcMain.handle('aether:collections:delete', async (_event, id: string) => {
