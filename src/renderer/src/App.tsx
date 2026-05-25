@@ -618,7 +618,7 @@ function BrowserChrome({
         <div className="active-app">
           <span>{dashboardOpen ? 'AETHER' : activeTab?.title || 'Browser'}</span>
           <small>
-            {dashboardOpen ? 'Knowledge' : activeTab?.isLoading ? 'Loading' : activeTab?.host}
+            {dashboardOpen ? 'Knowledge Hub' : activeTab?.isLoading ? 'Loading' : activeTab?.host}
           </small>
         </div>
         <input
