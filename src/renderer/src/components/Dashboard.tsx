@@ -1,15 +1,8 @@
 import { useState } from 'react'
 import { CaptureSummary, CollectionSummary, HubShortcutSummary } from '../../../shared/aether'
+import { CollectionIcon } from '../utils/collection-icons'
 import { formatDate, getCaptureHost } from '../utils/aether-ui'
-import {
-  BookIcon,
-  ChevronRightIcon,
-  CloseIcon,
-  CubeIcon,
-  GridIcon,
-  SparkIcon,
-  TrashIcon
-} from './icons'
+import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, SparkIcon, TrashIcon } from './icons'
 
 type CollectionDialogState =
   | { mode: 'create' }
@@ -59,10 +52,10 @@ export function Dashboard({
         </div>
         <div className="hero-orb" aria-hidden="true">
           <span className="hero-orb-aura" />
-          <img src={aetherMarkSrc} alt="Aether logo" />
+          <img src={aetherMarkSrc} alt="Aether logo" draggable={false} />
         </div>
 
-        <img className="wavy-lines" src={wavyLinesSrc} alt="Wavy lines" />
+        <img className="wavy-lines" src={wavyLinesSrc} alt="Wavy lines" draggable={false} />
       </header>
 
       <section className="hub-row">
@@ -74,7 +67,12 @@ export function Dashboard({
             <h2>Portals</h2>
             <p>Launch saved pages like local workspaces.</p>
           </div>
-          <button disabled={Boolean(busy)} onClick={saveActiveTabToHub} type="button">
+          <button
+            className="save-page-button"
+            disabled={Boolean(busy)}
+            onClick={saveActiveTabToHub}
+            type="button"
+          >
             Save Current Page
           </button>
         </div>
@@ -145,7 +143,7 @@ export function Dashboard({
                 type="button"
               >
                 <span className="collection-glyph">
-                  <BookIcon />
+                  <CollectionIcon icon={collection.icon} />
                 </span>
                 <span className="collection-main">
                   <strong>{collection.name}</strong>

@@ -48,7 +48,7 @@ export function BrowserChrome({
   dashboardOpen,
   lastCapture,
   quickActions,
-  selectedCollection,
+  /* selectedCollection, */
   selectedCollectionId,
   tabs,
   onAddressBlur,
@@ -58,7 +58,7 @@ export function BrowserChrome({
   onCloseTab,
   onCreateTab,
   onCapture,
-  onCreateCollection,
+  /* onCreateCollection, */
   onForward,
   onNavigate,
   onQuickAction,
@@ -172,9 +172,9 @@ export function BrowserChrome({
               </option>
             ))}
           </select>
-          <button type="button" onClick={onCreateCollection}>
+          {/* <button type="button" onClick={onCreateCollection}>
             New
-          </button>
+          </button> */}
           <button
             className="capture-page-button"
             disabled={Boolean(busy) || capturesBlocked}
@@ -184,7 +184,7 @@ export function BrowserChrome({
           >
             Capture
           </button>
-          <span>{selectedCollection?.name ?? 'No hub'}</span>
+          {/* <span>{selectedCollection?.name ?? 'No hub'}</span> */}
         </div>
       </div>
     </div>

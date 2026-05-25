@@ -36,6 +36,7 @@ export interface CollectionSummary {
   id: string
   name: string
   description: string
+  icon?: string
   createdAt: string
   updatedAt: string
   captureCount: number
@@ -127,8 +128,13 @@ export interface AetherApi {
   }
   collections: {
     list(): Promise<CollectionSummary[]>
-    create(input: { name: string; description?: string }): Promise<CollectionSummary>
-    update(input: { id: string; name?: string; description?: string }): Promise<CollectionSummary>
+    create(input: { name: string; description?: string; icon?: string }): Promise<CollectionSummary>
+    update(input: {
+      id: string
+      name?: string
+      description?: string
+      icon?: string
+    }): Promise<CollectionSummary>
     delete(id: string): Promise<void>
     captures(collectionId: string): Promise<CaptureSummary[]>
   }
