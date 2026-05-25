@@ -63,6 +63,11 @@ function App(): React.JSX.Element {
     () => collections.find((collection) => collection.id === askCollectionId),
     [askCollectionId, collections]
   )
+  const usableAskCollections = useMemo(
+    () =>
+      collections.filter((collection) => collection.captureCount > 0 && collection.chunkCount > 0),
+    [collections]
+  )
   const canUseCurrentPage = Boolean(activeTab?.url)
   const ollamaBlocked = status ? !status.ollamaReachable : false
   const hasEmbeddingModel = status ? status.availableModels.includes(status.embeddingModel) : true
@@ -353,8 +358,13 @@ function App(): React.JSX.Element {
   }
 
   async function askPrompt(prompt: string): Promise<void> {
-    const hasKnowledgeHubs = collections.length > 0
-    const collectionId = hasKnowledgeHubs && !askCurrentPageOnly ? askCollection?.id : undefined
+    const hasKnowledgeHubs = usableAskCollections.length > 0
+    const selectedAskCollection =
+      askCollection && askCollection.captureCount > 0 && askCollection.chunkCount > 0
+        ? askCollection
+        : undefined
+    const collectionId =
+      hasKnowledgeHubs && !askCurrentPageOnly ? selectedAskCollection?.id : undefined
     const includeCurrentPage = !hasKnowledgeHubs || askCurrentPageOnly || askIncludeCurrentPage
 
     if (!collectionId && !includeCurrentPage) {

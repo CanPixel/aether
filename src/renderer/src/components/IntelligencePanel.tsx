@@ -70,7 +70,10 @@ export function IntelligencePanel({
 }: IntelligencePanelProps): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const showTooltips = dashboardOpen
-  const hasKnowledgeHubs = collections.length > 0
+  const askCollections = collections.filter(
+    (collection) => collection.captureCount > 0 && collection.chunkCount > 0
+  )
+  const hasKnowledgeHubs = askCollections.length > 0
   const hasAskContext = !hasKnowledgeHubs
     ? canUseCurrentPage
     : askCurrentPageOnly
@@ -166,7 +169,7 @@ export function IntelligencePanel({
               askCurrentPageOnly={askCurrentPageOnly}
               askIncludeCurrentPage={askIncludeCurrentPage}
               canUseCurrentPage={canUseCurrentPage}
-              collections={collections}
+              collections={askCollections}
               onAskCollectionChange={onAskCollectionChange}
               onAskCurrentPageOnlyChange={onAskCurrentPageOnlyChange}
               onAskIncludeCurrentPageChange={onAskIncludeCurrentPageChange}
