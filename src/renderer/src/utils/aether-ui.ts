@@ -15,11 +15,11 @@ export function formatDate(value: string): string {
 
 export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {
   if (!activeTab) {
-    return [{ id: 'ask-chat', label: 'Ask Chat', mode: 'ask' }]
+    return [{ id: 'ask-chat', label: 'Ask Chat' }]
   }
 
   const baseActions: QuickAction[] = [
-    { id: 'ask-chat', label: 'Ask Chat', mode: 'ask' },
+    { id: 'ask-chat', label: 'Ask Chat' },
     {
       id: 'summarize',
       label: 'Summarize',
@@ -34,7 +34,7 @@ export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {
 
   if (activeTab.host.includes('wikipedia.org')) {
     return [
-      { id: 'ask-chat', label: 'Ask Chat', mode: 'ask' },
+      { id: 'ask-chat', label: 'Ask Chat' },
       {
         id: 'wiki-overview',
         label: 'Wikipedia overview',
@@ -58,7 +58,7 @@ export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {
 
   if (activeTab.host.includes('github.com')) {
     return [
-      { id: 'ask-chat', label: 'Ask Chat', mode: 'ask' },
+      { id: 'ask-chat', label: 'Ask Chat' },
       {
         id: 'repo-summary',
         label: 'Repo summary',
