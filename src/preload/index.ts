@@ -9,8 +9,22 @@ const api: AetherApi = {
     goBack: (appId) => ipcRenderer.invoke('aether:apps:go-back', appId),
     goForward: (appId) => ipcRenderer.invoke('aether:apps:go-forward', appId)
   },
+  tabs: {
+    list: () => ipcRenderer.invoke('aether:tabs:list'),
+    create: (input) => ipcRenderer.invoke('aether:tabs:create', input),
+    activate: (tabId) => ipcRenderer.invoke('aether:tabs:activate', tabId),
+    close: (tabId) => ipcRenderer.invoke('aether:tabs:close', tabId),
+    navigate: (tabId, url) => ipcRenderer.invoke('aether:tabs:navigate', tabId, url),
+    goBack: (tabId) => ipcRenderer.invoke('aether:tabs:go-back', tabId),
+    goForward: (tabId) => ipcRenderer.invoke('aether:tabs:go-forward', tabId)
+  },
   dashboard: {
     open: () => ipcRenderer.invoke('aether:dashboard:open')
+  },
+  hub: {
+    list: () => ipcRenderer.invoke('aether:hub:list'),
+    create: (input) => ipcRenderer.invoke('aether:hub:create', input),
+    delete: (id) => ipcRenderer.invoke('aether:hub:delete', id)
   },
   collections: {
     list: () => ipcRenderer.invoke('aether:collections:list'),
@@ -30,7 +44,8 @@ const api: AetherApi = {
     ask: (input) => ipcRenderer.invoke('aether:chat:ask', input)
   },
   system: {
-    status: () => ipcRenderer.invoke('aether:system:status')
+    status: () => ipcRenderer.invoke('aether:system:status'),
+    updateModels: (input) => ipcRenderer.invoke('aether:system:update-models', input)
   },
   layout: {
     setIntelligencePanelCollapsed: (collapsed) =>

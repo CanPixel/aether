@@ -11,16 +11,18 @@ import { RecursiveCharacterTextSplitter } from '@langchain/classic/text_splitter
 import {
   AetherState,
   AppSummary,
+  BrowserTabSummary,
   CaptureResult,
   CaptureSummary,
   ChatResult,
   CollectionSummary,
+  HubShortcutSummary,
   SearchResult,
   SystemStatus
 } from '../shared/aether'
 
 const SIDEBAR_WIDTH = 76
-const TOP_BAR_HEIGHT = 92
+const TOP_BAR_HEIGHT = 130
 const PANEL_WIDTH = 404
 const PANEL_COLLAPSED_WIDTH = 58
 const CHUNKS_TABLE = 'chunks'
@@ -36,11 +38,14 @@ interface AppDefinition {
   homeUrl: string
 }
 
-interface ManagedApp extends AppDefinition {
+interface ManagedTab {
+  id: string
+  appId: string
   view: WebContentsView
-  currentUrl: string
+  url: string
   title: string
   isLoading: boolean
+  favicon?: string
 }
 
 interface CapturedPage {
@@ -66,7 +71,16 @@ interface LibraryData {
   version: 1
   collections: CollectionSummary[]
   captures: CaptureSummary[]
+  shortcuts: HubShortcutSummary[]
   migratedRealmTables: string[]
+}
+
+interface UserSettings {
+  version: 1
+  ollama: {
+    embeddingModel: string | null
+    chatModel: string | null
+  }
 }
 
 interface OllamaTagsResponse {
@@ -102,6 +116,40 @@ class LibraryStore {
   async listCollections(): Promise<CollectionSummary[]> {
     const data = await this.load()
     return [...data.collections].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  }
+
+  async listShortcuts(): Promise<HubShortcutSummary[]> {
+    const data = await this.load()
+    return [...data.shortcuts].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  }
+
+  async createShortcut(input: { title: string; url: string }): Promise<HubShortcutSummary> {
+    const title = input.title.trim()
+    const url = normalizeUrl(input.url)
+    if (!title) {
+      throw new Error('Shortcut title is required.')
+    }
+
+    const data = await this.load()
+    const existing = data.shortcuts.find((shortcut) => shortcut.url === url)
+    if (existing) return existing
+
+    const shortcut: HubShortcutSummary = {
+      id: crypto.randomUUID(),
+      title,
+      url,
+      host: getTabHost(url),
+      createdAt: new Date().toISOString()
+    }
+    data.shortcuts.unshift(shortcut)
+    await this.save(data)
+    return shortcut
+  }
+
+  async deleteShortcut(id: string): Promise<void> {
+    const data = await this.load()
+    data.shortcuts = data.shortcuts.filter((shortcut) => shortcut.id !== id)
+    await this.save(data)
   }
 
   async listCaptures(collectionId: string): Promise<CaptureSummary[]> {
@@ -240,11 +288,14 @@ class LibraryStore {
     try {
       const raw = await readFile(this.libraryPath, 'utf8')
       this.data = JSON.parse(raw) as LibraryData
+      this.data.shortcuts ??= []
+      this.data.migratedRealmTables ??= []
     } catch {
       this.data = {
         version: 1,
         collections: [],
         captures: [],
+        shortcuts: [],
         migratedRealmTables: []
       }
       await this.save(this.data)
@@ -256,6 +307,65 @@ class LibraryStore {
   private async save(data: LibraryData): Promise<void> {
     await mkdir(dirname(this.libraryPath), { recursive: true })
     await writeFile(this.libraryPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+    this.data = data
+  }
+}
+
+class SettingsStore {
+  private data: UserSettings | null = null
+
+  constructor(private readonly settingsPath: string) {}
+
+  get path(): string {
+    return this.settingsPath
+  }
+
+  async load(): Promise<UserSettings> {
+    if (this.data) return this.data
+
+    try {
+      const raw = await readFile(this.settingsPath, 'utf8')
+      const parsed = JSON.parse(raw) as Partial<UserSettings>
+      this.data = {
+        version: 1,
+        ollama: {
+          embeddingModel: parsed.ollama?.embeddingModel ?? null,
+          chatModel: parsed.ollama?.chatModel ?? null
+        }
+      }
+    } catch {
+      this.data = {
+        version: 1,
+        ollama: {
+          embeddingModel: null,
+          chatModel: null
+        }
+      }
+      await this.save(this.data)
+    }
+
+    return this.data
+  }
+
+  async updateModels(input: {
+    embeddingModel?: string
+    chatModel?: string
+  }): Promise<UserSettings> {
+    const data = await this.load()
+    if (typeof input.embeddingModel === 'string') {
+      data.ollama.embeddingModel = input.embeddingModel.trim() || null
+    }
+    if (typeof input.chatModel === 'string') {
+      data.ollama.chatModel = input.chatModel.trim() || null
+    }
+
+    await this.save(data)
+    return data
+  }
+
+  private async save(data: UserSettings): Promise<void> {
+    await mkdir(dirname(this.settingsPath), { recursive: true })
+    await writeFile(this.settingsPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
     this.data = data
   }
 }
@@ -427,12 +537,24 @@ class AetherDatabase {
 }
 
 class OllamaClient {
+  private embeddingModelOverride: string | null = null
+  private chatModelOverride: string | null = null
+
+  setModelOverrides(input: { embeddingModel?: string | null; chatModel?: string | null }): void {
+    if ('embeddingModel' in input) {
+      this.embeddingModelOverride = input.embeddingModel?.trim() || null
+    }
+    if ('chatModel' in input) {
+      this.chatModelOverride = input.chatModel?.trim() || null
+    }
+  }
+
   async status(library: LibraryStore, db: AetherDatabase): Promise<SystemStatus> {
     try {
       const availableModels = await this.listModels()
       return {
         ollamaReachable: true,
-        embeddingModel: this.pickModel(availableModels, [EMBEDDING_MODEL]) ?? EMBEDDING_MODEL,
+        embeddingModel: this.pickEmbeddingModel(availableModels),
         chatModel: this.pickChatModel(availableModels),
         availableModels,
         dbPath: db.path,
@@ -453,6 +575,15 @@ class OllamaClient {
     }
   }
 
+  async updateModels(
+    library: LibraryStore,
+    db: AetherDatabase,
+    input: { embeddingModel?: string; chatModel?: string }
+  ): Promise<SystemStatus> {
+    this.setModelOverrides(input)
+    return this.status(library, db)
+  }
+
   async listModels(): Promise<string[]> {
     const response = await this.request<OllamaTagsResponse>('/api/tags', {
       method: 'GET',
@@ -463,7 +594,7 @@ class OllamaClient {
 
   async embed(input: string | string[]): Promise<number[][]> {
     const models = await this.listModels()
-    const model = this.pickModel(models, [EMBEDDING_MODEL])
+    const model = this.pickEmbeddingModel(models)
     if (!model) {
       throw new Error(`Ollama embedding model "${EMBEDDING_MODEL}" is not installed.`)
     }
@@ -529,7 +660,17 @@ class OllamaClient {
   }
 
   private pickChatModel(models: string[]): string | null {
+    if (this.chatModelOverride && models.includes(this.chatModelOverride)) {
+      return this.chatModelOverride
+    }
     return this.pickModel(models, PREFERRED_CHAT_MODELS) ?? models[0] ?? null
+  }
+
+  private pickEmbeddingModel(models: string[]): string {
+    if (this.embeddingModelOverride && models.includes(this.embeddingModelOverride)) {
+      return this.embeddingModelOverride
+    }
+    return this.pickModel(models, [EMBEDDING_MODEL]) ?? EMBEDDING_MODEL
   }
 
   private pickModel(models: string[], preferred: string[]): string | null {
@@ -583,38 +724,57 @@ class OllamaClient {
 }
 
 class AppContainerManager {
-  private readonly apps = new Map<string, ManagedApp>()
+  private readonly apps = new Map<string, AppDefinition>()
+  private readonly tabs = new Map<string, ManagedTab>()
   private activeAppId = APP_DEFINITIONS[0].id
+  private activeTabId = ''
   private dashboardOpen = true
   private panelCollapsed = false
 
   constructor(private readonly mainWindow: BrowserWindow) {
     for (const definition of APP_DEFINITIONS) {
-      this.apps.set(definition.id, this.createManagedApp(definition))
+      this.apps.set(definition.id, definition)
     }
 
+    const initialTab = this.createManagedTab(APP_DEFINITIONS[0], APP_DEFINITIONS[0].homeUrl)
+    this.tabs.set(initialTab.id, initialTab)
+    this.activeTabId = initialTab.id
+    this.loadTab(initialTab)
     this.resize()
   }
 
   list(): AppSummary[] {
-    return Array.from(this.apps.values()).map((managedApp) => ({
-      id: managedApp.id,
-      name: managedApp.name,
-      category: managedApp.category,
-      homeUrl: managedApp.homeUrl,
-      currentUrl: managedApp.currentUrl,
-      title: managedApp.title,
-      isActive: managedApp.id === this.activeAppId && !this.dashboardOpen,
-      isLoading: managedApp.isLoading,
-      canGoBack: managedApp.view.webContents.navigationHistory.canGoBack(),
-      canGoForward: managedApp.view.webContents.navigationHistory.canGoForward()
+    const activeTab = this.getActiveTab()
+    return Array.from(this.apps.values()).map((definition) => ({
+      id: definition.id,
+      name: definition.name,
+      category: definition.category,
+      homeUrl: definition.homeUrl,
+      currentUrl: activeTab.appId === definition.id ? activeTab.url : definition.homeUrl,
+      title: activeTab.appId === definition.id ? activeTab.title : definition.name,
+      isActive: definition.id === this.activeAppId && !this.dashboardOpen,
+      isLoading: activeTab.appId === definition.id ? activeTab.isLoading : false,
+      canGoBack:
+        activeTab.appId === definition.id
+          ? activeTab.view.webContents.navigationHistory.canGoBack()
+          : false,
+      canGoForward:
+        activeTab.appId === definition.id
+          ? activeTab.view.webContents.navigationHistory.canGoForward()
+          : false
     }))
+  }
+
+  listTabs(): BrowserTabSummary[] {
+    return Array.from(this.tabs.values()).map((tab) => this.toTabSummary(tab))
   }
 
   getState(): AetherState {
     return {
       apps: this.list(),
+      tabs: this.listTabs(),
       activeAppId: this.activeAppId,
+      activeTabId: this.activeTabId,
       dashboardOpen: this.dashboardOpen,
       panelCollapsed: this.panelCollapsed
     }
@@ -627,49 +787,101 @@ class AppContainerManager {
   }
 
   activate(appId: string): void {
-    if (!this.apps.has(appId)) {
-      throw new Error(`Unknown app: ${appId}`)
+    const tab = this.listTabs().find((item) => item.appId === appId)
+    if (!tab) throw new Error(`Unknown app: ${appId}`)
+    this.activateTab(tab.id)
+  }
+
+  navigate(appId: string, rawUrl: string): void {
+    const tab = this.getActiveTab()
+    if (tab.appId !== appId) this.activate(appId)
+    this.navigateTab(this.activeTabId, rawUrl)
+  }
+
+  goBack(appId: string): void {
+    const tab = this.getActiveTab()
+    if (tab.appId !== appId) this.activate(appId)
+    this.goBackTab(this.activeTabId)
+  }
+
+  goForward(appId: string): void {
+    const tab = this.getActiveTab()
+    if (tab.appId !== appId) this.activate(appId)
+    this.goForwardTab(this.activeTabId)
+  }
+
+  createTab(input?: { url?: string }): BrowserTabSummary {
+    const definition = this.apps.get(this.activeAppId) ?? APP_DEFINITIONS[0]
+    const tab = this.createManagedTab(definition, input?.url || definition.homeUrl)
+    this.tabs.set(tab.id, tab)
+    this.activateTab(tab.id)
+    this.loadTab(tab)
+    return this.toTabSummary(tab)
+  }
+
+  activateTab(tabId: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) {
+      throw new Error(`Unknown tab: ${tabId}`)
     }
 
     this.detachActiveView()
-    this.activeAppId = appId
+    this.activeTabId = tab.id
+    this.activeAppId = tab.appId
     this.dashboardOpen = false
     this.attachActiveView()
     this.resize()
     this.emitState()
   }
 
-  navigate(appId: string, rawUrl: string): void {
-    const managedApp = this.apps.get(appId)
-    if (!managedApp) {
-      throw new Error(`Unknown app: ${appId}`)
+  closeTab(tabId: string): void {
+    const tab = this.tabs.get(tabId)
+    if (!tab) return
+
+    const wasActive = tab.id === this.activeTabId
+    let shouldAttachActiveView = false
+    this.detachView(tab)
+    this.tabs.delete(tab.id)
+    tab.view.webContents.close()
+
+    if (this.tabs.size === 0) {
+      const definition = this.apps.get(this.activeAppId) ?? APP_DEFINITIONS[0]
+      const replacement = this.createManagedTab(definition, definition.homeUrl)
+      this.tabs.set(replacement.id, replacement)
+      this.activeTabId = replacement.id
+      this.loadTab(replacement)
+      shouldAttachActiveView = true
+    } else if (wasActive) {
+      this.activeTabId = Array.from(this.tabs.keys())[this.tabs.size - 1]
+      shouldAttachActiveView = true
     }
 
-    this.activate(appId)
-    managedApp.view.webContents.loadURL(normalizeUrl(rawUrl))
+    if (!this.dashboardOpen && shouldAttachActiveView) {
+      this.attachActiveView()
+      this.resize()
+    }
+    this.emitState()
   }
 
-  goBack(appId: string): void {
-    const managedApp = this.apps.get(appId)
-    if (!managedApp) {
-      throw new Error(`Unknown app: ${appId}`)
-    }
+  navigateTab(tabId: string, rawUrl: string): void {
+    const tab = this.getTab(tabId)
+    if (tab.id !== this.activeTabId) this.activateTab(tab.id)
+    tab.view.webContents.loadURL(normalizeUrl(rawUrl))
+  }
 
-    this.activate(appId)
-    if (managedApp.view.webContents.navigationHistory.canGoBack()) {
-      managedApp.view.webContents.navigationHistory.goBack()
+  goBackTab(tabId: string): void {
+    const tab = this.getTab(tabId)
+    if (tab.id !== this.activeTabId) this.activateTab(tab.id)
+    if (tab.view.webContents.navigationHistory.canGoBack()) {
+      tab.view.webContents.navigationHistory.goBack()
     }
   }
 
-  goForward(appId: string): void {
-    const managedApp = this.apps.get(appId)
-    if (!managedApp) {
-      throw new Error(`Unknown app: ${appId}`)
-    }
-
-    this.activate(appId)
-    if (managedApp.view.webContents.navigationHistory.canGoForward()) {
-      managedApp.view.webContents.navigationHistory.goForward()
+  goForwardTab(tabId: string): void {
+    const tab = this.getTab(tabId)
+    if (tab.id !== this.activeTabId) this.activateTab(tab.id)
+    if (tab.view.webContents.navigationHistory.canGoForward()) {
+      tab.view.webContents.navigationHistory.goForward()
     }
   }
 
@@ -682,7 +894,7 @@ class AppContainerManager {
   resize(): void {
     if (this.dashboardOpen) return
 
-    const active = this.getActiveApp()
+    const active = this.getActiveTab()
     const [width, height] = this.mainWindow.getContentSize()
     const rightWidth = this.panelCollapsed ? PANEL_COLLAPSED_WIDTH : PANEL_WIDTH
 
@@ -694,24 +906,33 @@ class AppContainerManager {
     })
   }
 
-  getActiveApp(): ManagedApp {
-    const active = this.apps.get(this.activeAppId)
+  getActiveTab(): ManagedTab {
+    const active = this.tabs.get(this.activeTabId)
     if (!active) {
-      throw new Error('No active app container.')
+      throw new Error('No active browser tab.')
     }
 
     return active
   }
 
-  getCapturableApp(): ManagedApp {
+  getCapturableApp(): ManagedTab {
     if (this.dashboardOpen) {
       throw new Error('Open a website before capturing into a collection.')
     }
 
-    return this.getActiveApp()
+    return this.getActiveTab()
   }
 
-  private createManagedApp(definition: AppDefinition): ManagedApp {
+  private getTab(tabId: string): ManagedTab {
+    const tab = this.tabs.get(tabId)
+    if (!tab) {
+      throw new Error(`Unknown tab: ${tabId}`)
+    }
+    return tab
+  }
+
+  private createManagedTab(definition: AppDefinition, rawUrl: string): ManagedTab {
+    const id = crypto.randomUUID()
     const view = new WebContentsView({
       webPreferences: {
         partition: `persist:aether-app-${definition.id}`,
@@ -721,55 +942,81 @@ class AppContainerManager {
       }
     })
 
-    const managedApp: ManagedApp = {
-      ...definition,
+    const tab: ManagedTab = {
+      id,
+      appId: definition.id,
       view,
-      currentUrl: definition.homeUrl,
-      title: definition.name,
+      url: normalizeUrl(rawUrl || definition.homeUrl),
+      title: 'New tab',
       isLoading: false
     }
 
     view.setBackgroundColor('#f6f7f9')
     view.webContents.setWindowOpenHandler((details) => {
-      if (isSameAppFlow(details.url, managedApp)) {
-        view.webContents.loadURL(details.url)
-      } else {
-        shell.openExternal(details.url)
-      }
-
+      this.createTab({ url: details.url })
       return { action: 'deny' }
     })
     view.webContents.on('did-start-loading', () => {
-      managedApp.isLoading = true
+      tab.isLoading = true
       this.emitState()
     })
     view.webContents.on('did-stop-loading', () => {
-      managedApp.isLoading = false
-      this.updateNavigationState(managedApp)
+      tab.isLoading = false
+      this.updateNavigationState(tab)
     })
     view.webContents.on('page-title-updated', (_event, title) => {
-      managedApp.title = title || managedApp.name
+      tab.title = title || getTabHost(tab.url) || 'Untitled'
       this.emitState()
     })
-    view.webContents.on('did-navigate', () => this.updateNavigationState(managedApp))
-    view.webContents.on('did-navigate-in-page', () => this.updateNavigationState(managedApp))
-    view.webContents.loadURL(definition.homeUrl)
+    view.webContents.on('page-favicon-updated', (_event, favicons) => {
+      tab.favicon = favicons[0]
+      this.emitState()
+    })
+    view.webContents.on('did-navigate', () => this.updateNavigationState(tab))
+    view.webContents.on('did-navigate-in-page', () => this.updateNavigationState(tab))
 
-    return managedApp
+    return tab
+  }
+
+  private loadTab(tab: ManagedTab): void {
+    tab.view.webContents.loadURL(tab.url)
   }
 
   private attachActiveView(): void {
-    this.mainWindow.contentView.addChildView(this.getActiveApp().view)
+    this.mainWindow.contentView.addChildView(this.getActiveTab().view)
   }
 
   private detachActiveView(): void {
-    this.mainWindow.contentView.removeChildView(this.getActiveApp().view)
+    this.detachView(this.getActiveTab())
   }
 
-  private updateNavigationState(managedApp: ManagedApp): void {
-    managedApp.currentUrl = managedApp.view.webContents.getURL() || managedApp.homeUrl
-    managedApp.title = managedApp.view.webContents.getTitle() || managedApp.name
+  private detachView(tab: ManagedTab): void {
+    try {
+      this.mainWindow.contentView.removeChildView(tab.view)
+    } catch {
+      // Electron throws if the view is not currently attached.
+    }
+  }
+
+  private updateNavigationState(tab: ManagedTab): void {
+    tab.url = tab.view.webContents.getURL() || tab.url
+    tab.title = tab.view.webContents.getTitle() || getTabHost(tab.url) || 'Untitled'
     this.emitState()
+  }
+
+  private toTabSummary(tab: ManagedTab): BrowserTabSummary {
+    return {
+      id: tab.id,
+      appId: tab.appId,
+      title: tab.title,
+      url: tab.url,
+      host: getTabHost(tab.url),
+      isActive: tab.id === this.activeTabId && !this.dashboardOpen,
+      isLoading: tab.isLoading,
+      canGoBack: tab.view.webContents.navigationHistory.canGoBack(),
+      canGoForward: tab.view.webContents.navigationHistory.canGoForward(),
+      favicon: tab.favicon
+    }
   }
 
   private emitState(): void {
@@ -782,6 +1029,7 @@ class AppContainerManager {
 let appContainers: AppContainerManager | null = null
 let database: AetherDatabase | null = null
 let library: LibraryStore | null = null
+let settings: SettingsStore | null = null
 const ollamaClient = new OllamaClient()
 
 function createWindow(): void {
@@ -818,6 +1066,11 @@ function createWindow(): void {
 
   database = new AetherDatabase(join(app.getPath('userData'), 'aether-realms'))
   library = new LibraryStore(join(app.getPath('userData'), 'aether-library', 'library.json'))
+  settings = new SettingsStore(join(app.getPath('userData'), 'aether-settings', 'settings.json'))
+  settings
+    .load()
+    .then((data) => ollamaClient.setModelOverrides(data.ollama))
+    .catch((error) => console.error('Aether settings load failed:', error))
   database.migrateLegacyRealms(library).catch((error) => {
     console.error('Legacy realm migration failed:', error)
   })
@@ -825,6 +1078,7 @@ function createWindow(): void {
 }
 
 async function captureCurrentPage(input: { collectionId: string }): Promise<CaptureResult> {
+  await loadOllamaSettings()
   const containers = getContainers()
   const collection = await getLibrary().getCollection(input.collectionId)
   const active = containers.getCapturableApp()
@@ -856,7 +1110,7 @@ async function captureCurrentPage(input: { collectionId: string }): Promise<Capt
     captureId,
     title: capturedPage.title,
     url: capturedPage.url,
-    appId: active.id,
+    appId: active.appId,
     capturedAt,
     chunkIndex: index
   }))
@@ -885,6 +1139,7 @@ async function searchCollection(input: {
   query: string
   limit?: number
 }): Promise<SearchResult[]> {
+  await loadOllamaSettings()
   const query = input.query.trim()
   if (!query) return []
 
@@ -898,6 +1153,7 @@ async function askChat(input: {
   prompt: string
   includeCurrentPage?: boolean
 }): Promise<ChatResult> {
+  await loadOllamaSettings()
   const prompt = input.prompt.trim()
   if (!prompt) {
     throw new Error('Enter a question before asking Aether.')
@@ -917,7 +1173,7 @@ async function askChat(input: {
         id: `current-${active.id}`,
         collectionId: input.collectionId,
         captureId: 'current-page',
-        appId: active.id,
+        appId: active.appId,
         title: captured.title,
         url: captured.url,
         capturedAt: new Date().toISOString(),
@@ -933,7 +1189,7 @@ async function askChat(input: {
   return ollamaClient.chat(prompt, citations.slice(0, 8))
 }
 
-async function extractReadablePage(active: ManagedApp): Promise<CapturedPage> {
+async function extractReadablePage(active: ManagedTab): Promise<CapturedPage> {
   const page = (await active.view.webContents.executeJavaScriptInIsolatedWorld(999, [
     {
       code: `(() => {
@@ -984,7 +1240,27 @@ function registerIpcHandlers(): void {
   ipcMain.handle('aether:apps:go-forward', (_event, appId: string) =>
     getContainers().goForward(appId)
   )
+  ipcMain.handle('aether:tabs:list', () => getContainers().listTabs())
+  ipcMain.handle('aether:tabs:create', (_event, input?: { url?: string }) =>
+    getContainers().createTab(input)
+  )
+  ipcMain.handle('aether:tabs:activate', (_event, tabId: string) =>
+    getContainers().activateTab(tabId)
+  )
+  ipcMain.handle('aether:tabs:close', (_event, tabId: string) => getContainers().closeTab(tabId))
+  ipcMain.handle('aether:tabs:navigate', (_event, tabId: string, url: string) =>
+    getContainers().navigateTab(tabId, url)
+  )
+  ipcMain.handle('aether:tabs:go-back', (_event, tabId: string) => getContainers().goBackTab(tabId))
+  ipcMain.handle('aether:tabs:go-forward', (_event, tabId: string) =>
+    getContainers().goForwardTab(tabId)
+  )
   ipcMain.handle('aether:dashboard:open', () => getContainers().openDashboard())
+  ipcMain.handle('aether:hub:list', () => getLibrary().listShortcuts())
+  ipcMain.handle('aether:hub:create', (_event, input: { title: string; url: string }) =>
+    getLibrary().createShortcut(input)
+  )
+  ipcMain.handle('aether:hub:delete', (_event, id: string) => getLibrary().deleteShortcut(id))
   ipcMain.handle('aether:collections:list', () => getLibrary().listCollections())
   ipcMain.handle(
     'aether:collections:create',
@@ -1019,7 +1295,18 @@ function registerIpcHandlers(): void {
     (_event, input: { collectionId: string; prompt: string; includeCurrentPage?: boolean }) =>
       askChat(input)
   )
-  ipcMain.handle('aether:system:status', () => ollamaClient.status(getLibrary(), getDatabase()))
+  ipcMain.handle('aether:system:status', async () => {
+    await loadOllamaSettings()
+    return ollamaClient.status(getLibrary(), getDatabase())
+  })
+  ipcMain.handle(
+    'aether:system:update-models',
+    async (_event, input: { embeddingModel?: string; chatModel?: string }) => {
+      const nextSettings = await getSettings().updateModels(input)
+      ollamaClient.setModelOverrides(nextSettings.ollama)
+      return ollamaClient.updateModels(getLibrary(), getDatabase(), input)
+    }
+  )
   ipcMain.handle('aether:layout:set-panel-collapsed', (_event, collapsed: boolean) =>
     getContainers().setPanelCollapsed(collapsed)
   )
@@ -1046,6 +1333,18 @@ function getLibrary(): LibraryStore {
   return library
 }
 
+function getSettings(): SettingsStore {
+  if (!settings) {
+    throw new Error('Aether settings are not ready.')
+  }
+  return settings
+}
+
+async function loadOllamaSettings(): Promise<void> {
+  const data = await getSettings().load()
+  ollamaClient.setModelOverrides(data.ollama)
+}
+
 function normalizeCapturedText(text: string): string {
   return text
     .replace(/\r/g, '')
@@ -1057,22 +1356,25 @@ function normalizeCapturedText(text: string): string {
 
 function normalizeUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim()
-  if (/^https?:\/\//i.test(trimmed)) {
+  if (!trimmed) return 'https://www.google.com'
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
     return trimmed
+  }
+  if (/\s/.test(trimmed) || !/[.:]/.test(trimmed)) {
+    return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`
+  }
+  if (/^(localhost|127\.0\.0\.1|\[?::1\]?)(:\d+)?(\/.*)?$/i.test(trimmed)) {
+    return `http://${trimmed}`
   }
 
   return `https://${trimmed}`
 }
 
-function isSameAppFlow(url: string, managedApp: ManagedApp): boolean {
+function getTabHost(url: string): string {
   try {
-    const next = new URL(url)
-    const home = new URL(managedApp.homeUrl)
-    const current = managedApp.currentUrl ? new URL(managedApp.currentUrl) : home
-
-    return next.hostname === home.hostname || next.hostname === current.hostname
+    return new URL(url).hostname.replace(/^www\./, '')
   } catch {
-    return false
+    return ''
   }
 }
 
