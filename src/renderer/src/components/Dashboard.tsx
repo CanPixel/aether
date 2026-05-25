@@ -12,15 +12,15 @@ type CollectionDialogState =
 
 type DashboardProps = {
   busy: string | null
-  captures: CaptureSummary[]
   capturesByCollection: Record<string, CaptureSummary[]>
   collections: CollectionSummary[]
   deleteCapture: (captureId: string) => Promise<void>
   deleteShortcut: (shortcutId: string) => Promise<void>
+  moveCapture: (captureId: string, collectionId: string) => Promise<void>
+  openCapture: (capture: CaptureSummary) => Promise<void>
   openShortcut: (shortcut: HubShortcutSummary) => Promise<void>
   openCollectionDialog: (state: CollectionDialogState) => void
   saveActiveTabToHub: () => Promise<void>
-  selectedCollection?: CollectionSummary
   selectedCollectionId: string
   shortcuts: HubShortcutSummary[]
   selectCollection: (value: string) => Promise<void>
@@ -32,15 +32,18 @@ export function Dashboard({
   collections,
   deleteCapture,
   deleteShortcut,
+  moveCapture,
+  openCapture,
   openShortcut,
   openCollectionDialog,
   saveActiveTabToHub,
-  selectedCollection,
   selectedCollectionId,
   shortcuts,
   selectCollection
 }: DashboardProps): React.JSX.Element {
   const [openCollectionId, setOpenCollectionId] = useState(selectedCollectionId)
+  const [draggedCapture, setDraggedCapture] = useState<CaptureSummary | null>(null)
+  const [dragOverCollectionId, setDragOverCollectionId] = useState('')
   const aetherMarkSrc = new URL('aether-mark.svg', window.location.href).toString()
   const wavyLinesSrc = new URL('wavy-lines.svg', window.location.href).toString()
 
@@ -148,36 +151,86 @@ export function Dashboard({
             {collections.map((collection) => {
               const collectionCaptures = capturesByCollection[collection.id] ?? []
               const isOpen = openCollectionId === collection.id
+              const canDropCapture =
+                Boolean(draggedCapture) && draggedCapture?.collectionId !== collection.id
               return (
                 <article
-                  className={`collection-accordion ${isOpen ? 'open' : ''}`}
+                  className={`collection-accordion ${isOpen ? 'open' : ''} ${
+                    canDropCapture && dragOverCollectionId === collection.id ? 'drop-target' : ''
+                  }`}
+                  onDragEnter={(event) => {
+                    if (!canDropCapture) return
+                    event.preventDefault()
+                    setDragOverCollectionId(collection.id)
+                  }}
+                  onDragOver={(event) => {
+                    if (!canDropCapture) return
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                  }}
+                  onDragLeave={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                      setDragOverCollectionId('')
+                    }
+                  }}
+                  onDrop={async (event) => {
+                    event.preventDefault()
+                    setDragOverCollectionId('')
+                    const captureId =
+                      event.dataTransfer.getData('application/x-aether-capture') ||
+                      draggedCapture?.id
+                    if (!captureId || !canDropCapture) return
+
+                    await moveCapture(captureId, collection.id)
+                    setDraggedCapture(null)
+                    setOpenCollectionId(collection.id)
+                  }}
                   key={collection.id}
                 >
-                  <button
+                  <div
                     className={`collection-row ${collection.id === selectedCollectionId ? 'active' : ''}`}
-                    onClick={() => {
-                      selectCollection(collection.id)
-                      setOpenCollectionId((current) =>
-                        current === collection.id ? '' : collection.id
-                      )
-                    }}
-                    type="button"
                   >
-                    <span className="collection-glyph">
-                      <CollectionIcon icon={collection.icon} />
-                    </span>
-                    <span className="collection-main">
-                      <strong>{collection.name}</strong>
-                      <small>
-                        {collection.description || 'Captured sources and local context'}
-                      </small>
-                    </span>
-                    <span className="collection-meta">
-                      <strong>{collection.captureCount} captures</strong>
-                      <small>{collection.chunkCount} chunks</small>
-                    </span>
-                    <ChevronRightIcon />
-                  </button>
+                    <button
+                      className="collection-toggle"
+                      onClick={() => {
+                        selectCollection(collection.id)
+                        setOpenCollectionId((current) =>
+                          current === collection.id ? '' : collection.id
+                        )
+                      }}
+                      type="button"
+                    >
+                      <span className="collection-glyph">
+                        <CollectionIcon icon={collection.icon} />
+                      </span>
+                      <span className="collection-main">
+                        <strong>{collection.name}</strong>
+                        <small>
+                          {collection.description || 'Captured sources and local context'}
+                        </small>
+                      </span>
+                      <span className="collection-meta">
+                        <strong>{collection.captureCount} captures</strong>
+                        <small>{collection.chunkCount} chunks</small>
+                      </span>
+                      <ChevronRightIcon />
+                    </button>
+                    <div className="collection-row-actions">
+                      <button
+                        onClick={() => openCollectionDialog({ mode: 'edit', collection })}
+                        type="button"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="danger-button"
+                        onClick={() => openCollectionDialog({ mode: 'delete', collection })}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
                   <div className="collection-captures" hidden={!isOpen}>
                     {collectionCaptures.length === 0 ? (
                       <div className="empty-row">No captures in this hub yet.</div>
@@ -188,7 +241,19 @@ export function Dashboard({
                             capture={capture}
                             collections={getCaptureCollections(capture)}
                             deleteCapture={deleteCapture}
+                            dragging={draggedCapture?.id === capture.id}
                             key={capture.id}
+                            openCapture={openCapture}
+                            onDragEnd={() => {
+                              setDraggedCapture(null)
+                              setDragOverCollectionId('')
+                            }}
+                            onDragStart={(event) => {
+                              setDraggedCapture(capture)
+                              event.dataTransfer.effectAllowed = 'move'
+                              event.dataTransfer.setData('application/x-aether-capture', capture.id)
+                              event.dataTransfer.setData('text/plain', capture.title)
+                            }}
                           />
                         ))}
                       </div>
@@ -199,33 +264,6 @@ export function Dashboard({
             })}
           </div>
         )}
-
-        {selectedCollection && (
-          <div className="collection-actions">
-            <span>
-              Managing <strong>{selectedCollection.name}</strong>
-            </span>
-            <div>
-              <button
-                onClick={() =>
-                  openCollectionDialog({ mode: 'edit', collection: selectedCollection })
-                }
-                type="button"
-              >
-                Rename
-              </button>
-              <button
-                className="danger-button"
-                onClick={() =>
-                  openCollectionDialog({ mode: 'delete', collection: selectedCollection })
-                }
-                type="button"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        )}
       </section>
     </div>
   )
@@ -234,19 +272,40 @@ export function Dashboard({
 function CaptureCard({
   capture,
   collections,
-  deleteCapture
+  deleteCapture,
+  dragging,
+  onDragEnd,
+  onDragStart,
+  openCapture
 }: {
   capture: CaptureSummary
   collections: CollectionSummary[]
   deleteCapture: (captureId: string) => Promise<void>
+  dragging: boolean
+  onDragEnd: () => void
+  onDragStart: (event: React.DragEvent<HTMLElement>) => void
+  openCapture: (capture: CaptureSummary) => Promise<void>
 }): React.JSX.Element {
   return (
-    <article className="recent-card">
+    <article
+      className={`recent-card ${dragging ? 'dragging' : ''}`}
+      draggable
+      onDragEnd={onDragEnd}
+      onDragStart={onDragStart}
+    >
       <div className="recent-source">
-        <span>{getCaptureHost(capture.url)}</span>
+        <button
+          className="capture-link-button"
+          draggable={false}
+          onClick={() => openCapture(capture)}
+          type="button"
+        >
+          {getCaptureHost(capture.url)}
+        </button>
         <button
           aria-label={`Delete ${capture.title}`}
           className="recent-delete"
+          draggable={false}
           onClick={() => deleteCapture(capture.id)}
           title="Delete capture"
           type="button"

@@ -140,6 +140,7 @@ export interface AetherApi {
   }
   capture: {
     currentPage(input: { collectionId: string }): Promise<CaptureResult>
+    move(input: { captureId: string; collectionId: string }): Promise<CaptureSummary>
     delete(captureId: string): Promise<void>
   }
   search: {

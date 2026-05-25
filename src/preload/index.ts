@@ -35,6 +35,7 @@ const api: AetherApi = {
   },
   capture: {
     currentPage: (input) => ipcRenderer.invoke('aether:capture:current-page', input),
+    move: (input) => ipcRenderer.invoke('aether:capture:move', input),
     delete: (captureId) => ipcRenderer.invoke('aether:capture:delete', captureId)
   },
   search: {

@@ -269,6 +269,38 @@ class LibraryStore {
     return capture
   }
 
+  async moveCapture(captureId: string, collectionId: string): Promise<CaptureSummary> {
+    const data = await this.load()
+    const capture = data.captures.find((item) => item.id === captureId)
+    if (!capture) {
+      throw new Error('Capture not found.')
+    }
+
+    const targetCollection = data.collections.find((item) => item.id === collectionId)
+    if (!targetCollection) {
+      throw new Error('Target collection not found.')
+    }
+
+    if (capture.collectionId === collectionId) return capture
+
+    const sourceCollection = data.collections.find((item) => item.id === capture.collectionId)
+    const now = new Date().toISOString()
+
+    if (sourceCollection) {
+      sourceCollection.captureCount = Math.max(0, sourceCollection.captureCount - 1)
+      sourceCollection.chunkCount = Math.max(0, sourceCollection.chunkCount - capture.chunkCount)
+      sourceCollection.updatedAt = now
+    }
+
+    capture.collectionId = collectionId
+    targetCollection.captureCount += 1
+    targetCollection.chunkCount += capture.chunkCount
+    targetCollection.updatedAt = now
+
+    await this.save(data)
+    return capture
+  }
+
   async addMigratedCollection(
     collection: CollectionSummary,
     captures: CaptureSummary[],
@@ -418,6 +450,16 @@ class AetherDatabase {
 
     const table = await this.openChunksTable()
     await table.delete(`captureId = '${escapeSql(captureId)}'`)
+  }
+
+  async moveCapture(captureId: string, collectionId: string): Promise<void> {
+    if (!(await this.hasTable(CHUNKS_TABLE))) return
+
+    const table = await this.openChunksTable()
+    await table.update({
+      where: `captureId = '${escapeSql(captureId)}'`,
+      values: { collectionId }
+    })
   }
 
   async deleteCollection(collectionId: string): Promise<void> {
@@ -1327,6 +1369,15 @@ function registerIpcHandlers(): void {
   )
   ipcMain.handle('aether:capture:current-page', (_event, input: { collectionId: string }) =>
     captureCurrentPage(input)
+  )
+  ipcMain.handle(
+    'aether:capture:move',
+    async (_event, input: { captureId: string; collectionId: string }) => {
+      await getLibrary().getCollection(input.collectionId)
+      const capture = await getLibrary().moveCapture(input.captureId, input.collectionId)
+      await getDatabase().moveCapture(input.captureId, input.collectionId)
+      return capture
+    }
   )
   ipcMain.handle('aether:capture:delete', async (_event, captureId: string) => {
     await getDatabase().deleteCapture(captureId)
