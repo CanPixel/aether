@@ -66,7 +66,7 @@ export function BrowserChrome({
   onSelectCollection
 }: BrowserChromeProps): React.JSX.Element {
   return (
-    <div className="browser-chrome">
+    <div className={`browser-chrome ${dashboardOpen ? 'dashboard-open' : ''}`}>
       <form className="address-bar" onSubmit={onNavigate}>
         <div className="history-controls" aria-label="Browser history controls">
           <button
@@ -112,7 +112,9 @@ export function BrowserChrome({
       <div className="tab-strip" aria-label="Browser tabs">
         {tabs.map((tab) => (
           <button
-            className={`tab-chip ${tab.isActive && !dashboardOpen ? 'active' : ''}`}
+            className={`tab-chip ${tabs.length > 1 ? 'closable' : ''} ${
+              tab.isActive && !dashboardOpen ? 'active' : ''
+            }`}
             key={tab.id}
             onClick={() => onSelectTab(tab.id)}
             title={tab.title}
@@ -128,65 +130,69 @@ export function BrowserChrome({
               )}
             </span>
             <span className="tab-title">{tab.title || tab.host || 'New tab'}</span>
-            <span
-              className="tab-close"
-              onClick={(event) => {
-                event.stopPropagation()
-                onCloseTab(tab.id)
-              }}
-              role="button"
-              tabIndex={0}
-              title="Close tab"
-            >
-              <CloseIcon />
-            </span>
+            {tabs.length > 1 && (
+              <span
+                className="tab-close"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onCloseTab(tab.id)
+                }}
+                role="button"
+                tabIndex={0}
+                title="Close tab"
+              >
+                <CloseIcon />
+              </span>
+            )}
           </button>
         ))}
         <button className="new-tab-button" onClick={onCreateTab} title="New tab" type="button">
           <PlusIcon />
         </button>
       </div>
-      <div className="quick-action-row" aria-label="AI quick actions">
-        {quickActions.map((action) => (
-          <button
-            className="quick-action-chip"
-            key={action.id}
-            onClick={() => onQuickAction(action)}
-            type="button"
-          >
-            {action.label}
-          </button>
-        ))}
-        <div className="browser-capture-dock">
-          <select
-            aria-label="Capture collection"
-            value={selectedCollectionId}
-            onChange={(event) => onSelectCollection(event.target.value)}
-          >
-            <option value="" disabled>
-              Collection
-            </option>
-            {collections.map((collection) => (
-              <option key={collection.id} value={collection.id}>
-                {collection.name}
+      {!dashboardOpen && (
+        <div className="quick-action-row" aria-label="AI quick actions">
+          {quickActions.map((action) => (
+            <button
+              className="quick-action-chip"
+              key={action.id}
+              onClick={() => onQuickAction(action)}
+              type="button"
+            >
+              {action.label}
+            </button>
+          ))}
+          <div className="browser-capture-dock">
+            <select
+              aria-label="Capture collection"
+              value={selectedCollectionId}
+              onChange={(event) => onSelectCollection(event.target.value)}
+            >
+              <option value="" disabled>
+                Collection
               </option>
-            ))}
-          </select>
-          {/* <button type="button" onClick={onCreateCollection}>
+              {collections.map((collection) => (
+                <option key={collection.id} value={collection.id}>
+                  {collection.name}
+                </option>
+              ))}
+            </select>
+            {/* <button type="button" onClick={onCreateCollection}>
             New
           </button> */}
-          <button
-            className="capture-page-button"
-            disabled={Boolean(busy) || capturesBlocked}
-            onClick={onCapture}
-            title={lastCapture ? `Last saved to ${lastCapture.collectionName}` : 'Capture page'}
-            type="button"
-          >
-            Capture
-          </button>
-          {/* <span>{selectedCollection?.name ?? 'No hub'}</span> */}
+            <button
+              className="capture-page-button"
+              disabled={Boolean(busy) || capturesBlocked}
+              onClick={onCapture}
+              title={lastCapture ? `Last saved to ${lastCapture.collectionName}` : 'Capture page'}
+              type="button"
+            >
+              Capture
+            </button>
+            {/* <span>{selectedCollection?.name ?? 'No hub'}</span> */}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

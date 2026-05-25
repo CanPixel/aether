@@ -24,7 +24,6 @@ function App(): React.JSX.Element {
   const [tabs, setTabs] = useState<BrowserTabSummary[]>([])
   const [shortcuts, setShortcuts] = useState<HubShortcutSummary[]>([])
   const [collections, setCollections] = useState<CollectionSummary[]>([])
-  const [captures, setCaptures] = useState<CaptureSummary[]>([])
   const [capturesByCollection, setCapturesByCollection] = useState<
     Record<string, CaptureSummary[]>
   >({})
@@ -72,7 +71,7 @@ function App(): React.JSX.Element {
   const addressValue = addressFocused
     ? addressDraft
     : dashboardOpen
-      ? 'Æther://dashboard'
+      ? 'æther://dashboard'
       : (activeTab?.url ?? '')
 
   const refreshCollections = useCallback(
@@ -101,7 +100,6 @@ function App(): React.JSX.Element {
             : (nextCollections[0]?.id ?? '')
 
       setSelectedCollectionId(nextSelected)
-      setCaptures(nextSelected ? (nextCapturesByCollection[nextSelected] ?? []) : [])
       setAskCollectionId((current) =>
         current && nextCollections.some((collection) => collection.id === current)
           ? current
@@ -291,9 +289,6 @@ function App(): React.JSX.Element {
 
   async function selectCollection(collectionId: string): Promise<void> {
     setSelectedCollectionId(collectionId)
-    const nextCaptures =
-      capturesByCollection[collectionId] ?? (await window.aether.collections.captures(collectionId))
-    setCaptures(collectionId ? nextCaptures : [])
     setAskCollectionId(collectionId)
     setSearchResults([])
     setChatResult(null)
@@ -326,6 +321,16 @@ function App(): React.JSX.Element {
     })
   }
 
+  async function moveCapture(captureId: string, collectionId: string): Promise<void> {
+    await runTask('Moving capture', async () => {
+      const capture = await window.aether.capture.move({ captureId, collectionId })
+      await refreshCollections(collectionId)
+      setSearchResults([])
+      setChatResult(null)
+      setNotice(`Moved ${capture.title}.`)
+    })
+  }
+
   async function search(event?: FormEvent): Promise<void> {
     event?.preventDefault()
     if (!selectedCollection) return
@@ -348,8 +353,9 @@ function App(): React.JSX.Element {
   }
 
   async function askPrompt(prompt: string): Promise<void> {
-    const collectionId = askCurrentPageOnly ? undefined : askCollection?.id
-    const includeCurrentPage = askCurrentPageOnly || askIncludeCurrentPage
+    const hasKnowledgeHubs = collections.length > 0
+    const collectionId = hasKnowledgeHubs && !askCurrentPageOnly ? askCollection?.id : undefined
+    const includeCurrentPage = !hasKnowledgeHubs || askCurrentPageOnly || askIncludeCurrentPage
 
     if (!collectionId && !includeCurrentPage) {
       setPanelMode('ask')
@@ -415,6 +421,11 @@ function App(): React.JSX.Element {
 
   async function openShortcut(shortcut: HubShortcutSummary): Promise<void> {
     await createTab({ url: shortcut.url })
+    setDashboardOpen(false)
+  }
+
+  async function openCapture(capture: CaptureSummary): Promise<void> {
+    await createTab({ url: capture.url })
     setDashboardOpen(false)
   }
 
@@ -535,15 +546,15 @@ function App(): React.JSX.Element {
         {dashboardOpen ? (
           <Dashboard
             busy={busy}
-            captures={captures}
             capturesByCollection={capturesByCollection}
             collections={collections}
             deleteCapture={deleteCapture}
             deleteShortcut={deleteShortcut}
+            moveCapture={moveCapture}
+            openCapture={openCapture}
             openShortcut={openShortcut}
             openCollectionDialog={setCollectionDialog}
             saveActiveTabToHub={saveActiveTabToHub}
-            selectedCollection={selectedCollection}
             selectedCollectionId={selectedCollectionId}
             shortcuts={shortcuts}
             selectCollection={selectCollection}

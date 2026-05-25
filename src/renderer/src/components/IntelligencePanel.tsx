@@ -70,9 +70,12 @@ export function IntelligencePanel({
 }: IntelligencePanelProps): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const showTooltips = dashboardOpen
-  const hasAskContext = askCurrentPageOnly
+  const hasKnowledgeHubs = collections.length > 0
+  const hasAskContext = !hasKnowledgeHubs
     ? canUseCurrentPage
-    : Boolean(askCollectionId) || (askIncludeCurrentPage && canUseCurrentPage)
+    : askCurrentPageOnly
+      ? canUseCurrentPage
+      : Boolean(askCollectionId) || (askIncludeCurrentPage && canUseCurrentPage)
 
   return (
     <aside className={`intelligence-panel ${panelCollapsed ? 'collapsed' : ''}`}>
@@ -123,11 +126,6 @@ export function IntelligencePanel({
           ))}
         </div>
 
-        <section className="panel-context-line">
-          <span>Context</span>
-          <strong>{selectedCollection?.name ?? 'No collection selected'}</strong>
-        </section>
-
         {mode === 'search' && (
           <section className="panel-section mode-section">
             <div className="section-heading">
@@ -177,6 +175,11 @@ export function IntelligencePanel({
               <textarea
                 value={chatPrompt}
                 onChange={(event) => onChatPromptChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' || event.shiftKey || !chatPrompt.trim()) return
+                  event.preventDefault()
+                  event.currentTarget.form?.requestSubmit()
+                }}
                 placeholder="Ask this collection and current page"
               />
               <button
@@ -233,57 +236,56 @@ function AskContextControls({
   onAskCurrentPageOnlyChange: (value: boolean) => void
   onAskIncludeCurrentPageChange: (value: boolean) => void
 }): React.JSX.Element {
-  return (
-    <section className="ask-context-controls" aria-label="Ask context">
-      <div className="ask-context-mode">
-        <button
-          className={!askCurrentPageOnly ? 'active' : ''}
-          onClick={() => onAskCurrentPageOnlyChange(false)}
-          type="button"
-        >
-          Knowledge context
-        </button>
-        <button
-          className={askCurrentPageOnly ? 'active' : ''}
-          disabled={!canUseCurrentPage}
-          onClick={() => onAskCurrentPageOnlyChange(true)}
-          type="button"
-        >
-          Current page only
-        </button>
-      </div>
+  const hasKnowledgeHubs = collections.length > 0
+  const hasManyHubs = collections.length > 6
+  const currentPageActive = !hasKnowledgeHubs || askCurrentPageOnly || askIncludeCurrentPage
 
-      {!askCurrentPageOnly && (
+  return (
+    <section
+      className={`ask-context-controls ${hasKnowledgeHubs ? 'has-hubs' : 'current-only'} ${
+        hasManyHubs ? 'has-many-hubs' : ''
+      }`}
+      aria-label="Ask context"
+    >
+      {hasKnowledgeHubs ? (
         <>
+          <button
+            className={`ask-current-button ${currentPageActive ? 'active' : ''}`}
+            disabled={!canUseCurrentPage}
+            onClick={() => {
+              onAskCurrentPageOnlyChange(false)
+              onAskIncludeCurrentPageChange(!currentPageActive)
+            }}
+            type="button"
+          >
+            Current page
+          </button>
           <div className="ask-hub-picker">
-            {collections.length === 0 ? (
-              <div className="empty-row">No knowledge hubs available.</div>
-            ) : (
-              collections.map((collection) => (
-                <button
-                  className={collection.id === askCollectionId ? 'active' : ''}
-                  key={collection.id}
-                  onClick={() => onAskCollectionChange(collection.id)}
-                  type="button"
-                >
-                  <span>
-                    <CollectionIcon icon={collection.icon} />
-                  </span>
-                  <strong>{collection.name}</strong>
-                </button>
-              ))
-            )}
+            {collections.map((collection) => (
+              <button
+                className={collection.id === askCollectionId ? 'active' : ''}
+                key={collection.id}
+                onClick={() => {
+                  onAskCurrentPageOnlyChange(false)
+                  onAskCollectionChange(collection.id === askCollectionId ? '' : collection.id)
+                }}
+                type="button"
+              >
+                <span>
+                  <CollectionIcon icon={collection.icon} />
+                </span>
+                <strong>{collection.name}</strong>
+              </button>
+            ))}
           </div>
-          <label className="ask-current-toggle">
-            <input
-              checked={askIncludeCurrentPage}
-              disabled={!canUseCurrentPage}
-              onChange={(event) => onAskIncludeCurrentPageChange(event.target.checked)}
-              type="checkbox"
-            />
-            Include current page
-          </label>
         </>
+      ) : (
+        <div className="ask-current-default">
+          <span>
+            <SparkIcon />
+          </span>
+          <strong>Current page</strong>
+        </div>
       )}
     </section>
   )

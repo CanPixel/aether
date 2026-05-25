@@ -896,31 +896,94 @@ button {
   border: 1px solid rgba(145, 166, 195, 0.16);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.34);
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.collection-accordion.drop-target {
+  border-color: rgba(78, 178, 210, 0.44);
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.9), transparent 34%),
+    rgba(231, 249, 255, 0.72);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    0 18px 38px rgba(68, 153, 197, 0.14);
+  transform: translateY(-1px);
 }
 
 .collection-row {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 128px 20px;
+  grid-template-columns: minmax(0, 1fr) auto;
   width: 100%;
-  min-height: 82px;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
   border: 0;
-  padding: 14px 16px;
+  padding: 8px 10px 8px 0;
   background: transparent;
-  text-align: left;
   box-shadow: none;
 }
 
-.collection-row > svg {
+.collection-toggle {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 118px 20px;
+  min-height: 74px;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  border: 0;
+  padding: 10px 0 10px 16px;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+
+.collection-toggle > svg {
   width: 18px;
   height: 18px;
   color: var(--muted);
   transition: transform 180ms ease;
 }
 
-.collection-accordion.open .collection-row > svg {
+.collection-accordion.open .collection-toggle > svg {
   transform: rotate(90deg);
+}
+
+.collection-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.collection-row-actions button {
+  height: 28px;
+  border-radius: 8px;
+  padding: 0 9px;
+  font-size: 11px;
+  box-shadow: none;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
+}
+
+.collection-row-actions button:hover {
+  border-color: rgba(79, 174, 202, 0.28);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.9), transparent 40%),
+    rgba(236, 249, 255, 0.76);
+  color: var(--accent-strong);
+  box-shadow: 0 8px 18px rgba(74, 145, 194, 0.1);
+  transform: translateY(-1px);
+}
+
+.collection-row-actions .danger-button:hover {
+  border-color: rgba(184, 91, 89, 0.25);
+  background: rgba(255, 239, 239, 0.72);
+  color: var(--danger);
 }
 
 .collection-captures {
@@ -986,6 +1049,26 @@ button {
   white-space: nowrap;
 }
 
+.capture-link-button {
+  cursor: pointer;
+  height: auto;
+  max-width: 100%;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 760;
+  box-shadow: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capture-link-button:hover {
+  text-decoration: underline;
+}
+
 .recent-captures {
   margin-top: 28px;
   padding: 26px 28px;
@@ -1033,6 +1116,29 @@ button {
   border-radius: 14px;
   padding: 14px;
   background: rgba(255, 255, 255, 0.62);
+  cursor: grab;
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease,
+    opacity 150ms ease;
+}
+
+.recent-card:hover {
+  border-color: rgba(79, 174, 202, 0.25);
+  background:
+    radial-gradient(circle at 22% 15%, rgba(255, 255, 255, 0.9), transparent 32%),
+    rgba(248, 253, 255, 0.78);
+  box-shadow: 0 14px 30px rgba(71, 122, 174, 0.12);
+  transform: translateY(-2px);
+}
+
+.recent-card.dragging {
+  border-color: rgba(79, 174, 202, 0.34);
+  opacity: 0.55;
+  cursor: grabbing;
+  transform: scale(0.985);
 }
 
 .recent-source,
@@ -1319,6 +1425,12 @@ button {
   padding: 14px;
 }
 
+.panel-section.mode-section {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
 .section-heading {
   margin-bottom: 10px;
 }
@@ -1371,56 +1483,96 @@ button {
 }
 
 .chat-section {
+  flex: 0 0 auto;
   min-height: 0;
+}
+
+.chat-section:has(.ask-context-controls.has-many-hubs) {
+  flex: 1 1 auto;
 }
 
 .ask-context-controls {
   display: grid;
+  flex: 0 0 auto;
+  grid-template-rows: auto minmax(0, auto);
   gap: 9px;
+  min-height: 0;
   margin-bottom: 10px;
 }
 
-.ask-context-mode {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
-  border: 1px solid rgba(133, 158, 193, 0.16);
-  border-radius: 11px;
-  padding: 4px;
-  background: rgba(255, 255, 255, 0.42);
+.ask-context-controls.has-many-hubs {
+  flex: 1 1 auto;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
-.ask-context-mode button,
-.ask-hub-picker button {
+.ask-current-button,
+.ask-hub-picker button,
+.ask-current-default {
   min-width: 0;
   box-shadow: none;
 }
 
-.ask-context-mode button {
-  height: 28px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
+.ask-current-button,
+.ask-current-default {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 780;
 }
 
-.ask-context-mode button.active {
-  background: rgba(255, 255, 255, 0.86);
-  color: var(--ink);
+.ask-current-button {
+  border-color: rgba(133, 158, 193, 0.16);
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.ask-current-button.active,
+.ask-current-button:hover,
+.ask-current-default {
+  border-color: rgba(79, 174, 202, 0.28);
+  background: rgba(238, 250, 255, 0.78);
+  color: var(--accent-strong);
+}
+
+.ask-current-default {
+  gap: 8px;
+}
+
+.ask-current-default span {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.ask-current-default svg {
+  width: 15px;
+  height: 15px;
 }
 
 .ask-hub-picker {
   display: grid;
-  max-height: 112px;
+  align-content: start;
+  max-height: none;
+  min-height: 0;
   gap: 6px;
+  overflow: visible;
+}
+
+.ask-context-controls.has-many-hubs .ask-hub-picker {
+  max-height: none;
   overflow: auto;
 }
 
 .ask-hub-picker button {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  height: 36px;
+  grid-template-columns: 30px minmax(0, 1fr);
+  min-height: 38px;
   align-items: center;
   gap: 8px;
   border-color: rgba(133, 158, 193, 0.16);
@@ -1442,42 +1594,28 @@ button {
 .ask-hub-picker span {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 9px;
   background: rgba(255, 255, 255, 0.76);
 }
 
 .ask-hub-picker svg {
-  width: 16px;
-  height: 16px;
+  width: 17px;
+  height: 17px;
 }
 
 .ask-hub-picker strong {
   overflow: hidden;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 780;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ask-current-toggle {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 740;
-}
-
-.ask-current-toggle input {
-  width: 14px;
-  height: 14px;
-  box-shadow: none;
-}
-
 .chat-form {
   display: grid;
+  flex: 0 0 auto;
   gap: 8px;
 }
 
@@ -1743,6 +1881,10 @@ button {
   backdrop-filter: blur(24px) saturate(1.35);
 }
 
+.browser-chrome.dashboard-open {
+  grid-template-rows: 42px 30px 0;
+}
+
 .browser-chrome .address-bar {
   position: relative;
   top: auto;
@@ -1794,7 +1936,7 @@ button {
 }
 
 .tab-chip {
-  grid-template-columns: 16px minmax(42px, 1fr) 16px;
+  grid-template-columns: 16px minmax(42px, 1fr);
   gap: 5px;
   width: min(188px, 24vw);
   border-color: rgba(120, 150, 190, 0.16);
@@ -1808,6 +1950,10 @@ button {
     background 140ms ease,
     box-shadow 140ms ease,
     color 140ms ease;
+}
+
+.tab-chip.closable {
+  grid-template-columns: 16px minmax(42px, 1fr) 16px;
 }
 
 .tab-chip.active,
@@ -2156,36 +2302,6 @@ button {
   height: 13px;
 }
 
-.collection-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  margin-top: 14px;
-  border-top: 1px solid rgba(145, 166, 195, 0.18);
-  padding-top: 14px;
-}
-
-.collection-actions span {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.collection-actions strong {
-  color: var(--ink);
-}
-
-.collection-actions div {
-  display: flex;
-  gap: 8px;
-}
-
-.collection-actions button,
 .empty-state button {
   height: 30px;
   box-shadow: none;
