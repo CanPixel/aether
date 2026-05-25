@@ -1442,6 +1442,17 @@ button {
   margin: 4px 0;
 }
 
+.answer-inline-math {
+  display: inline;
+  border-radius: 5px;
+  padding: 0 3px;
+  background: rgba(229, 248, 255, 0.58);
+  color: #29465f;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 0.96em;
+  font-weight: 680;
+}
+
 .answer-heading {
   margin: 12px 0 6px;
   color: var(--ink);

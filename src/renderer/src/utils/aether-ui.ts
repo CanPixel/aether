@@ -29,8 +29,7 @@ export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {
       id: 'key-points',
       label: 'Key points',
       prompt: 'Extract the key points from the current page and explain what matters most.'
-    },
-    { id: 'capture', label: 'Capture', capture: true }
+    }
   ]
 
   if (activeTab.host.includes('wikipedia.org')) {
@@ -53,8 +52,7 @@ export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {
         label: 'Related concepts',
         prompt:
           'Identify related concepts, people, places, and terms from this Wikipedia article that are worth exploring next.'
-      },
-      { id: 'capture', label: 'Capture', capture: true }
+      }
     ]
   }
 
@@ -72,8 +70,7 @@ export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {
         label: 'Risks',
         prompt:
           'Review this GitHub page for risks, open questions, missing setup details, or maintenance concerns.'
-      },
-      { id: 'capture', label: 'Capture', capture: true }
+      }
     ]
   }
 
