@@ -3,7 +3,7 @@
 :root {
   --rail-width: 76px;
   --titlebar-height: 34px;
-  --nav-height: 96px;
+  --nav-height: 100px;
   --top-bar-height: 130px;
   --panel-width: 404px;
   --panel-collapsed-width: 58px;
@@ -1347,7 +1347,7 @@ button {
   align-items: center;
   gap: 7px;
   min-width: 0;
-  padding: 0 14px 7px;
+  padding: 5px 14px 7px;
   overflow: hidden;
 }
 
