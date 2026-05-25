@@ -4,8 +4,8 @@
   "productName": "Æther",
   "description": "Local AI-powered browser and knowledge hub",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "canpixel.com",
+  "homepage": "https://canpixel.com",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
@@ -27,6 +27,7 @@
     "@lancedb/lancedb": "^0.27.2",
     "@langchain/community": "^1.1.28",
     "@mozilla/readability": "^0.6.0",
+    "apache-arrow": "18.0.0",
     "jsdom": "^29.1.1"
   },
   "devDependencies": {

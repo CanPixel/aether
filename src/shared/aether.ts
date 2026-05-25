@@ -50,6 +50,11 @@ export interface CaptureSummary {
   appId: string
   capturedAt: string
   chunkCount: number
+  metadata?: {
+    note?: string
+    summary?: string
+    tags?: string[]
+  }
 }
 
 export interface CaptureResult extends CaptureSummary {
