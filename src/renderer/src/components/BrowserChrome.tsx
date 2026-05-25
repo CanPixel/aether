@@ -89,7 +89,7 @@ export function BrowserChrome({
           </button>
         </div>
         <div className="active-app">
-          <span>{dashboardOpen ? 'AETHER' : activeTab?.title || 'Browser'}</span>
+          <span>{dashboardOpen ? 'ÆTHER' : activeTab?.title || 'Browser'}</span>
           <small>
             {dashboardOpen ? 'Knowledge Hub' : activeTab?.isLoading ? 'Loading' : activeTab?.host}
           </small>

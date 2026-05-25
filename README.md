@@ -1,6 +1,6 @@
-# Aether Browser
+# Æther Browser
 
-Aether is an Electron-native research browser that combines app-style browsing with local retrieval-augmented generation. Instead of treating browsing history as a flat stream of pages, Aether captures readable page content into persistent user-defined collections, embeds those captures locally through Ollama, stores vectors on disk with LanceDB, and lets you search or ask questions across the resulting knowledge base.
+Æther is an Electron-native research browser that combines app-style browsing with local retrieval-augmented generation. Instead of treating browsing history as a flat stream of pages, Æther captures readable page content into persistent user-defined collections, embeds those captures locally through Ollama, stores vectors on disk with LanceDB, and lets you search or ask questions across the resulting knowledge base.
 
 The project goal is a private "contextual research engine": browse the web, capture useful pages, organize them into collections, and query those collections without sending page content or prompts to a cloud inference service.
 
@@ -8,7 +8,7 @@ The project goal is a private "contextual research engine": browse the web, capt
 
 The current vertical slice includes:
 
-- Electron shell with a light, spacious Aether dashboard.
+- Electron shell with a light, spacious Æther dashboard.
 - Left rail with dashboard and browser controls.
 - Native app container powered by Electron `WebContentsView`.
 - Browser navigation controls, including URL entry, back, and forward.
@@ -25,7 +25,7 @@ The current vertical slice includes:
 
 ## Local-Only Design
 
-Aether is intentionally built around a zero-cloud data path for capture and retrieval.
+Æther is intentionally built around a zero-cloud data path for capture and retrieval.
 
 - Page HTML is read from the active Electron `WebContentsView`.
 - Extraction, chunking, metadata tagging, embedding, storage, search, and chat orchestration run in the Electron main process.
@@ -66,7 +66,7 @@ Electron Main Process
 
 ## Storage Model
 
-Aether stores user data in two local locations under Electron's user data directory.
+Æther stores user data in two local locations under Electron's user data directory.
 
 ```text
 <userData>/aether-library/library.json
@@ -102,7 +102,7 @@ Collections are the user-facing organization model. A collection can contain one
 
 When the user captures the current page:
 
-1. Aether verifies a collection is selected.
+1. Æther verifies a collection is selected.
 2. The main process reads the active browser page using isolated JavaScript execution.
 3. It extracts:
    - `document.documentElement.outerHTML`
@@ -112,7 +112,7 @@ When the user captures the current page:
 4. The HTML is parsed with `jsdom`.
 5. Scripts, styles, forms, and noisy document regions are stripped.
 6. `@mozilla/readability` distills the page into article-like text.
-7. If Readability returns too little content, Aether falls back to `document.body.innerText`.
+7. If Readability returns too little content, Æther falls back to `document.body.innerText`.
 8. Captures below the minimum text threshold are rejected with a clear error.
 9. Text is split into overlapping chunks.
 10. Each chunk receives source metadata.
@@ -125,7 +125,7 @@ When the user captures the current page:
 Search and chat both start with local embeddings:
 
 1. The query is embedded with the configured embedding model.
-2. Aether searches LanceDB for nearest chunks.
+2. Æther searches LanceDB for nearest chunks.
 3. Search results include citation metadata and distance score.
 4. Chat builds a context block from top retrieved chunks.
 5. The local chat model is instructed to answer only from supplied context when querying a collection.
@@ -245,7 +245,7 @@ src/
     index.ts          Typed bridge exposed as window.aether
   renderer/
     src/
-      App.tsx         Aether shell, dashboard, intelligence panel
+      App.tsx         Æther shell, dashboard, intelligence panel
       assets/
         main.css      Light mythic UI system
   shared/
@@ -254,7 +254,7 @@ src/
 
 ## UI Model
 
-Aether currently uses a restrained, light-mode desktop shell:
+Æther currently uses a restrained, light-mode desktop shell:
 
 - a left rail for home/dashboard and browser
 - a top titlebar and browser address bar
@@ -305,7 +305,7 @@ bun run postinstall
 
 ## Implementation Notes
 
-- Aether uses `WebContentsView`, not deprecated `BrowserView`.
+- Æther uses `WebContentsView`, not deprecated `BrowserView`.
 - Browser app state is currently managed in the main process.
 - The MVP app registry currently exposes a single browser app pointed at `https://www.google.com`.
 - Popups are blocked or opened externally depending on flow.
@@ -329,6 +329,6 @@ Likely next steps:
 
 ## Privacy Boundary
 
-Aether is designed so local intelligence work stays on the machine. Captured page text, embeddings, collection metadata, semantic search, and RAG prompts are handled locally through LanceDB and Ollama.
+Æther is designed so local intelligence work stays on the machine. Captured page text, embeddings, collection metadata, semantic search, and RAG prompts are handled locally through LanceDB and Ollama.
 
-This does not anonymize normal browsing. Websites loaded in the browser can still make their usual network requests, track sessions, and execute their own JavaScript. The privacy guarantee applies to Aether's indexing and inference pipeline.
+This does not anonymize normal browsing. Websites loaded in the browser can still make their usual network requests, track sessions, and execute their own JavaScript. The privacy guarantee applies to Æther's indexing and inference pipeline.

@@ -14,7 +14,7 @@ import {
 import { BrowserChrome } from './components/BrowserChrome'
 import { CollectionDialog, CollectionDialogState } from './components/CollectionDialog'
 import { Dashboard } from './components/Dashboard'
-import { CloudIcon, GlobeIcon } from './components/icons'
+import { GlobeIcon, CloudIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { PanelMode, QuickAction } from './types/ui'
 import { getQuickActions } from './utils/aether-ui'
@@ -38,7 +38,7 @@ function App(): React.JSX.Element {
   const [chatResult, setChatResult] = useState<ChatResult | null>(null)
   const [lastCapture, setLastCapture] = useState<CaptureResult | null>(null)
   const [panelCollapsed, setPanelCollapsed] = useState(false)
-  const [busy, setBusy] = useState<string | null>('Starting Aether')
+  const [busy, setBusy] = useState<string | null>('Starting Æther')
   const [notice, setNotice] = useState<string | null>(null)
   const [collectionDialog, setCollectionDialog] = useState<CollectionDialogState>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -114,7 +114,7 @@ function App(): React.JSX.Element {
         setActiveTabId(tab.id)
         await refreshShell()
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : 'Aether hit an unexpected error.')
+        setNotice(error instanceof Error ? error.message : 'Æther hit an unexpected error.')
       } finally {
         setBusy(null)
       }
@@ -319,11 +319,11 @@ function App(): React.JSX.Element {
       setPanelCollapsed(false)
       await window.aether.layout.setIntelligencePanelCollapsed(false)
       setChatPrompt(prompt)
-      setNotice('Select or create a collection before asking AETHER.')
+      setNotice('Select or create a collection before asking ÆTHER.')
       return
     }
 
-    await runTask('Asking Aether', async () => {
+    await runTask('Asking Æther', async () => {
       const result = await window.aether.chat.ask({
         prompt,
         collectionId: selectedCollection.id,
@@ -406,7 +406,7 @@ function App(): React.JSX.Element {
     try {
       await task()
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Aether hit an unexpected error.')
+      setNotice(error instanceof Error ? error.message : 'Æther hit an unexpected error.')
     } finally {
       setBusy(null)
     }
@@ -417,19 +417,20 @@ function App(): React.JSX.Element {
   return (
     <main className={`aether-shell ${panelCollapsed ? 'panel-collapsed' : ''}`}>
       <div className="window-titlebar" aria-hidden="true">
-        <strong>AETHER</strong>
+        <strong>ÆTHER</strong>
       </div>
 
       <aside className="app-rail">
         <button
           className={`brand-mark tooltip-host ${dashboardOpen ? 'active' : ''}`}
-          aria-label="Open AETHER dashboard"
-          data-tooltip="AETHER"
+          aria-label="Open ÆTHER dashboard"
+          data-tooltip="ÆTHER"
           data-tooltip-side="right"
           onClick={openDashboard}
-          title="AETHER"
+          title="ÆTHER"
           type="button"
         >
+          {/* <img className="brand-mark-image" src="/aether-mark.svg" alt="Aether logo" /> */}
           <CloudIcon />
         </button>
         <nav className="app-list" aria-label="Apps">

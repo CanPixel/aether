@@ -638,7 +638,7 @@ class OllamaClient {
           {
             role: 'system',
             content:
-              'You are Aether, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources with bracket numbers.'
+              'You are Æther, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources with bracket numbers.'
           },
           {
             role: 'user',
@@ -1032,8 +1032,11 @@ let library: LibraryStore | null = null
 let settings: SettingsStore | null = null
 const ollamaClient = new OllamaClient()
 
+app.setName('Æther')
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
+    title: 'Æther',
     width: 1360,
     height: 860,
     minWidth: 1080,
@@ -1070,7 +1073,7 @@ function createWindow(): void {
   settings
     .load()
     .then((data) => ollamaClient.setModelOverrides(data.ollama))
-    .catch((error) => console.error('Aether settings load failed:', error))
+    .catch((error) => console.error('Æther settings load failed:', error))
   database.migrateLegacyRealms(library).catch((error) => {
     console.error('Legacy realm migration failed:', error)
   })
@@ -1156,7 +1159,7 @@ async function askChat(input: {
   await loadOllamaSettings()
   const prompt = input.prompt.trim()
   if (!prompt) {
-    throw new Error('Enter a question before asking Aether.')
+    throw new Error('Enter a question before asking Æther.')
   }
 
   const citations = await searchCollection({
@@ -1314,28 +1317,28 @@ function registerIpcHandlers(): void {
 
 function getContainers(): AppContainerManager {
   if (!appContainers) {
-    throw new Error('Aether app containers are not ready.')
+    throw new Error('Æther app containers are not ready.')
   }
   return appContainers
 }
 
 function getDatabase(): AetherDatabase {
   if (!database) {
-    throw new Error('Aether database is not ready.')
+    throw new Error('Æther database is not ready.')
   }
   return database
 }
 
 function getLibrary(): LibraryStore {
   if (!library) {
-    throw new Error('Aether library is not ready.')
+    throw new Error('Æther library is not ready.')
   }
   return library
 }
 
 function getSettings(): SettingsStore {
   if (!settings) {
-    throw new Error('Aether settings are not ready.')
+    throw new Error('Æther settings are not ready.')
   }
   return settings
 }
@@ -1433,7 +1436,10 @@ function escapeSql(value: string): string {
 }
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.aether.browser')
+  if (process.platform === 'darwin') {
+    app.dock?.setIcon(icon)
+  }
+  electronApp.setAppUserModelId('com.canur.aether')
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
