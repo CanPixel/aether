@@ -47,6 +47,8 @@ export function Dashboard({
   selectCollection
 }: DashboardProps): React.JSX.Element {
   const [recentOpen, setRecentOpen] = useState(false)
+  const aetherMarkSrc = new URL('aether-mark.svg', window.location.href).toString()
+  const wavyLinesSrc = new URL('wavy-lines.svg', window.location.href).toString()
 
   return (
     <div className="dashboard">
@@ -57,10 +59,10 @@ export function Dashboard({
         </div>
         <div className="hero-orb" aria-hidden="true">
           <span className="hero-orb-aura" />
-          <img src="/aether-mark.svg" alt="Aether logo" />
+          <img src={aetherMarkSrc} alt="Aether logo" />
         </div>
 
-        <img className="wavy-lines" src="/wavy-lines.svg" alt="Wavy lines" />
+        <img className="wavy-lines" src={wavyLinesSrc} alt="Wavy lines" />
       </header>
 
       <section className="hub-row">
