@@ -1572,7 +1572,7 @@ button {
 .ask-hub-picker button {
   display: grid;
   grid-template-columns: 30px minmax(0, 1fr);
-  min-height: 38px;
+  min-height: 42px;
   align-items: center;
   gap: 8px;
   border-color: rgba(133, 158, 193, 0.16);
@@ -1591,7 +1591,7 @@ button {
   color: var(--accent-strong);
 }
 
-.ask-hub-picker span {
+.ask-hub-picker button > span:first-child {
   display: grid;
   place-items: center;
   width: 30px;
@@ -1605,12 +1605,34 @@ button {
   height: 17px;
 }
 
-.ask-hub-picker strong {
+.ask-hub-copy {
+  display: grid;
+  min-width: 0;
+  width: auto;
+  height: auto;
+  place-items: initial;
+  align-content: center;
+  gap: 1px;
+  border-radius: 0;
+  background: transparent;
+}
+
+.ask-hub-picker strong,
+.ask-hub-picker small {
   overflow: hidden;
-  font-size: 12px;
-  font-weight: 780;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ask-hub-picker strong {
+  font-size: 12px;
+  font-weight: 780;
+}
+
+.ask-hub-picker small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 680;
 }
 
 .chat-form {
