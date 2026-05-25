@@ -41,7 +41,7 @@ function App(): React.JSX.Element {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [chatResult, setChatResult] = useState<ChatResult | null>(null)
   const [lastCapture, setLastCapture] = useState<CaptureResult | null>(null)
-  const [panelCollapsed, setPanelCollapsed] = useState(false)
+  const [panelCollapsed, setPanelCollapsed] = useState(true)
   const [busy, setBusy] = useState<string | null>('Starting Æther')
   const [notice, setNotice] = useState<string | null>(null)
   const [collectionDialog, setCollectionDialog] = useState<CollectionDialogState>(null)
