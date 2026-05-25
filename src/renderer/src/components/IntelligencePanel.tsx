@@ -1,6 +1,7 @@
 import { CSSProperties, FormEvent, useState } from 'react'
 import { ChatResult, CollectionSummary, SearchResult, SystemStatus } from '../../../shared/aether'
 import { PanelMode } from '../types/ui'
+import { CollectionIcon } from '../utils/collection-icons'
 import { getCaptureHost } from '../utils/aether-ui'
 import { ChevronRightIcon, SparkIcon } from './icons'
 
@@ -8,6 +9,11 @@ type IntelligencePanelProps = {
   busy: string | null
   chatBlocked: boolean
   chatPrompt: string
+  askCollectionId: string
+  askCurrentPageOnly: boolean
+  askIncludeCurrentPage: boolean
+  canUseCurrentPage: boolean
+  collections: CollectionSummary[]
   dashboardOpen: boolean
   chatResult: ChatResult | null
   mode: PanelMode
@@ -24,6 +30,9 @@ type IntelligencePanelProps = {
   onSearchQueryChange: (value: string) => void
   onTogglePanel: () => Promise<void>
   onChatPromptChange: (value: string) => void
+  onAskCollectionChange: (collectionId: string) => void
+  onAskCurrentPageOnlyChange: (value: boolean) => void
+  onAskIncludeCurrentPageChange: (value: boolean) => void
   onOpenCitation: (citation: SearchResult) => Promise<void>
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
 }
@@ -32,6 +41,11 @@ export function IntelligencePanel({
   busy,
   chatBlocked,
   chatPrompt,
+  askCollectionId,
+  askCurrentPageOnly,
+  askIncludeCurrentPage,
+  canUseCurrentPage,
+  collections,
   dashboardOpen,
   chatResult,
   mode,
@@ -48,11 +62,17 @@ export function IntelligencePanel({
   onSearchQueryChange,
   onTogglePanel,
   onChatPromptChange,
+  onAskCollectionChange,
+  onAskCurrentPageOnlyChange,
+  onAskIncludeCurrentPageChange,
   onOpenCitation,
   onUpdateModels
 }: IntelligencePanelProps): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const showTooltips = dashboardOpen
+  const hasAskContext = askCurrentPageOnly
+    ? canUseCurrentPage
+    : Boolean(askCollectionId) || (askIncludeCurrentPage && canUseCurrentPage)
 
   return (
     <aside className={`intelligence-panel ${panelCollapsed ? 'collapsed' : ''}`}>
@@ -143,6 +163,16 @@ export function IntelligencePanel({
               <h2>Ask</h2>
               <span>{status?.chatModel ?? 'No model'}</span>
             </div>
+            <AskContextControls
+              askCollectionId={askCollectionId}
+              askCurrentPageOnly={askCurrentPageOnly}
+              askIncludeCurrentPage={askIncludeCurrentPage}
+              canUseCurrentPage={canUseCurrentPage}
+              collections={collections}
+              onAskCollectionChange={onAskCollectionChange}
+              onAskCurrentPageOnlyChange={onAskCurrentPageOnlyChange}
+              onAskIncludeCurrentPageChange={onAskIncludeCurrentPageChange}
+            />
             <form className="chat-form" onSubmit={onAsk}>
               <textarea
                 value={chatPrompt}
@@ -151,7 +181,7 @@ export function IntelligencePanel({
               />
               <button
                 type="submit"
-                disabled={Boolean(busy) || !chatPrompt.trim() || !selectedCollection || chatBlocked}
+                disabled={Boolean(busy) || !chatPrompt.trim() || !hasAskContext || chatBlocked}
               >
                 Ask ÆTHER
               </button>
@@ -181,6 +211,81 @@ export function IntelligencePanel({
         )}
       </div>
     </aside>
+  )
+}
+
+function AskContextControls({
+  askCollectionId,
+  askCurrentPageOnly,
+  askIncludeCurrentPage,
+  canUseCurrentPage,
+  collections,
+  onAskCollectionChange,
+  onAskCurrentPageOnlyChange,
+  onAskIncludeCurrentPageChange
+}: {
+  askCollectionId: string
+  askCurrentPageOnly: boolean
+  askIncludeCurrentPage: boolean
+  canUseCurrentPage: boolean
+  collections: CollectionSummary[]
+  onAskCollectionChange: (collectionId: string) => void
+  onAskCurrentPageOnlyChange: (value: boolean) => void
+  onAskIncludeCurrentPageChange: (value: boolean) => void
+}): React.JSX.Element {
+  return (
+    <section className="ask-context-controls" aria-label="Ask context">
+      <div className="ask-context-mode">
+        <button
+          className={!askCurrentPageOnly ? 'active' : ''}
+          onClick={() => onAskCurrentPageOnlyChange(false)}
+          type="button"
+        >
+          Knowledge context
+        </button>
+        <button
+          className={askCurrentPageOnly ? 'active' : ''}
+          disabled={!canUseCurrentPage}
+          onClick={() => onAskCurrentPageOnlyChange(true)}
+          type="button"
+        >
+          Current page only
+        </button>
+      </div>
+
+      {!askCurrentPageOnly && (
+        <>
+          <div className="ask-hub-picker">
+            {collections.length === 0 ? (
+              <div className="empty-row">No knowledge hubs available.</div>
+            ) : (
+              collections.map((collection) => (
+                <button
+                  className={collection.id === askCollectionId ? 'active' : ''}
+                  key={collection.id}
+                  onClick={() => onAskCollectionChange(collection.id)}
+                  type="button"
+                >
+                  <span>
+                    <CollectionIcon icon={collection.icon} />
+                  </span>
+                  <strong>{collection.name}</strong>
+                </button>
+              ))
+            )}
+          </div>
+          <label className="ask-current-toggle">
+            <input
+              checked={askIncludeCurrentPage}
+              disabled={!canUseCurrentPage}
+              onChange={(event) => onAskIncludeCurrentPageChange(event.target.checked)}
+              type="checkbox"
+            />
+            Include current page
+          </label>
+        </>
+      )}
+    </section>
   )
 }
 

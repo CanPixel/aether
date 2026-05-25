@@ -151,7 +151,7 @@ export interface AetherApi {
   }
   chat: {
     ask(input: {
-      collectionId: string
+      collectionId?: string
       prompt: string
       includeCurrentPage?: boolean
     }): Promise<ChatResult>

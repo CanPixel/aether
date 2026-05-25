@@ -929,6 +929,10 @@ class AppContainerManager {
     return this.getActiveTab()
   }
 
+  getReadableActiveTab(): ManagedTab {
+    return this.getActiveTab()
+  }
+
   private getTab(tabId: string): ManagedTab {
     const tab = this.tabs.get(tabId)
     if (!tab) {
@@ -1158,7 +1162,7 @@ async function searchCollection(input: {
 }
 
 async function askChat(input: {
-  collectionId: string
+  collectionId?: string
   prompt: string
   includeCurrentPage?: boolean
 }): Promise<ChatResult> {
@@ -1168,19 +1172,21 @@ async function askChat(input: {
     throw new Error('Enter a question before asking Æther.')
   }
 
-  const citations = await searchCollection({
-    collectionId: input.collectionId,
-    query: prompt,
-    limit: 8
-  })
+  const citations = input.collectionId
+    ? await searchCollection({
+        collectionId: input.collectionId,
+        query: prompt,
+        limit: 8
+      })
+    : []
 
   if (input.includeCurrentPage) {
     try {
-      const active = getContainers().getCapturableApp()
+      const active = getContainers().getReadableActiveTab()
       const captured = await extractReadablePage(active)
       citations.unshift({
         id: `current-${active.id}`,
-        collectionId: input.collectionId,
+        collectionId: input.collectionId ?? 'current-page',
         captureId: 'current-page',
         appId: active.appId,
         title: captured.title,
@@ -1195,7 +1201,38 @@ async function askChat(input: {
     }
   }
 
-  return ollamaClient.chat(prompt, citations.slice(0, 8))
+  return ollamaClient.chat(prompt, dedupeCitations(citations).slice(0, 8))
+}
+
+function dedupeCitations(citations: SearchResult[]): SearchResult[] {
+  const unique = new Map<string, SearchResult>()
+
+  for (const citation of citations) {
+    const key = normalizeCitationKey(citation.url)
+    const existing = unique.get(key)
+    if (!existing) {
+      unique.set(key, citation)
+      continue
+    }
+
+    if (!existing.text.includes(citation.text)) {
+      existing.text =
+        `${existing.text}\n\nChunk ${citation.chunkIndex + 1}:\n${citation.text}`.slice(0, 9000)
+    }
+    existing.score = Math.min(existing.score, citation.score)
+  }
+
+  return [...unique.values()]
+}
+
+function normalizeCitationKey(url: string): string {
+  try {
+    const parsed = new URL(url)
+    parsed.hash = ''
+    return parsed.toString()
+  } catch {
+    return url
+  }
 }
 
 async function extractReadablePage(active: ManagedTab): Promise<CapturedPage> {
@@ -1302,7 +1339,7 @@ function registerIpcHandlers(): void {
   )
   ipcMain.handle(
     'aether:chat:ask',
-    (_event, input: { collectionId: string; prompt: string; includeCurrentPage?: boolean }) =>
+    (_event, input: { collectionId?: string; prompt: string; includeCurrentPage?: boolean }) =>
       askChat(input)
   )
   ipcMain.handle('aether:system:status', async () => {

@@ -891,15 +891,42 @@ button {
   overflow: auto;
 }
 
+.collection-accordion {
+  overflow: hidden;
+  border: 1px solid rgba(145, 166, 195, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.34);
+}
+
 .collection-row {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) 128px;
+  grid-template-columns: 48px minmax(0, 1fr) 128px 20px;
+  width: 100%;
   min-height: 82px;
   align-items: center;
   gap: 14px;
+  border: 0;
   padding: 14px 16px;
+  background: transparent;
   text-align: left;
   box-shadow: none;
+}
+
+.collection-row > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+  transition: transform 180ms ease;
+}
+
+.collection-accordion.open .collection-row > svg {
+  transform: rotate(90deg);
+}
+
+.collection-captures {
+  border-top: 1px solid rgba(145, 166, 195, 0.15);
+  padding: 14px;
+  background: rgba(249, 252, 255, 0.42);
 }
 
 .collection-glyph {
@@ -1051,6 +1078,36 @@ button {
   color: var(--ink);
   font-size: 14px;
   font-weight: 820;
+}
+
+.capture-hub-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.capture-hub-row span {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(113, 159, 203, 0.18);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(234, 247, 252, 0.7);
+  color: #54718e;
+  font-size: 10px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.capture-hub-row svg {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
 }
 
 .recent-card p {
@@ -1310,10 +1367,113 @@ button {
   line-height: 1.45;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
+  line-clamp: 3;
 }
 
 .chat-section {
   min-height: 0;
+}
+
+.ask-context-controls {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+
+.ask-context-mode {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+  border: 1px solid rgba(133, 158, 193, 0.16);
+  border-radius: 11px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.ask-context-mode button,
+.ask-hub-picker button {
+  min-width: 0;
+  box-shadow: none;
+}
+
+.ask-context-mode button {
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ask-context-mode button.active {
+  background: rgba(255, 255, 255, 0.86);
+  color: var(--ink);
+}
+
+.ask-hub-picker {
+  display: grid;
+  max-height: 112px;
+  gap: 6px;
+  overflow: auto;
+}
+
+.ask-hub-picker button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  height: 36px;
+  align-items: center;
+  gap: 8px;
+  border-color: rgba(133, 158, 193, 0.16);
+  border-radius: 10px;
+  padding: 4px 8px 4px 4px;
+  background: rgba(255, 255, 255, 0.42);
+  text-align: left;
+}
+
+.ask-hub-picker button.active,
+.ask-hub-picker button:hover {
+  border-color: rgba(79, 174, 202, 0.3);
+  background:
+    radial-gradient(circle at 16% 20%, rgba(255, 255, 255, 0.95), transparent 36%),
+    rgba(238, 250, 255, 0.78);
+  color: var(--accent-strong);
+}
+
+.ask-hub-picker span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.ask-hub-picker svg {
+  width: 16px;
+  height: 16px;
+}
+
+.ask-hub-picker strong {
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ask-current-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 740;
+}
+
+.ask-current-toggle input {
+  width: 14px;
+  height: 14px;
+  box-shadow: none;
 }
 
 .chat-form {
@@ -1356,7 +1516,14 @@ button {
 
 .answer-loading-haze {
   background:
-    conic-gradient(from 40deg, transparent, rgba(161, 232, 255, 0.34), transparent 42%, rgba(255, 255, 255, 0.5), transparent 72%),
+    conic-gradient(
+      from 40deg,
+      transparent,
+      rgba(161, 232, 255, 0.34),
+      transparent 42%,
+      rgba(255, 255, 255, 0.5),
+      transparent 72%
+    ),
     radial-gradient(circle at 50% 50%, rgba(203, 247, 255, 0.46), transparent 44%);
   filter: blur(14px);
   opacity: 0.9;
