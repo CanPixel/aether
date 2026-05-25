@@ -1,7 +1,8 @@
 {
   "name": "aether-browser",
   "version": "1.0.0",
-  "description": "An Electron application with React and TypeScript",
+  "productName": "Æther",
+  "description": "Local AI-powered browser and knowledge hub",
   "main": "./out/main/index.js",
   "author": "example.com",
   "homepage": "https://electron-vite.org",

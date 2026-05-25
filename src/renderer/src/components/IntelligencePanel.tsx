@@ -71,7 +71,7 @@ export function IntelligencePanel({
       <div className="panel-content">
         <header className="panel-header">
           <div>
-            <p>AETHER</p>
+            <p>ÆTHER</p>
             <h1>Local context for the web you explore.</h1>
           </div>
           <div className="panel-header-actions">
@@ -153,7 +153,7 @@ export function IntelligencePanel({
                 type="submit"
                 disabled={Boolean(busy) || !chatPrompt.trim() || !selectedCollection || chatBlocked}
               >
-                Ask AETHER
+                Ask ÆTHER
               </button>
             </form>
             {chatResult && <AnswerCard result={chatResult} />}

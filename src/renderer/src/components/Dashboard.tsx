@@ -52,17 +52,15 @@ export function Dashboard({
     <div className="dashboard">
       <header className="dashboard-hero">
         <div className="hero-copy">
-          <h1>AETHER</h1>
-          <p>Your browser. Your knowledge. Yours, locally.</p>
+          <h1>ÆTHER</h1>
+          <p>Your browser. Your knowledge.</p>
         </div>
-        <div className="heaven-gate" aria-hidden="true">
-          <span className="gate-star" />
-          <span className="gate-arch" />
-          <span className="gate-step step-one" />
-          <span className="gate-step step-two" />
-          <span className="gate-cloud cloud-left" />
-          <span className="gate-cloud cloud-right" />
+        <div className="hero-orb" aria-hidden="true">
+          <span className="hero-orb-aura" />
+          <img src="/aether-mark.svg" alt="Aether logo" />
         </div>
+
+        <img className="wavy-lines" src="/wavy-lines.svg" alt="Wavy lines" />
       </header>
 
       <section className="hub-row">
