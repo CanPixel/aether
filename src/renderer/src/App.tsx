@@ -25,6 +25,9 @@ function App(): React.JSX.Element {
   const [shortcuts, setShortcuts] = useState<HubShortcutSummary[]>([])
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [captures, setCaptures] = useState<CaptureSummary[]>([])
+  const [capturesByCollection, setCapturesByCollection] = useState<
+    Record<string, CaptureSummary[]>
+  >({})
   const [status, setStatus] = useState<SystemStatus | null>(null)
   const [dashboardOpen, setDashboardOpen] = useState(true)
   const [activeTabId, setActiveTabId] = useState('')
@@ -34,6 +37,9 @@ function App(): React.JSX.Element {
   const [panelMode, setPanelMode] = useState<PanelMode>('ask')
   const [searchQuery, setSearchQuery] = useState('')
   const [chatPrompt, setChatPrompt] = useState('')
+  const [askCollectionId, setAskCollectionId] = useState('')
+  const [askIncludeCurrentPage, setAskIncludeCurrentPage] = useState(true)
+  const [askCurrentPageOnly, setAskCurrentPageOnly] = useState(false)
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [chatResult, setChatResult] = useState<ChatResult | null>(null)
   const [lastCapture, setLastCapture] = useState<CaptureResult | null>(null)
@@ -54,6 +60,11 @@ function App(): React.JSX.Element {
       collections.find((collection) => collection.id === selectedCollectionId) ?? collections[0],
     [collections, selectedCollectionId]
   )
+  const askCollection = useMemo(
+    () => collections.find((collection) => collection.id === askCollectionId),
+    [askCollectionId, collections]
+  )
+  const canUseCurrentPage = Boolean(activeTab?.url)
   const ollamaBlocked = status ? !status.ollamaReachable : false
   const hasEmbeddingModel = status ? status.availableModels.includes(status.embeddingModel) : true
   const chatBlocked = status ? !status.ollamaReachable || !status.chatModel : false
@@ -61,13 +72,24 @@ function App(): React.JSX.Element {
   const addressValue = addressFocused
     ? addressDraft
     : dashboardOpen
-      ? 'aether://dashboard'
+      ? 'Æther://dashboard'
       : (activeTab?.url ?? '')
 
   const refreshCollections = useCallback(
     async (preferredCollectionId?: string): Promise<void> => {
       const nextCollections = await window.aether.collections.list()
       setCollections(nextCollections)
+      const captureEntries = await Promise.all(
+        nextCollections.map(async (collection) => [
+          collection.id,
+          await window.aether.collections.captures(collection.id)
+        ])
+      )
+      const nextCapturesByCollection = Object.fromEntries(captureEntries) as Record<
+        string,
+        CaptureSummary[]
+      >
+      setCapturesByCollection(nextCapturesByCollection)
 
       const nextSelected =
         preferredCollectionId &&
@@ -79,7 +101,12 @@ function App(): React.JSX.Element {
             : (nextCollections[0]?.id ?? '')
 
       setSelectedCollectionId(nextSelected)
-      setCaptures(nextSelected ? await window.aether.collections.captures(nextSelected) : [])
+      setCaptures(nextSelected ? (nextCapturesByCollection[nextSelected] ?? []) : [])
+      setAskCollectionId((current) =>
+        current && nextCollections.some((collection) => collection.id === current)
+          ? current
+          : nextSelected
+      )
     },
     [selectedCollectionId]
   )
@@ -264,7 +291,10 @@ function App(): React.JSX.Element {
 
   async function selectCollection(collectionId: string): Promise<void> {
     setSelectedCollectionId(collectionId)
-    setCaptures(collectionId ? await window.aether.collections.captures(collectionId) : [])
+    const nextCaptures =
+      capturesByCollection[collectionId] ?? (await window.aether.collections.captures(collectionId))
+    setCaptures(collectionId ? nextCaptures : [])
+    setAskCollectionId(collectionId)
     setSearchResults([])
     setChatResult(null)
   }
@@ -314,26 +344,32 @@ function App(): React.JSX.Element {
 
   async function ask(event: FormEvent): Promise<void> {
     event.preventDefault()
-    if (!selectedCollection) return
-
     await askPrompt(chatPrompt)
   }
 
   async function askPrompt(prompt: string): Promise<void> {
-    if (!selectedCollection) {
+    const collectionId = askCurrentPageOnly ? undefined : askCollection?.id
+    const includeCurrentPage = askCurrentPageOnly || askIncludeCurrentPage
+
+    if (!collectionId && !includeCurrentPage) {
       setPanelMode('ask')
       setPanelCollapsed(false)
       await window.aether.layout.setIntelligencePanelCollapsed(false)
       setChatPrompt(prompt)
-      setNotice('Select or create a collection before asking ÆTHER.')
+      setNotice('Select a knowledge hub or include the current page before asking ÆTHER.')
+      return
+    }
+
+    if (includeCurrentPage && !canUseCurrentPage) {
+      setNotice('Open a page before asking with current-page context.')
       return
     }
 
     await runTask('Asking Æther', async () => {
       const result = await window.aether.chat.ask({
         prompt,
-        collectionId: selectedCollection.id,
-        includeCurrentPage: !dashboardOpen
+        collectionId,
+        includeCurrentPage
       })
 
       setChatResult(result)
@@ -500,6 +536,7 @@ function App(): React.JSX.Element {
           <Dashboard
             busy={busy}
             captures={captures}
+            capturesByCollection={capturesByCollection}
             collections={collections}
             deleteCapture={deleteCapture}
             deleteShortcut={deleteShortcut}
@@ -520,6 +557,11 @@ function App(): React.JSX.Element {
         busy={busy}
         chatBlocked={chatBlocked}
         chatPrompt={chatPrompt}
+        askCollectionId={askCollectionId}
+        askCurrentPageOnly={askCurrentPageOnly}
+        askIncludeCurrentPage={askIncludeCurrentPage}
+        canUseCurrentPage={canUseCurrentPage}
+        collections={collections}
         dashboardOpen={dashboardOpen}
         chatResult={chatResult}
         mode={panelMode}
@@ -536,6 +578,9 @@ function App(): React.JSX.Element {
         onSearchQueryChange={setSearchQuery}
         onTogglePanel={togglePanel}
         onChatPromptChange={setChatPrompt}
+        onAskCollectionChange={setAskCollectionId}
+        onAskCurrentPageOnlyChange={setAskCurrentPageOnly}
+        onAskIncludeCurrentPageChange={setAskIncludeCurrentPage}
         onUpdateModels={updateOllamaModels}
         onOpenCitation={openCitation}
       />

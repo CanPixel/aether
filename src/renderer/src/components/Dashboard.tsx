@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { CaptureSummary, CollectionSummary, HubShortcutSummary } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
 import { formatDate, getCaptureHost } from '../utils/aether-ui'
-import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, SparkIcon, TrashIcon } from './icons'
+import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, TrashIcon } from './icons'
 
 type CollectionDialogState =
   | { mode: 'create' }
@@ -13,6 +13,7 @@ type CollectionDialogState =
 type DashboardProps = {
   busy: string | null
   captures: CaptureSummary[]
+  capturesByCollection: Record<string, CaptureSummary[]>
   collections: CollectionSummary[]
   deleteCapture: (captureId: string) => Promise<void>
   deleteShortcut: (shortcutId: string) => Promise<void>
@@ -27,7 +28,7 @@ type DashboardProps = {
 
 export function Dashboard({
   busy,
-  captures,
+  capturesByCollection,
   collections,
   deleteCapture,
   deleteShortcut,
@@ -39,9 +40,18 @@ export function Dashboard({
   shortcuts,
   selectCollection
 }: DashboardProps): React.JSX.Element {
-  const [recentOpen, setRecentOpen] = useState(false)
+  const [openCollectionId, setOpenCollectionId] = useState(selectedCollectionId)
   const aetherMarkSrc = new URL('aether-mark.svg', window.location.href).toString()
   const wavyLinesSrc = new URL('wavy-lines.svg', window.location.href).toString()
+
+  function getCaptureCollections(capture: CaptureSummary): CollectionSummary[] {
+    const matches = collections.filter((collection) =>
+      (capturesByCollection[collection.id] ?? []).some((item) => item.url === capture.url)
+    )
+    return matches.length > 0
+      ? matches
+      : collections.filter((item) => item.id === capture.collectionId)
+  }
 
   return (
     <div className="dashboard">
@@ -135,26 +145,58 @@ export function Dashboard({
           </div>
         ) : (
           <div className="collection-list">
-            {collections.map((collection) => (
-              <button
-                className={`collection-row ${collection.id === selectedCollectionId ? 'active' : ''}`}
-                key={collection.id}
-                onClick={() => selectCollection(collection.id)}
-                type="button"
-              >
-                <span className="collection-glyph">
-                  <CollectionIcon icon={collection.icon} />
-                </span>
-                <span className="collection-main">
-                  <strong>{collection.name}</strong>
-                  <small>{collection.description || 'Captured sources and local context'}</small>
-                </span>
-                <span className="collection-meta">
-                  <strong>{collection.captureCount} captures</strong>
-                  <small>{collection.chunkCount} chunks</small>
-                </span>
-              </button>
-            ))}
+            {collections.map((collection) => {
+              const collectionCaptures = capturesByCollection[collection.id] ?? []
+              const isOpen = openCollectionId === collection.id
+              return (
+                <article
+                  className={`collection-accordion ${isOpen ? 'open' : ''}`}
+                  key={collection.id}
+                >
+                  <button
+                    className={`collection-row ${collection.id === selectedCollectionId ? 'active' : ''}`}
+                    onClick={() => {
+                      selectCollection(collection.id)
+                      setOpenCollectionId((current) =>
+                        current === collection.id ? '' : collection.id
+                      )
+                    }}
+                    type="button"
+                  >
+                    <span className="collection-glyph">
+                      <CollectionIcon icon={collection.icon} />
+                    </span>
+                    <span className="collection-main">
+                      <strong>{collection.name}</strong>
+                      <small>
+                        {collection.description || 'Captured sources and local context'}
+                      </small>
+                    </span>
+                    <span className="collection-meta">
+                      <strong>{collection.captureCount} captures</strong>
+                      <small>{collection.chunkCount} chunks</small>
+                    </span>
+                    <ChevronRightIcon />
+                  </button>
+                  <div className="collection-captures" hidden={!isOpen}>
+                    {collectionCaptures.length === 0 ? (
+                      <div className="empty-row">No captures in this hub yet.</div>
+                    ) : (
+                      <div className="recent-card-grid">
+                        {collectionCaptures.map((capture) => (
+                          <CaptureCard
+                            capture={capture}
+                            collections={getCaptureCollections(capture)}
+                            deleteCapture={deleteCapture}
+                            key={capture.id}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </article>
+              )
+            })}
           </div>
         )}
 
@@ -185,59 +227,47 @@ export function Dashboard({
           </div>
         )}
       </section>
+    </div>
+  )
+}
 
-      <section className={`recent-captures ${recentOpen ? 'open' : ''}`}>
+function CaptureCard({
+  capture,
+  collections,
+  deleteCapture
+}: {
+  capture: CaptureSummary
+  collections: CollectionSummary[]
+  deleteCapture: (captureId: string) => Promise<void>
+}): React.JSX.Element {
+  return (
+    <article className="recent-card">
+      <div className="recent-source">
+        <span>{getCaptureHost(capture.url)}</span>
         <button
-          className="recent-toggle"
-          onClick={() => setRecentOpen((current) => !current)}
+          aria-label={`Delete ${capture.title}`}
+          className="recent-delete"
+          onClick={() => deleteCapture(capture.id)}
+          title="Delete capture"
           type="button"
         >
-          <span className="section-symbol">
-            <SparkIcon />
-          </span>
-          <span>
-            <strong>Recent Captures</strong>
-            <small>
-              {captures.length
-                ? `${captures.length} saved in ${selectedCollection?.name ?? 'this collection'}`
-                : 'No captures yet'}
-            </small>
-          </span>
-          <ChevronRightIcon />
+          <TrashIcon />
         </button>
-        <div className="recent-content" hidden={!recentOpen}>
-          {captures.length === 0 ? (
-            <div className="empty-row">
-              <span>No captures in this collection yet.</span>
-            </div>
-          ) : (
-            <div className="recent-card-grid">
-              {captures.slice(0, 6).map((capture) => (
-                <article className="recent-card" key={capture.id}>
-                  <div className="recent-source">
-                    <span>{getCaptureHost(capture.url)}</span>
-                    <button
-                      aria-label={`Delete ${capture.title}`}
-                      className="recent-delete"
-                      onClick={() => deleteCapture(capture.id)}
-                      title="Delete capture"
-                      type="button"
-                    >
-                      <TrashIcon />
-                    </button>
-                  </div>
-                  <h3>{capture.title}</h3>
-                  <p>Captured and indexed for local retrieval.</p>
-                  <footer>
-                    <span>{capture.chunkCount} chunks</span>
-                    <time>{formatDate(capture.capturedAt)}</time>
-                  </footer>
-                </article>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-    </div>
+      </div>
+      <h3>{capture.title}</h3>
+      <div className="capture-hub-row">
+        {collections.map((collection) => (
+          <span key={collection.id}>
+            <CollectionIcon icon={collection.icon} />
+            {collection.name}
+          </span>
+        ))}
+      </div>
+      <p>Captured and indexed for local retrieval.</p>
+      <footer>
+        <span>{capture.chunkCount} chunks</span>
+        <time>{formatDate(capture.capturedAt)}</time>
+      </footer>
+    </article>
   )
 }
