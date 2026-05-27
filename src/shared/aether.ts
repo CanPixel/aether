@@ -22,6 +22,7 @@ export interface BrowserTabSummary {
   canGoBack: boolean
   canGoForward: boolean
   favicon?: string
+  themeColor?: string
 }
 
 export interface HubShortcutSummary {

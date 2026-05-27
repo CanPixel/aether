@@ -504,7 +504,7 @@ function App(): React.JSX.Element {
         </nav>
       </aside>
 
-      <section className="workspace">
+      <section className={`workspace ${dashboardOpen ? 'dashboard-open' : ''}`}>
         <BrowserChrome
           activeTab={activeTab}
           addressDraft={addressValue}
