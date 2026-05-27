@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AetherState,
+  AppSettings,
   AppSummary,
   BrowserTabSummary,
   CaptureResult,
@@ -8,13 +9,14 @@ import {
   ChatResult,
   CollectionSummary,
   HubShortcutSummary,
+  SearchEngineId,
   SearchResult,
   SystemStatus
 } from '../../shared/aether'
 import { BrowserChrome } from './components/BrowserChrome'
 import { CollectionDialog, CollectionDialogState } from './components/CollectionDialog'
 import { Dashboard } from './components/Dashboard'
-import { GlobeIcon, CloudIcon } from './components/icons'
+import { GlobeIcon, CloudIcon, GearIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
 import { getQuickActions } from './utils/aether-ui'
@@ -28,6 +30,9 @@ function App(): React.JSX.Element {
     Record<string, CaptureSummary[]>
   >({})
   const [status, setStatus] = useState<SystemStatus | null>(null)
+  const [settings, setSettings] = useState<AppSettings>({
+    browser: { defaultSearchEngine: 'google' }
+  })
   const [dashboardOpen, setDashboardOpen] = useState(true)
   const [activeTabId, setActiveTabId] = useState('')
   const [selectedCollectionId, setSelectedCollectionId] = useState('')
@@ -45,6 +50,7 @@ function App(): React.JSX.Element {
   const [busy, setBusy] = useState<string | null>('Starting Æther')
   const [notice, setNotice] = useState<string | null>(null)
   const [collectionDialog, setCollectionDialog] = useState<CollectionDialogState>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const addressInputRef = useRef<HTMLInputElement>(null)
 
@@ -114,14 +120,16 @@ function App(): React.JSX.Element {
   )
 
   const refreshShell = useCallback(async (): Promise<void> => {
-    const [nextApps, nextTabs, nextStatus] = await Promise.all([
+    const [nextApps, nextTabs, nextStatus, nextSettings] = await Promise.all([
       window.aether.apps.list(),
       window.aether.tabs.list(),
-      window.aether.system.status()
+      window.aether.system.status(),
+      window.aether.system.settings()
     ])
     setApps(nextApps)
     setTabs(nextTabs)
     setStatus(nextStatus)
+    setSettings(nextSettings)
     setActiveTabId(nextTabs.find((tab) => tab.isActive)?.id ?? nextTabs[0]?.id ?? '')
   }, [])
 
@@ -436,6 +444,31 @@ function App(): React.JSX.Element {
     })
   }
 
+  async function reorderShortcuts(ids: string[]): Promise<void> {
+    const nextShortcuts = await window.aether.hub.reorder(ids)
+    setShortcuts(nextShortcuts)
+  }
+
+  async function openSettings(): Promise<void> {
+    setSettingsOpen(true)
+    await window.aether.layout.setModalOverlayOpen(true)
+  }
+
+  async function closeSettings(): Promise<void> {
+    setSettingsOpen(false)
+    await window.aether.layout.setModalOverlayOpen(false)
+  }
+
+  async function updateDefaultSearchEngine(defaultSearchEngine: SearchEngineId): Promise<void> {
+    await runTask('Updating settings', async () => {
+      const nextSettings = await window.aether.system.updateSettings({
+        browser: { defaultSearchEngine }
+      })
+      setSettings(nextSettings)
+      setNotice('Default search engine updated.')
+    })
+  }
+
   async function updateOllamaModels(input: {
     embeddingModel?: string
     chatModel?: string
@@ -502,6 +535,17 @@ function App(): React.JSX.Element {
             <span className="app-dot" aria-hidden="true" />
           </button>
         </nav>
+        <button
+          className="app-button settings-button tooltip-host"
+          aria-label="Open Æther settings"
+          data-tooltip={showAppTooltips ? 'Settings' : undefined}
+          data-tooltip-side={showAppTooltips ? 'right' : undefined}
+          onClick={openSettings}
+          title={showAppTooltips ? 'Settings' : undefined}
+          type="button"
+        >
+          <GearIcon />
+        </button>
       </aside>
 
       <section className={`workspace ${dashboardOpen ? 'dashboard-open' : ''}`}>
@@ -549,6 +593,7 @@ function App(): React.JSX.Element {
             openCapture={openCapture}
             openShortcut={openShortcut}
             openCollectionDialog={setCollectionDialog}
+            reorderShortcuts={reorderShortcuts}
             saveActiveTabToHub={saveActiveTabToHub}
             selectedCollectionId={selectedCollectionId}
             shortcuts={shortcuts}
@@ -598,7 +643,91 @@ function App(): React.JSX.Element {
           onSave={saveCollectionDialog}
         />
       )}
+
+      {settingsOpen && (
+        <SettingsModal
+          busy={busy}
+          settings={settings}
+          onClose={closeSettings}
+          onDefaultSearchEngineChange={updateDefaultSearchEngine}
+        />
+      )}
     </main>
+  )
+}
+
+function SettingsModal({
+  busy,
+  settings,
+  onClose,
+  onDefaultSearchEngineChange
+}: {
+  busy: string | null
+  settings: AppSettings
+  onClose: () => Promise<void>
+  onDefaultSearchEngineChange: (value: SearchEngineId) => Promise<void>
+}): React.JSX.Element {
+  const searchEngines: Array<{ id: SearchEngineId; name: string; description: string }> = [
+    { id: 'google', name: 'Google', description: 'Broad default web search.' },
+    { id: 'bing', name: 'Bing', description: 'Microsoft web search.' },
+    { id: 'yahoo', name: 'Yahoo!', description: 'Classic portal search.' },
+    { id: 'ecosia', name: 'Ecosia', description: 'Privacy-aware search that funds trees.' },
+    { id: 'duckduckgo', name: 'DuckDuckGo', description: 'Private search by default.' }
+  ]
+
+  return (
+    <div className="settings-overlay" role="presentation">
+      <section
+        className="settings-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+      >
+        <header>
+          <div>
+            <p>General</p>
+            <h2 id="settings-title">Æther Settings</h2>
+          </div>
+          <button onClick={onClose} type="button">
+            Close
+          </button>
+        </header>
+
+        <div className="settings-field">
+          <label htmlFor="default-search-engine">Default search engine</label>
+          <p>Used when the address bar receives plain search text instead of a URL.</p>
+          <select
+            id="default-search-engine"
+            disabled={Boolean(busy)}
+            value={settings.browser.defaultSearchEngine}
+            onChange={(event) => onDefaultSearchEngineChange(event.target.value as SearchEngineId)}
+          >
+            {searchEngines.map((engine) => (
+              <option key={engine.id} value={engine.id}>
+                {engine.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="settings-engine-list" aria-label="Available search engines">
+          {searchEngines.map((engine) => (
+            <button
+              className={
+                settings.browser.defaultSearchEngine === engine.id ? 'selected' : undefined
+              }
+              disabled={Boolean(busy)}
+              key={engine.id}
+              onClick={() => onDefaultSearchEngineChange(engine.id)}
+              type="button"
+            >
+              <strong>{engine.name}</strong>
+              <span>{engine.description}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </div>
   )
 }
 
