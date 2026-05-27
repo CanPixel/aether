@@ -7,6 +7,16 @@ import {
   useRef,
   useState
 } from 'react'
+import {
+  BookOpen,
+  Compass,
+/*   ExternalLink,
+  FolderOpen,
+  Layers, */
+  Move,
+  Search,
+  Snowflake
+} from 'lucide-react'
 import { IcebergItem, IcebergResult } from '../../../shared/aether'
 import { ChevronRightIcon, SnowflakeIcon, SpinnerIcon } from './icons'
 
@@ -249,24 +259,34 @@ export function Crystallizer({
   return (
     <div className="crystallizer">
       <header className="crystallizer-header">
-        <div className="crystallizer-brand">
+        <div className="brand-cluster" aria-label="ICE Knowledge Crystallizer">
           <span className="crystallizer-mark">
-            <SnowflakeIcon />
+            <Snowflake size={25} className="brand-crystal animate-spin-slow" />
+            {/* <SnowflakeIcon className="brand-crystal animate-spin-slow" /> */}
           </span>
-          <div>
-            <p>iCE</p>
-            <h1>Information Complexity Explorer</h1>
+          <h1>ICE</h1>
+          <div className="brand-divider" />
+          <div className="brand-copy">
+            <div className="crystallizer-brand">
+              <h1 style={{ fontSize: '23px', fontStyle: 'normal' }}>
+                Information Complexity Explorer
+              </h1>
+              <span className="crystallizer-brand-subtitle">Knowledge Crystallizer</span>
+            </div>
           </div>
         </div>
 
         <form className="crystallizer-search" onSubmit={generate}>
-          <input
-            aria-label="Crystallizer topic"
-            disabled={loading || Boolean(busy)}
-            onChange={(event) => setKeyword(event.target.value)}
-            placeholder="Map a topic"
-            value={keyword}
-          />
+          <div className="crystallizer-search-shell">
+            <Search size={15} aria-hidden />
+            <input
+              aria-label="Crystallizer topic"
+              disabled={loading || Boolean(busy)}
+              onChange={(event) => setKeyword(event.target.value)}
+              placeholder="Explore a topic"
+              value={keyword}
+            />
+          </div>
           <button disabled={loading || Boolean(busy) || !keyword.trim()} type="submit">
             {loading ? <SpinnerIcon /> : <SnowflakeIcon />}
             <span>{loading ? 'Crystallizing' : 'Crystallize'}</span>
@@ -390,7 +410,7 @@ export function Crystallizer({
           {loading && (
             <div className="crystallizer-empty">
               <SpinnerIcon />
-              <h2>Crystallizing.</h2>
+              <h2>Crystallizing</h2>
             </div>
           )}
 
@@ -402,6 +422,15 @@ export function Crystallizer({
         </div>
 
         <aside className="crystallizer-dock" aria-label="Crystallizer details">
+          <div className="dock-head">
+            <div>
+              <span>
+                <BookOpen size={15} />
+                Ordered Topics
+              </span>
+              <h2>{result ? `${visibleItems.length} fragments` : 'Awaiting query'}</h2>
+            </div>
+          </div>
           <div className="layer-strip compact" aria-label="Layer filters">
             <button
               className={activeLayer === 'all' ? 'active' : undefined}
@@ -449,7 +478,18 @@ export function Crystallizer({
               </button>
             </article>
           ) : (
-            <div className="crystallizer-placeholder">Select a fragment.</div>
+            <div className="crystallizer-placeholder">
+              <span>
+                {loading ? (
+                  <div style={{ width: '30px' }}>
+                    <SnowflakeIcon className="animate-spin-fast" />
+                  </div>
+                ) : (
+                  <Snowflake size={30} />
+                )}
+                {loading ? 'Crystallizing' : 'SELECT A TOPIC'}
+              </span>
+            </div>
           )}
 
           <div className="crystallizer-list">
@@ -465,8 +505,26 @@ export function Crystallizer({
               </button>
             ))}
           </div>
+
+          <span className="atlas-heading" style={{ margin: 'auto' }}>
+            Local-first Semantic Cartography
+          </span>
         </aside>
       </section>
+
+      <div style={{ position: 'absolute', bottom: '10px', left: '12px' }}>
+        <span className="atlas-heading">
+          <Compass size={15} />
+          Complexity Atlas
+        </span>
+      </div>
+
+      <div style={{ position: 'absolute', bottom: '10px', right: '330px' }}>
+        <span className="atlas-heading">
+          <Move size={15} />
+          Pan
+        </span>
+      </div>
     </div>
   )
 }

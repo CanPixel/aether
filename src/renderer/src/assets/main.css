@@ -26,6 +26,8 @@
   --danger: #b85b59;
   --shadow: 0 18px 55px rgba(51, 103, 137, 0.16);
   --soft-shadow: 0 10px 30px rgba(62, 132, 163, 0.11);
+
+  --font-ice: "Cinzel", "Cormorant Garamond", Georgia, serif;
 }
 
 html,
@@ -2505,12 +2507,95 @@ button {
   backdrop-filter: blur(24px) saturate(1.12);
 }
 
-.crystallizer-brand {
+.atlas-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+/* iCE Migration Part */
+
+.brand-cluster {
   display: flex;
   align-items: center;
-  min-width: 280px;
+  min-width: 342px;
   gap: 12px;
 }
+
+.brand-crystal {
+  flex: 0 0 auto;
+  color: #0ea5e9;
+  filter: drop-shadow(0 0 13px rgba(14, 165, 233, 0.38));
+}
+
+.brand-cluster h1 {
+  margin: 0;
+  color: #0f8cc2;
+  font-family: var(--font-ice);
+  font-size: 34px;
+  font-style: italic;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.07em;
+}
+
+.brand-divider {
+  width: 1px;
+  height: 30px;
+  margin-left: 3px;
+  background: linear-gradient(to bottom, transparent, rgba(14, 165, 233, 0.45), transparent);
+}
+
+.brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.brand-subtitle {
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 12s linear infinite;
+}
+
+.animate-spin-fast {
+  animation: spin-slow 2.5s linear infinite;
+}
+
 
 .crystallizer-mark {
   display: grid;
@@ -2529,12 +2614,12 @@ button {
   height: 25px;
 }
 
-.crystallizer-brand p {
-  margin: 0 0 3px;
+.crystallizer-brand-subtitle {
   color: #0f8cc2;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
-  letter-spacing: 0.16em;
+  line-height: 1;
+  letter-spacing: 0.31em;
   text-transform: uppercase;
 }
 
@@ -2549,19 +2634,55 @@ button {
 
 .crystallizer-search {
   display: flex;
-  width: min(100%, 640px);
+  width: min(100%, 410px);
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
 }
 
-.crystallizer-search input {
-  height: 42px;
-  border-radius: 8px;
+.crystallizer-search-shell {
+  display: flex;
+  align-items: center;
+  flex: 1 1 280px;
+  min-width: 240px;
+  height: 44px;
   padding: 0 14px;
-  background: rgba(255, 255, 255, 0.78);
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  box-shadow:
+    0 12px 42px rgba(8, 47, 73, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.8) inset;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.crystallizer-search-shell:focus-within {
+  color: #0284c7;
+  border-color: rgba(14, 165, 233, 0.52);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow:
+    0 20px 62px rgba(14, 165, 233, 0.14),
+    0 0 0 4px rgba(14, 165, 233, 0.09);
+}
+
+.crystallizer-search-shell input {
+  width: 100%;
+  min-width: 0;
+  padding: 0 0 0 11px;
+  color: #102033;
   font-size: 14px;
-  font-weight: 680;
+  font-weight: 650;
+  letter-spacing: 0;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  box-shadow: none;
+}
+
+.crystallizer-search-shell input::placeholder {
+  color: #94a3b8;
+  font-weight: 600;
 }
 
 .crystallizer-search button {
@@ -2573,6 +2694,52 @@ button {
   gap: 8px;
   border-radius: 8px;
   white-space: nowrap;
+
+  color: #ffffff;
+  background: linear-gradient(135deg, #0f172a, #075985 58%, #0f766e);
+  box-shadow:
+    0 16px 34px rgba(8, 47, 73, 0.24),
+    0 1px 0 rgba(255, 255, 255, 0.28) inset;
+}
+
+.crystallizer-search button span {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.crystallizer-search button:hover {
+  background: linear-gradient(135deg, #0f172a, #075985 42%, #0f766e);
+  box-shadow:
+    0 20px 42px rgba(8, 47, 73, 0.28),
+    0 1px 0 rgba(255, 255, 255, 0.38) inset;
+}
+
+.atlas-heading span,
+.dock-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.atlas-heading h2,
+.dock-head h2 {
+  margin: 7px 0 0;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: clamp(20px, 2.3vw, 31px);
+  font-weight: 850;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 0;
 }
 
 .crystallizer-search button svg {
@@ -2779,11 +2946,13 @@ button {
 }
 
 .crystallizer-dock {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   position: relative;
   z-index: 3;
-  display: flex;
   min-width: 0;
-  flex-direction: column;
   gap: 12px;
   border-left: 1px solid rgba(125, 211, 252, 0.26);
   padding: 14px;
@@ -2880,9 +3049,10 @@ button {
 }
 
 .crystallizer-placeholder {
-  display: grid;
+  display: flex;
   min-height: 138px;
   place-items: center;
+  align-items: center;
   border: 1px dashed rgba(100, 116, 139, 0.24);
   border-radius: 8px;
   color: #64748b;
@@ -2890,14 +3060,33 @@ button {
   font-weight: 760;
 }
 
+.crystallizer-placeholder span {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: auto;
+  gap: 10px;
+  display: flex;
+  align-items: center;
+}
+
+.crystallizer-placeholder span svg {
+  display: block;
+  min-width: 30px; /* Force the icon to maintain its expected size */
+  min-height: 30px;
+  flex-shrink: 0;   /* Prevent flexbox from squashing the icon */
+}
+
 .crystallizer-list {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  min-height: 0;
   gap: 7px;
   overflow: auto;
-  padding-right: 2px;
 }
 
 .crystallizer-list button {
@@ -2911,6 +3100,7 @@ button {
   padding: 7px 9px;
   text-align: left;
   box-shadow: none;
+  margin-right: 14px;
 }
 
 .crystallizer-list button.active {
