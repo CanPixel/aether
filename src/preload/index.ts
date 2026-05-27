@@ -31,6 +31,7 @@ const api: AetherApi = {
     list: () => ipcRenderer.invoke('aether:collections:list'),
     create: (input) => ipcRenderer.invoke('aether:collections:create', input),
     update: (input) => ipcRenderer.invoke('aether:collections:update', input),
+    reorder: (ids) => ipcRenderer.invoke('aether:collections:reorder', ids),
     delete: (id) => ipcRenderer.invoke('aether:collections:delete', id),
     captures: (collectionId) => ipcRenderer.invoke('aether:collections:captures', collectionId)
   },

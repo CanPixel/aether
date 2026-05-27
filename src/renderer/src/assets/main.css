@@ -913,6 +913,11 @@ button {
     transform 180ms ease;
 }
 
+.collection-accordion.dragging {
+  opacity: 0.56;
+  transform: scale(0.992);
+}
+
 .collection-accordion.drop-target {
   border-color: rgba(78, 178, 210, 0.44);
   background:
@@ -921,6 +926,17 @@ button {
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.72),
     0 18px 38px rgba(68, 153, 197, 0.14);
+  transform: translateY(-1px);
+}
+
+.collection-accordion.reorder-target {
+  border-color: rgba(116, 145, 218, 0.42);
+  background:
+    radial-gradient(circle at 18% 22%, rgba(255, 255, 255, 0.92), transparent 34%),
+    rgba(235, 242, 255, 0.74);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72),
+    0 16px 34px rgba(86, 111, 178, 0.13);
   transform: translateY(-1px);
 }
 
@@ -2003,15 +2019,15 @@ button {
     0 7px 18px rgba(52, 86, 132, 0.1);
   transform-origin: center bottom;
   transition:
-    flex-basis 360ms cubic-bezier(0.22, 1, 0.36, 1),
-    max-width 360ms cubic-bezier(0.22, 1, 0.36, 1),
-    min-width 360ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    flex-basis 520ms cubic-bezier(0.2, 1.25, 0.32, 1),
+    max-width 520ms cubic-bezier(0.2, 1.25, 0.32, 1),
+    min-width 520ms cubic-bezier(0.2, 1.25, 0.32, 1),
+    transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
     border-color 220ms ease,
     background 260ms ease,
     box-shadow 260ms ease,
     color 220ms ease;
-  will-change: flex-basis, transform;
+  will-change: flex-basis;
 }
 
 .tab-chip.closable {
@@ -2460,6 +2476,7 @@ button {
     radial-gradient(circle at 72% 82%, rgba(166, 219, 255, 0.34), transparent 30%),
     rgba(242, 249, 255, 0.72);
   backdrop-filter: blur(26px) saturate(1.18);
+  animation: settings-overlay-in 260ms ease both;
 }
 
 .settings-modal {
@@ -2473,6 +2490,37 @@ button {
   box-shadow:
     0 32px 80px rgba(54, 91, 132, 0.2),
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  transform-origin: center;
+  animation: settings-modal-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes settings-overlay-in {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0) saturate(1);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(26px) saturate(1.18);
+  }
+}
+
+@keyframes settings-modal-in {
+  0% {
+    opacity: 0;
+    filter: blur(10px);
+    transform: translateY(14px) scale(0.975);
+  }
+  58% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(-2px) scale(1.006);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0) scale(1);
+  }
 }
 
 .settings-modal header {

@@ -147,6 +147,7 @@ export interface AetherApi {
       description?: string
       icon?: string
     }): Promise<CollectionSummary>
+    reorder(ids: string[]): Promise<CollectionSummary[]>
     delete(id: string): Promise<void>
     captures(collectionId: string): Promise<CaptureSummary[]>
   }

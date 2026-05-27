@@ -132,7 +132,7 @@ class LibraryStore {
 
   async listCollections(): Promise<CollectionSummary[]> {
     const data = await this.load()
-    return [...data.collections].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    return [...data.collections]
   }
 
   async listShortcuts(): Promise<HubShortcutSummary[]> {
@@ -268,6 +268,23 @@ class LibraryStore {
     data.collections = data.collections.filter((item) => item.id !== collectionId)
     data.captures = data.captures.filter((item) => item.collectionId !== collectionId)
     await this.save(data)
+  }
+
+  async reorderCollections(ids: string[]): Promise<CollectionSummary[]> {
+    const data = await this.load()
+    const requestedIds = ids.filter(Boolean)
+    const idSet = new Set(requestedIds)
+    const collectionById = new Map(
+      data.collections.map((collection) => [collection.id, collection])
+    )
+    const ordered = requestedIds
+      .map((id) => collectionById.get(id))
+      .filter((collection): collection is CollectionSummary => Boolean(collection))
+    const remaining = data.collections.filter((collection) => !idSet.has(collection.id))
+
+    data.collections = [...ordered, ...remaining]
+    await this.save(data)
+    return this.listCollections()
   }
 
   async addCapture(capture: CaptureSummary): Promise<void> {
@@ -1516,6 +1533,9 @@ function registerIpcHandlers(): void {
     'aether:collections:update',
     (_event, input: { id: string; name?: string; description?: string; icon?: string }) =>
       getLibrary().updateCollection(input)
+  )
+  ipcMain.handle('aether:collections:reorder', (_event, ids: string[]) =>
+    getLibrary().reorderCollections(ids)
   )
   ipcMain.handle('aether:collections:delete', async (_event, id: string) => {
     await getDatabase().deleteCollection(id)
