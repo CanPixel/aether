@@ -27,7 +27,7 @@
   --shadow: 0 18px 55px rgba(51, 103, 137, 0.16);
   --soft-shadow: 0 10px 30px rgba(62, 132, 163, 0.11);
 
-  --font-ice: "Cinzel", "Cormorant Garamond", Georgia, serif;
+  --font-ice: 'Cinzel', 'Cormorant Garamond', Georgia, serif;
 }
 
 html,
@@ -2475,8 +2475,19 @@ button {
   overflow: hidden;
   color: #102033;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(240, 250, 255, 0.68) 48%, rgba(255, 252, 246, 0.72)),
-    linear-gradient(90deg, rgba(14, 165, 233, 0.08), transparent 34%, rgba(20, 184, 166, 0.07) 66%, rgba(184, 110, 45, 0.06));
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.78),
+      rgba(240, 250, 255, 0.68) 48%,
+      rgba(255, 252, 246, 0.72)
+    ),
+    linear-gradient(
+      90deg,
+      rgba(14, 165, 233, 0.08),
+      transparent 34%,
+      rgba(20, 184, 166, 0.07) 66%,
+      rgba(184, 110, 45, 0.06)
+    );
 }
 
 .crystallizer::before {
@@ -2596,11 +2607,11 @@ button {
   animation: spin-slow 2.5s linear infinite;
 }
 
-
 .crystallizer-mark {
   display: grid;
   place-items: center;
   width: 42px;
+  min-width: 42px;
   height: 42px;
   border: 1px solid rgba(14, 165, 233, 0.3);
   border-radius: 8px;
@@ -2654,7 +2665,10 @@ button {
   box-shadow:
     0 12px 42px rgba(8, 47, 73, 0.08),
     0 1px 0 rgba(255, 255, 255, 0.8) inset;
-  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
 }
 
 .crystallizer-search-shell:focus-within {
@@ -2809,15 +2823,83 @@ button {
 
 .iceberg-shape {
   fill: url(#iceberg-body);
-  stroke: rgba(15, 140, 194, 0.34);
-  stroke-width: 4px;
-  filter: drop-shadow(0 30px 46px rgba(8, 47, 73, 0.14));
+  stroke: rgba(125, 211, 252, 0.46);
+  stroke-width: 5px;
+  filter: drop-shadow(0 46px 70px rgba(8, 47, 73, 0.22))
+    drop-shadow(0 0 34px rgba(125, 211, 252, 0.28));
+}
+
+.crystallizer-body.results-ready .iceberg-shape {
+  animation: crystallizerIcebergReveal 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.iceberg-layer-zone {
+  mix-blend-mode: multiply;
+}
+
+.crystallizer-body.results-ready .iceberg-layer-zone {
+  transform-origin: center;
+  animation: crystallizerZoneReveal 680ms ease both;
+  animation-delay: 120ms;
+}
+
+.iceberg-shade {
+  fill: url(#iceberg-shadow);
+  opacity: 0.56;
+  pointer-events: none;
+}
+
+.crystallizer-body.results-ready .iceberg-shade,
+.crystallizer-body.results-ready .iceberg-facet,
+.crystallizer-body.results-ready .iceberg-ridge,
+.crystallizer-body.results-ready .waterline {
+  animation: crystallizerFacetReveal 760ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 180ms;
 }
 
 .iceberg-facet {
-  fill: rgba(255, 255, 255, 0.28);
-  stroke: rgba(255, 255, 255, 0.48);
+  fill: rgba(255, 255, 255, 0.2);
+  stroke: rgba(255, 255, 255, 0.5);
   stroke-width: 2px;
+  pointer-events: none;
+}
+
+.iceberg-facet.soft {
+  fill: rgba(255, 255, 255, 0.12);
+  opacity: 0.62;
+}
+
+.iceberg-facet.low {
+  fill: rgba(52, 78, 108, 0.12);
+  stroke: rgba(255, 255, 255, 0.24);
+}
+
+.iceberg-ridge {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.58);
+  stroke-linecap: round;
+  stroke-width: 3px;
+  pointer-events: none;
+}
+
+.iceberg-ridge.faint {
+  stroke: rgba(255, 255, 255, 0.32);
+  stroke-width: 2px;
+}
+
+.iceberg-glint {
+  fill: none;
+  opacity: 0.72;
+  stroke: rgba(255, 255, 255, 0.64);
+  stroke-linecap: round;
+  stroke-width: 10px;
+  filter: blur(1px);
+  pointer-events: none;
+}
+
+.iceberg-glint.right {
+  opacity: 0.36;
+  stroke-width: 7px;
 }
 
 .waterline {
@@ -2826,17 +2908,53 @@ button {
 }
 
 .crystallizer-layer line {
-  stroke: rgba(15, 140, 194, 0.18);
-  stroke-dasharray: 14 18;
-  stroke-width: 2px;
+  stroke: color-mix(in srgb, var(--layer-accent) 28%, rgba(15, 140, 194, 0.12));
+  stroke-dasharray: 10 16;
+  stroke-width: 2.25px;
 }
 
-.crystallizer-layer text {
-  fill: rgba(71, 85, 105, 0.7);
-  font-size: 30px;
-  font-weight: 900;
-  letter-spacing: 0;
+.crystallizer-body.results-ready .crystallizer-layer line {
+  animation: crystallizerLineReveal 700ms ease both;
+  animation-delay: 260ms;
+}
+
+.crystallizer-layer-label rect {
+  fill: rgba(255, 255, 255, 0.48);
+  stroke: color-mix(in srgb, var(--layer-accent) 24%, rgba(255, 255, 255, 0.4));
+  stroke-width: 1.4px;
+  filter: drop-shadow(0 12px 24px rgba(8, 47, 73, 0.08));
+}
+
+.crystallizer-body.results-ready .crystallizer-layer-label,
+.crystallizer-body.results-ready .layer-depth-label {
+  animation: crystallizerLabelReveal 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 340ms;
+}
+
+.crystallizer-layer-label text,
+.layer-depth-label {
+  pointer-events: none;
   text-transform: uppercase;
+}
+
+.layer-label-name {
+  fill: rgba(15, 23, 42, 0.72);
+  font-size: 25px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.layer-label-caption,
+.layer-depth-label {
+  fill: rgba(71, 85, 105, 0.58);
+  font-size: 16px;
+  font-weight: 920;
+  letter-spacing: 0.12em;
+}
+
+.layer-depth-label {
+  fill: rgba(71, 85, 105, 0.5);
+  text-anchor: end;
 }
 
 .semantic-thread {
@@ -2845,8 +2963,19 @@ button {
   stroke-width: 3px;
 }
 
+.crystallizer-body.results-ready .semantic-thread {
+  animation: crystallizerThreadReveal 680ms ease both;
+  animation-delay: calc(420ms + min(var(--reveal-index), 12) * 28ms);
+}
+
 .ice-node-hit {
   outline: none;
+}
+
+.crystallizer-body.results-ready .ice-node-hit {
+  opacity: 0;
+  animation: crystallizerNodeReveal 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(520ms + min(var(--reveal-index), 16) * 34ms);
 }
 
 .ice-node {
@@ -2919,6 +3048,7 @@ button {
 .crystallizer-empty {
   position: absolute;
   inset: 0;
+  z-index: 8;
   display: grid;
   place-content: center;
   justify-items: center;
@@ -2926,6 +3056,68 @@ button {
   pointer-events: none;
   color: #0f8cc2;
   text-align: center;
+}
+
+.crystallizer-empty::before {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.34), transparent 34%),
+    linear-gradient(180deg, rgba(239, 249, 255, 0.08), rgba(232, 244, 255, 0.18));
+  backdrop-filter: blur(10px) saturate(1.12);
+  -webkit-backdrop-filter: blur(10px) saturate(1.12);
+  mask-image: radial-gradient(
+    circle at 50% 50%,
+    black 0 38%,
+    rgba(0, 0, 0, 0.7) 58%,
+    transparent 86%
+  );
+}
+
+.crystallizer-state-card {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-width: min(360px, 72vw);
+  min-height: 154px;
+  overflow: hidden;
+  border: 1px solid rgba(186, 230, 253, 0.42);
+  border-radius: 18px;
+  padding: 28px 42px;
+  background:
+    radial-gradient(circle at 50% 20%, rgba(255, 255, 255, 0.98), transparent 42%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(238, 248, 255, 0.46));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 28px 70px rgba(8, 47, 73, 0.16),
+    0 0 0 1px rgba(255, 255, 255, 0.34);
+  backdrop-filter: blur(24px) saturate(1.2);
+}
+
+.crystallizer-state-card::before {
+  position: absolute;
+  inset: -45%;
+  content: '';
+  background:
+    conic-gradient(
+      from 120deg,
+      transparent,
+      rgba(125, 211, 252, 0.18),
+      transparent 40%,
+      rgba(255, 255, 255, 0.34),
+      transparent 72%
+    ),
+    radial-gradient(circle at 50% 50%, rgba(210, 247, 255, 0.4), transparent 42%);
+  filter: blur(18px);
+  opacity: 0.72;
+}
+
+.crystallizer-state-card > svg,
+.crystallizer-state-card h2 {
+  position: relative;
+  z-index: 2;
 }
 
 .crystallizer-empty svg {
@@ -2945,6 +3137,23 @@ button {
   color: var(--danger);
 }
 
+.crystallizer-empty.crystallizing .crystallizer-state-card {
+  min-height: 178px;
+}
+
+.crystallizer-empty.crystallizing .crystallizer-state-card::before {
+  animation: answerHaze 6.5s linear infinite;
+}
+
+.crystallizer-empty.crystallizing .answer-loading-haze,
+.crystallizer-empty.crystallizing .answer-loading-ring {
+  border-radius: inherit;
+}
+
+.crystallizer-empty.crystallizing .answer-loading-ring {
+  inset: 24px;
+}
+
 .crystallizer-dock {
   display: flex;
   flex-direction: column;
@@ -2962,18 +3171,55 @@ button {
 
 .layer-strip.compact {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .layer-strip.compact button {
   display: grid;
-  height: 44px;
-  place-items: center;
-  border-radius: 8px;
-  padding: 5px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  height: 42px;
+  align-items: center;
+  gap: 7px;
+  border-radius: 10px;
+  padding: 7px 8px;
   box-shadow: none;
   color: #475569;
+  text-align: left;
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    background 150ms ease,
+    box-shadow 150ms ease,
+    color 150ms ease;
+}
+
+.crystallizer-body.results-ready .layer-strip.compact button {
+  animation: crystallizerDockReveal 440ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.crystallizer-body.results-ready .layer-strip.compact button:nth-child(1) {
+  animation-delay: 160ms;
+}
+
+.crystallizer-body.results-ready .layer-strip.compact button:nth-child(2) {
+  animation-delay: 195ms;
+}
+
+.crystallizer-body.results-ready .layer-strip.compact button:nth-child(3) {
+  animation-delay: 230ms;
+}
+
+.crystallizer-body.results-ready .layer-strip.compact button:nth-child(4) {
+  animation-delay: 265ms;
+}
+
+.crystallizer-body.results-ready .layer-strip.compact button:nth-child(5) {
+  animation-delay: 300ms;
+}
+
+.crystallizer-body.results-ready .layer-strip.compact button:nth-child(6) {
+  animation-delay: 335ms;
 }
 
 .layer-strip.compact button.active {
@@ -2982,7 +3228,69 @@ button {
   color: color-mix(in srgb, var(--layer-accent, #0f8cc2) 84%, #102033);
 }
 
-.layer-strip.compact span {
+.layer-strip.compact button:hover {
+  border-color: color-mix(in srgb, var(--layer-accent, #0f8cc2) 42%, white);
+  background: color-mix(in srgb, var(--layer-accent, #0f8cc2) 8%, white);
+  box-shadow: 0 9px 20px rgba(8, 47, 73, 0.08);
+  transform: translateY(-1px);
+}
+
+.layer-strip.compact button:disabled,
+.layer-strip.compact button:disabled:hover {
+  opacity: 0.48;
+  border-color: rgba(148, 163, 184, 0.18);
+  background: rgba(241, 245, 249, 0.46);
+  box-shadow: none;
+  color: #94a3b8;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.layer-strip.compact button:disabled .layer-number,
+.layer-strip.compact button:disabled svg {
+  filter: grayscale(0.5) saturate(0.45);
+}
+
+.layer-strip.compact svg,
+.layer-number {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--layer-accent, #0f8cc2) 82%, #ffffff);
+  color: #ffffff;
+}
+
+.layer-strip.compact svg {
+  padding: 3px;
+  border: 1px solid rgba(125, 211, 252, 0.42);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(239, 249, 255, 0.62)),
+    rgba(14, 165, 233, 0.08);
+  color: #0f8cc2;
+}
+
+.layer-strip.compact strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 920;
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.layer-strip.compact .filter-count {
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  padding: 0 5px;
+  background: rgba(15, 23, 42, 0.06);
+  color: #64748b;
   font-size: 10px;
   font-weight: 900;
 }
@@ -2997,6 +3305,11 @@ button {
     linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.62)),
     color-mix(in srgb, var(--layer-accent) 7%, white);
   box-shadow: 0 18px 42px rgba(8, 47, 73, 0.1);
+}
+
+.crystallizer-body.results-ready .crystallizer-detail {
+  animation: crystallizerDockReveal 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 430ms;
 }
 
 .crystallizer-detail p,
@@ -3076,7 +3389,7 @@ button {
   display: block;
   min-width: 30px; /* Force the icon to maintain its expected size */
   min-height: 30px;
-  flex-shrink: 0;   /* Prevent flexbox from squashing the icon */
+  flex-shrink: 0; /* Prevent flexbox from squashing the icon */
 }
 
 .crystallizer-list {
@@ -3103,6 +3416,11 @@ button {
   margin-right: 14px;
 }
 
+.crystallizer-body.results-ready .crystallizer-list button {
+  animation: crystallizerListReveal 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(560ms + min(var(--reveal-index), 18) * 28ms);
+}
+
 .crystallizer-list button.active {
   border-color: rgba(15, 140, 194, 0.32);
   background: rgba(231, 246, 255, 0.82);
@@ -3114,10 +3432,11 @@ button {
   width: 22px;
   height: 22px;
   border-radius: 6px;
-  background: rgba(14, 165, 233, 0.1);
-  color: #0f8cc2;
+  background: color-mix(in srgb, var(--layer-accent, #0f8cc2) 88%, #ffffff);
+  color: #ffffff;
   font-size: 11px;
   font-weight: 900;
+  box-shadow: 0 7px 16px color-mix(in srgb, var(--layer-accent, #0f8cc2) 18%, transparent);
 }
 
 .crystallizer-list strong {
@@ -3128,6 +3447,100 @@ button {
   font-weight: 820;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@keyframes crystallizerIcebergReveal {
+  from {
+    opacity: 0.18;
+    filter: blur(10px) drop-shadow(0 18px 32px rgba(8, 47, 73, 0.08));
+  }
+  to {
+    opacity: 1;
+    filter: blur(0) drop-shadow(0 46px 70px rgba(8, 47, 73, 0.22))
+      drop-shadow(0 0 34px rgba(125, 211, 252, 0.28));
+  }
+}
+
+@keyframes crystallizerZoneReveal {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes crystallizerFacetReveal {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+  }
+  to {
+    filter: blur(0);
+  }
+}
+
+@keyframes crystallizerLineReveal {
+  from {
+    opacity: 0;
+    stroke-dashoffset: 80;
+  }
+}
+
+@keyframes crystallizerLabelReveal {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes crystallizerThreadReveal {
+  from {
+    opacity: 0;
+    stroke-dasharray: 4 18;
+    stroke-dashoffset: 80;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes crystallizerNodeReveal {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes crystallizerDockReveal {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes crystallizerListReveal {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+    filter: blur(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+    filter: blur(0);
+  }
 }
 
 .settings-overlay {
