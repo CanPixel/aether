@@ -366,8 +366,9 @@ button:disabled {
 .app-button .app-dot {
   position: absolute;
   display: none;
-  right: -7px;
+  right: -9px;
   width: 5px;
+  top: 11px;
   height: 28px;
   border-radius: 6px;
   background: linear-gradient(#95c3ff, #5b91e1);
@@ -1952,7 +1953,7 @@ button {
 .new-tab-button {
   display: inline-grid;
   align-items: center;
-  height: 22px;
+  height: 24px;
   min-width: 0;
   border-radius: 8px;
   box-shadow: none;
@@ -2093,7 +2094,7 @@ button {
 }
 
 .quick-action-chip {
-  height: 20px;
+  height: 22px;
   border-radius: 999px;
   padding: 0 10px;
   background: rgba(255, 255, 255, 0.58);
