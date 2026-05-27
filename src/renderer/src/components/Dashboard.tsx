@@ -26,6 +26,33 @@ type DashboardProps = {
   selectCollection: (value: string) => Promise<void>
 }
 
+function cleanTitle(title: string): string {
+  if (!title) return ''
+
+  const suffixRegex =
+    /[\s\-_|—]+(Wikipedia|YouTube|Reddit.*|GitHub|Twitter|X|Medium|Stack Overflow|LinkedIn|The heart of the internet)$/i
+
+  return title.replace(suffixRegex, '').trim()
+}
+
+function getRootDomainLetter(hostString: string): string {
+  if (!hostString) return 'Æ'
+
+  let hostname = hostString.toLowerCase().trim()
+  if (hostname.includes('://')) {
+    try {
+      hostname = new URL(hostname).hostname
+    } catch {
+      /* empty */
+    }
+  }
+
+  const cleanHost = hostname.replace(/^(www\.|en\.|m\.|beta\.)/, '')
+
+  // Grab the very first character of the remaining root domain
+  return cleanHost.charAt(0).toUpperCase()
+}
+
 export function Dashboard({
   busy,
   capturesByCollection,
@@ -101,8 +128,8 @@ export function Dashboard({
                   title={shortcut.url}
                   type="button"
                 >
-                  <span>{shortcut.title.slice(0, 1).toUpperCase()}</span>
-                  <strong>{shortcut.title}</strong>
+                  <span>{getRootDomainLetter(shortcut.host)}</span>
+                  <strong>{cleanTitle(shortcut.title)}</strong>
                   <small>{shortcut.host}</small>
                 </button>
                 <button

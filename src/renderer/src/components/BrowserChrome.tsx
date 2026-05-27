@@ -125,11 +125,7 @@ export function BrowserChrome({
               {tab.isLoading ? (
                 <SpinnerIcon />
               ) : (
-                <PageFavicon
-                  key={`${tab.host}-${tab.favicon ?? ''}`}
-                  host={tab.host}
-                  icon={tab.favicon}
-                />
+                <PageFavicon key={`${tab.id}-${tab.favicon ?? ''}`} icon={tab.favicon} />
               )}
             </span>
             <span className="tab-title">{tab.title || tab.host || 'New tab'}</span>
@@ -206,30 +202,20 @@ function getTabStyle(tab: BrowserTabSummary): CSSProperties {
   } as CSSProperties
 }
 
-function PageFavicon({ host, icon }: { host: string; icon?: string }): React.JSX.Element {
-  const sources = [icon, getServiceFavicon(host), getFallbackFavicon(host)].filter(Boolean)
-  const [sourceIndex, setSourceIndex] = useState(0)
-  const source = sources[sourceIndex]
+function PageFavicon({ icon }: { icon?: string }): React.JSX.Element {
+  const [failed, setFailed] = useState(false)
 
-  if (!source) return <GlobeIcon />
+  if (!icon || failed) return <GlobeIcon />
 
   return (
     <img
-      src={source}
+      src={icon}
       alt=""
       onError={() => {
-        setSourceIndex((current) => current + 1)
+        setFailed(true)
       }}
     />
   )
-}
-
-function getServiceFavicon(host: string): string {
-  return host ? `https://www.google.com/s2/favicons?domain=${host}&sz=32` : ''
-}
-
-function getFallbackFavicon(host: string): string {
-  return host ? `https://${host}/favicon.ico` : ''
 }
 
 function getBrandTint(host: string): string {

@@ -73,12 +73,12 @@ export function IntelligencePanel({
     <aside className={`intelligence-panel ${panelCollapsed ? 'collapsed' : ''}`}>
       <button
         className="panel-icon-toggle tooltip-host"
-        data-tooltip={showTooltips ? 'Open AIon' : undefined}
+        data-tooltip={showTooltips ? 'Open AiON' : undefined}
         data-tooltip-side={showTooltips ? 'left' : undefined}
         aria-hidden={!panelCollapsed}
         onClick={onTogglePanel}
         tabIndex={panelCollapsed ? 0 : -1}
-        title="Open AIon"
+        title="Open AiON"
         type="button"
       >
         <AetherSigilIcon />
