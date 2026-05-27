@@ -3487,11 +3487,11 @@ button {
 @keyframes crystallizerLabelReveal {
   from {
     opacity: 0;
-    transform: translateX(-18px);
+    filter: blur(8px);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    filter: blur(0);
   }
 }
 

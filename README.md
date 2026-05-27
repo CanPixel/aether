@@ -1,92 +1,297 @@
 # Æther Browser
 
-Æther is an Electron-native research browser that combines app-style browsing with local retrieval-augmented generation. Instead of treating browsing history as a flat stream of pages, Æther captures readable page content into persistent user-defined knowledge hubs, embeds those captures locally through Ollama, stores vectors on disk with LanceDB, and lets you search or ask questions across the resulting knowledge base.
+Æther is an Electron-native research browser for local knowledge work. It combines normal web browsing, persistent knowledge hubs, local page capture, semantic retrieval, AiON question answering, and the iCE Information Complexity Explorer in one desktop shell.
 
-The project goal is a private "contextual research engine": browse the web, capture useful pages, organize them into knowledge hubs, and query those hubs without sending page content or prompts to a cloud inference service.
+The core idea is simple: browse the web, save useful pages into local knowledge hubs, embed those captures on your machine, and ask questions against that private local context without sending captured page content to a cloud model API.
 
-## Current MVP
+## What It Does
 
-The current vertical slice includes:
+Current major capabilities:
 
-- Electron shell with a light, spacious Æther dashboard.
-- Left rail with dashboard and browser controls.
-- Native app container powered by Electron `WebContentsView`.
-- Browser tabs, URL entry, back, and forward controls.
-- Internal dashboard opened as the app home view.
-- Persistent knowledge hubs stored in a local JSON manifest.
-- Dashboard hub accordions with draggable captured source cards.
-- Portal shortcuts for quickly launching saved pages.
-- Capture pipeline for the active browser page.
-- Readability-based extraction with a text fallback.
-- Chunking through LangChain's recursive character splitter.
-- Local embeddings through Ollama's REST API.
-- Disk-persistent LanceDB chunk table.
-- Semantic search scoped to the selected knowledge hub.
-- AiON Ask mode with selectable knowledge hub context and optional current-page context.
-- Local chat answers grounded in retrieved chunks with clickable citations.
-- Typed preload API between renderer and Electron main.
+- Electron desktop shell using native `WebContentsView` browser surfaces.
+- Browser tabs with dynamic sizing, favicons, page-theme tinting, back/forward history, and dashboard/browser switching.
+- Æther dashboard with saved portals, recent captures, and knowledge hub accordions.
+- Saved portals can be reordered by dragging and reopened as browser tabs.
+- Knowledge hubs can be created, edited, deleted, reordered, assigned icons, and expanded as accordions.
+- Captured source cards can be dragged between knowledge hubs.
+- Capture pipeline extracts readable page text, chunks it, embeds it locally, stores vectors on disk, and persists capture metadata.
+- AiON sidepanel provides local search and Ask mode over selected knowledge context.
+- AiON Ask supports populated knowledge hubs, current-page context, or both.
+- AI answers render as selectable markdown with copy support and clickable citations.
+- iCE, the Information Complexity Explorer, generates iceberg-style complexity maps for a topic using the local chat model.
+- Settings modal currently supports default search engine selection.
+- Ollama model menu supports local model status and model selection.
 
-## Local-Only Design
+## Privacy Boundary
 
-Æther is intentionally built around a zero-cloud data path for capture and retrieval.
+Æther's capture, retrieval, and local AI path is designed to stay on the machine.
 
-- Page HTML is read from the active Electron `WebContentsView`.
-- Extraction, chunking, metadata handling, embedding, storage, search, and chat orchestration run in the Electron main process.
-- The renderer never talks directly to LanceDB or raw Electron IPC.
-- Ollama is treated as an external local runtime at `http://127.0.0.1:11434`.
-- Captured text and vectors are stored under Electron's `app.getPath('userData')`.
+Local-only pieces:
 
-The browser may load normal websites, so web traffic still goes wherever the user navigates. The local intelligence pipeline does not send captured content to cloud model APIs.
+- Extracted page text
+- Capture metadata
+- Knowledge hub metadata
+- Embeddings
+- LanceDB vector storage
+- Retrieval queries
+- RAG prompts sent to Ollama
+- AiON answers generated through local Ollama models
+- iCE topic maps generated through local Ollama models
 
-## Architecture
+Normal browsing is still normal browsing. Websites loaded in the browser can make their own network requests, track sessions, run JavaScript, and communicate with their own servers. The privacy boundary applies to Æther's indexing and intelligence pipeline, not to websites themselves.
 
-```text
-Renderer React UI
-  |
-  | typed window.aether preload API
-  v
-Electron Preload
-  |
-  | validated IPC channels
-  v
-Electron Main Process
-  |
-  |-- AppContainerManager
-  |     WebContentsView browser, dashboard visibility, resize, history
-  |
-  |-- Capture pipeline
-  |     page HTML -> jsdom -> Readability -> fallback body text -> chunks
-  |
-  |-- OllamaClient
-  |     GET /api/tags, POST /api/embed, POST /api/chat
-  |
-  |-- LibraryStore
-  |     knowledge hub and capture manifest JSON
-  |
-  |-- LanceDB Chunk Store
-        vectors and scalar metadata in the `chunks` table
+## Prerequisites
+
+Required:
+
+- Bun for dependency management and scripts.
+- Electron-supported OS: macOS, Windows, or Linux.
+- Ollama running locally at `http://127.0.0.1:11434` for embeddings, AiON, and iCE.
+
+Recommended Ollama models:
+
+```bash
+ollama pull nomic-embed-text
+ollama pull llama3.1:8b
+ollama pull gemma3
 ```
 
-## Storage Model
+Check that Ollama is reachable:
 
-Æther stores user data in two local locations under Electron's user data directory.
+```bash
+curl http://127.0.0.1:11434/api/tags
+```
+
+Default model behavior:
+
+- Embeddings default to `nomic-embed-text`.
+- Chat model preference is `llama3.1:8b`, then `gemma3:latest`, then `gemma3`, then the first available local model.
+- The model menu can update the selected embedding and chat models.
+
+## Quick Start
+
+Install dependencies:
+
+```bash
+bun install
+```
+
+Run the app in development:
+
+```bash
+bun run dev
+```
+
+Run checks:
+
+```bash
+bun run typecheck
+bun run lint
+```
+
+Build compiled app bundles:
+
+```bash
+bun run build
+```
+
+Create a local unpacked desktop app:
+
+```bash
+bun run build:unpack
+```
+
+Open the local Apple silicon app after an unpacked macOS build:
+
+```bash
+open dist/mac-arm64/Æther.app
+```
+
+## Project Scripts
+
+| Script | Purpose |
+| --- | --- |
+| `bun run dev` | Start Electron through `electron-vite` for development. |
+| `bun run typecheck` | Run TypeScript checks for main/preload and renderer projects. |
+| `bun run lint` | Run ESLint. |
+| `bun run build` | Typecheck and build main, preload, and renderer bundles into `out/`. |
+| `bun run start` | Preview the built Electron app through `electron-vite preview`. |
+| `bun run postinstall` | Rebuild/install Electron app dependencies through `electron-builder install-app-deps`. |
+| `bun run build:unpack` | Run `bun run build`, then create an unpacked app directory in `dist/`. |
+| `bun run build:mac` | Build bundles and create macOS artifacts in `dist/`. This script currently skips `bun run typecheck`, so run checks manually before release. |
+| `bun run build:win` | Build bundles and create Windows artifacts in `dist/`. |
+| `bun run build:linux` | Build bundles and create Linux artifacts in `dist/`. |
+
+## Build Outputs
+
+There are three important output/resource directories:
+
+| Path | Owner | Purpose |
+| --- | --- | --- |
+| `out/` | `electron-vite` | Compiled Electron main, preload, and renderer bundles. This is not a distributable app by itself. |
+| `dist/` | `electron-builder` | Packaged apps and installers. This is where `.app`, `.dmg`, `.AppImage`, `.deb`, etc. appear. |
+| `build/` | project resources | Packaging resources such as icons and macOS entitlements. This is input to packaging, not output. |
+
+Common macOS outputs:
+
+```text
+out/main/index.js
+out/preload/index.js
+out/renderer/
+
+dist/mac-arm64/Æther.app
+dist/aether-browser-1.0.0.dmg
+```
+
+For quick local testing on Apple silicon, prefer:
+
+```bash
+bun run build:unpack
+open dist/mac-arm64/Æther.app
+```
+
+`build:unpack` creates a real `.app` directory without creating the full installer flow, which makes it useful for checking launch behavior, packaged assets, native dependencies, and the app icon.
+
+## macOS Packaging Notes
+
+Current macOS packaging config in `electron-builder.yml`:
+
+- `appId`: `com.canur.aether`
+- `productName`: `Æther`
+- `identity: null`
+- `notarize: false`
+- `entitlementsInherit: build/entitlements.mac.plist`
+
+That means local macOS builds are unsigned/ad-hoc test builds. They are suitable for development on your own machine. For external distribution, configure Apple Developer ID signing and notarization before shipping.
+
+If a packaged app crashes with missing Electron framework or Team ID mismatch, delete stale packaged output and rebuild from a clean package state:
+
+```bash
+bun run postinstall
+bun run build:unpack
+```
+
+## Application Surfaces
+
+### Left Rail
+
+The left rail is the main app switcher:
+
+- Æther opens the dashboard.
+- iCE opens the Information Complexity Explorer.
+- Web View switches back to browser content.
+- Settings opens the global settings modal.
+- AiON can be opened from the right-side panel control.
+
+### Browser Chrome
+
+The browser chrome includes:
+
+- Back and forward controls.
+- Address/search field.
+- Tabs with favicon fallback and dynamic theme tinting.
+- New tab creation.
+- Capture controls in browser mode.
+- Selected knowledge hub dropdown.
+
+Address behavior:
+
+- Full URLs navigate directly.
+- Search-like text is sent to the selected default search engine.
+- Default search engines currently include Google, Bing, Yahoo, Ecosia, and DuckDuckGo.
+
+### Dashboard
+
+The dashboard is the internal home surface. It shows:
+
+- Saved portals for fast page reopening.
+- Knowledge hub accordions.
+- Recent captures.
+- Capture source cards with hub indicators.
+
+Portal behavior:
+
+- Save the current page as a portal from the browser controls.
+- Reorder portals by dragging.
+- Open portals into browser tabs.
+- Delete portals from the dashboard.
+
+Knowledge hub behavior:
+
+- Create hubs with a name, description, and searchable icon.
+- Reorder hubs by dragging.
+- Expand a hub to show its captured sources.
+- Drag captured source cards between hub accordions.
+- Click captured source links to open them in a new browser tab.
+- Edit/delete hub controls live in the accordion header.
+
+### AiON
+
+AiON is the local intelligence sidepanel.
+
+Search mode:
+
+- Searches a selected knowledge hub using local embeddings.
+- Returns matched chunks with source metadata.
+
+Ask mode:
+
+- Pressing Enter submits a non-empty prompt.
+- Empty hubs with `0 captures` or `0 chunks` are hidden because they cannot contribute context.
+- If no populated hubs exist, AiON defaults to current-page-only context.
+- If populated hubs exist, rows show icon, hub name, and capture count.
+- Current page context can be toggled with a larger button-style control.
+- Answers are markdown-rendered, selectable, copyable, and citation-backed.
+- Duplicate citation URLs are deduplicated before display.
+- Citation clicks open the source in a browser tab.
+
+### iCE Information Complexity Explorer
+
+The iCE view maps a topic into an iceberg-style complexity atlas.
+
+It generates five depth layers:
+
+1. Surface: common language
+2. Formation: adjacent concepts
+3. Cold Current: methods and mechanisms
+4. Black Ice: specialist patterns
+5. Abyssal Lattice: hidden edge knowledge
+
+The iCE canvas includes:
+
+- Topic search input.
+- Local Ollama generation.
+- Zoom in/out/reset controls.
+- Smooth view reset and zoom transitions.
+- Layer zone tinting and labels.
+- Layer filter buttons with counts.
+- Disabled filter controls before results exist.
+- Ordered topic list with selected fragment details.
+- Loading state with glassmorphic canvas blur and icy particle effects.
+- Staggered reveal after results arrive.
+
+## Local Data Storage
+
+Æther stores app data under Electron's `app.getPath('userData')`.
+
+Current storage paths:
 
 ```text
 <userData>/aether-library/library.json
 <userData>/aether-realms/chunks.lance
+<userData>/aether-settings/settings.json
 ```
 
-`library.json` tracks knowledge hub and capture summaries:
+`library.json` stores:
 
-- hub id
-- hub name
-- description
-- created and updated timestamps
-- capture count
-- chunk count
-- migrated legacy realm tables
+- Knowledge hub summaries.
+- Saved portal shortcuts.
+- Capture summaries.
+- Capture counts.
+- Chunk counts.
+- Legacy migration flags.
 
-The LanceDB `chunks` table stores one row per embedded chunk:
+`chunks.lance` stores the LanceDB chunk table:
 
 - `id`
 - `vector`
@@ -99,151 +304,113 @@ The LanceDB `chunks` table stores one row per embedded chunk:
 - `capturedAt`
 - `chunkIndex`
 
-Knowledge hubs are the user-facing organization model. A hub can contain one or more page captures, and search/chat are scoped to a hub. Moving a captured source card between hub accordions updates both `library.json` and the LanceDB chunk metadata so retrieval follows the moved source.
+`settings.json` stores app preferences such as the default search engine.
 
 ## Capture Pipeline
 
-When the user captures the current page:
+When the current browser page is captured:
 
-1. Æther verifies a knowledge hub is selected.
-2. The main process reads the active browser page using isolated JavaScript execution.
-3. It extracts:
-   - `document.documentElement.outerHTML`
-   - page URL
-   - page title
-   - basic metadata
-4. The HTML is parsed with `jsdom`.
-5. Scripts, styles, forms, and noisy document regions are stripped.
-6. `@mozilla/readability` distills the page into article-like text.
-7. If Readability returns too little content, Æther falls back to `document.body.innerText`.
-8. Captures below the minimum text threshold are rejected with a clear error.
-9. Text is split into overlapping chunks.
-10. Each chunk receives source metadata.
-11. Chunks are embedded locally through Ollama.
+1. Renderer calls `window.aether.capture.currentPage({ collectionId })`.
+2. Main process validates the selected knowledge hub.
+3. Main process reads the active `WebContentsView` page through isolated execution.
+4. It collects page URL, title, document HTML, body text fallback, and metadata.
+5. `jsdom` parses the HTML.
+6. Noisy tags and regions are removed.
+7. `@mozilla/readability` extracts article-like content.
+8. If Readability returns too little content, body text fallback is used.
+9. Pages below the minimum readable text threshold are rejected.
+10. LangChain's recursive character splitter creates overlapping chunks.
+11. Chunks are embedded through Ollama's local REST API.
 12. Chunk rows are inserted into LanceDB.
-13. Capture and hub summaries are persisted to `library.json`.
+13. Capture metadata is persisted to `library.json`.
+14. Renderer refreshes collection and capture summaries.
 
-## Retrieval And Chat
+Moving a capture between hubs updates both:
 
-Search and chat both start with local embeddings:
+- The capture's `collectionId` in `library.json`.
+- Matching LanceDB chunk rows so future search and Ask retrieval follow the moved source.
 
-1. The query is embedded with the configured embedding model.
-2. Æther searches LanceDB for nearest chunks.
-3. Search results include citation metadata and distance score.
-4. Chat builds a context block from top retrieved chunks.
-5. The local chat model is instructed to answer only from supplied context when querying a knowledge hub.
+Deleting a capture removes both:
 
-AiON Ask mode supports three practical context shapes:
+- The manifest capture summary.
+- Matching LanceDB chunk rows.
 
-- current page only, used automatically when no populated knowledge hubs exist
-- one populated knowledge hub
-- one populated knowledge hub plus the current browser page
+## Retrieval And Chat Flow
 
-Empty hubs with `0 captures` or `0 chunks` are hidden from AiON Ask mode because they cannot contribute retrieval context.
+Search flow:
 
-Default models:
+1. User enters a query.
+2. Query is embedded with the configured embedding model.
+3. LanceDB returns nearest chunks scoped to the selected hub.
+4. Renderer receives typed `SearchResult` objects.
 
-- Embeddings: `nomic-embed-text`
-- Chat preference order: `llama3.1:8b`, `gemma3:latest`, `gemma3`, then the first available local model
+Ask flow:
 
-## Prerequisites
+1. User chooses current page, a populated hub, or both.
+2. If a hub is selected, top chunks are retrieved from LanceDB.
+3. If current page is included, the active page is extracted and added as context.
+4. Duplicate source citations are merged.
+5. The local chat model receives a grounded prompt.
+6. AiON renders the markdown answer and citation badges.
 
-- macOS, Linux, or Windows supported by Electron.
-- [Bun](https://bun.sh/) for package management and scripts.
-- [Ollama](https://ollama.com/) running locally.
-- Recommended Ollama models:
+The intended answer behavior is grounded: when hub context is used, the model should answer from supplied context rather than inventing unsupported facts.
 
-```bash
-ollama pull nomic-embed-text
-ollama pull llama3.1:8b
-ollama pull gemma3
-```
-
-Confirm Ollama is reachable:
-
-```bash
-curl http://127.0.0.1:11434/api/tags
-```
-
-## Development
-
-Install dependencies:
-
-```bash
-bun install
-```
-
-Run the Electron app in development:
-
-```bash
-bun run dev
-```
-
-Run static checks:
-
-```bash
-bun run typecheck
-bun run lint
-```
-
-Build the app:
-
-```bash
-bun run build
-```
-
-`bun run build` creates Vite/Electron bundles in `out/` only. It does not create a `.app`, `.dmg`, installer, or unpacked app directory.
-
-Package targets:
-
-```bash
-bun run build:unpack
-bun run build:mac
-bun run build:win
-bun run build:linux
-```
-
-Packaging is handled by `electron-builder` and writes artifacts to `dist/`.
-
-Common local macOS outputs:
+## Architecture
 
 ```text
-out/main/index.js
-out/preload/index.js
-out/renderer/
-
-dist/mac-arm64/Æther.app
-dist/aether-browser-1.0.0.dmg
+Renderer React UI
+  |
+  | window.aether typed preload API
+  v
+Electron Preload
+  |
+  | validated IPC channels
+  v
+Electron Main Process
+  |
+  |-- AppContainerManager
+  |     WebContentsView browser tabs, dashboard visibility, resize, popups, history
+  |
+  |-- LibraryStore
+  |     knowledge hubs, captures, saved portals, migration metadata
+  |
+  |-- SettingsStore
+  |     default search engine and app settings
+  |
+  |-- Capture pipeline
+  |     active page -> jsdom -> Readability -> fallback text -> chunks
+  |
+  |-- OllamaClient
+  |     /api/tags, /api/embed, /api/chat
+  |
+  |-- LanceDB Chunk Store
+  |     vector search and chunk metadata
+  |
+  |-- iCE generator
+        local chat prompt -> parsed iceberg JSON -> typed renderer result
 ```
 
-`out/` is the compiled Electron/Vite application code. `dist/` is the packaged distribution output. `build/` contains packaging resources such as icons and macOS entitlements.
+Main process responsibilities:
 
-For a local Apple silicon test build, use:
+- Owns browser views and tabs.
+- Owns file-system writes.
+- Owns LanceDB access.
+- Owns Ollama REST calls.
+- Owns capture extraction from the active page.
+- Exposes only typed IPC results to the renderer.
 
-```bash
-bun run build:unpack
-open dist/mac-arm64/Æther.app
-```
+Renderer responsibilities:
 
-The current macOS config uses `identity: null` and `notarize: false`, so local builds are unsigned ad-hoc test builds. For distribution outside your own machine, configure Developer ID signing and notarization before shipping.
-
-## Project Scripts
-
-| Script                 | Purpose                                                       |
-| ---------------------- | ------------------------------------------------------------- |
-| `bun run dev`          | Start Electron through `electron-vite` for development.       |
-| `bun run typecheck`    | Run TypeScript checks for main/preload and renderer projects. |
-| `bun run lint`         | Run ESLint.                                                   |
-| `bun run build`        | Typecheck and build main, preload, and renderer bundles.      |
-| `bun run start`        | Preview the built Electron app.                               |
-| `bun run build:unpack` | Build and create an unpacked Electron app directory.          |
-| `bun run build:mac`    | Build renderer/main bundles and a macOS package in `dist/`.   |
-| `bun run build:win`    | Build renderer/main bundles and a Windows package in `dist/`. |
-| `bun run build:linux`  | Build renderer/main bundles and a Linux package in `dist/`.   |
+- App shell and UI state.
+- Dashboard, browser chrome, AiON, iCE, modals, and interactions.
+- Drag/drop interactions for portals, hubs, and captured source cards.
+- Calls typed `window.aether` APIs instead of direct Electron or database access.
 
 ## Typed Renderer API
 
-Renderer code accesses privileged functionality through `window.aether`.
+Renderer code accesses privileged functionality through `window.aether`. The source of truth is `src/shared/aether.ts`.
+
+Representative API surface:
 
 ```ts
 window.aether.apps.list()
@@ -252,11 +419,25 @@ window.aether.apps.navigate(appId, url)
 window.aether.apps.goBack(appId)
 window.aether.apps.goForward(appId)
 
+window.aether.tabs.list()
+window.aether.tabs.create({ url })
+window.aether.tabs.activate(tabId)
+window.aether.tabs.close(tabId)
+window.aether.tabs.navigate(tabId, url)
+window.aether.tabs.goBack(tabId)
+window.aether.tabs.goForward(tabId)
+
 window.aether.dashboard.open()
 
+window.aether.hub.list()
+window.aether.hub.create({ title, url })
+window.aether.hub.reorder(ids)
+window.aether.hub.delete(id)
+
 window.aether.collections.list()
-window.aether.collections.create({ name, description })
-window.aether.collections.update({ id, name, description })
+window.aether.collections.create({ name, description, icon })
+window.aether.collections.update({ id, name, description, icon })
+window.aether.collections.reorder(ids)
 window.aether.collections.delete(id)
 window.aether.collections.captures(collectionId)
 
@@ -267,50 +448,92 @@ window.aether.capture.delete(captureId)
 window.aether.search.collection({ collectionId, query, limit })
 window.aether.chat.ask({ collectionId, prompt, includeCurrentPage })
 
+window.aether.crystallizer.generate({ keyword })
+
 window.aether.system.status()
+window.aether.system.settings()
+window.aether.system.updateSettings({ browser: { defaultSearchEngine } })
+window.aether.system.updateModels({ embeddingModel, chatModel })
+
 window.aether.layout.setIntelligencePanelCollapsed(collapsed)
+window.aether.layout.setModalOverlayOpen(open)
+
 window.aether.events.onState(listener)
 ```
-
-The source of truth for API types is `src/shared/aether.ts`.
 
 ## Source Layout
 
 ```text
 src/
   main/
-    index.ts          Electron main process, app containers, RAG services, IPC
+    index.ts                      Electron main process, browser views, stores, IPC, RAG, iCE
   preload/
-    index.ts          Typed bridge exposed as window.aether
-  renderer/
-    src/
-      App.tsx         Æther shell, dashboard, AiON panel
-      assets/
-        main.css      Light mythic UI system
+    index.ts                      Typed bridge exposed as window.aether
+    index.d.ts                    Renderer global typing
   shared/
-    aether.ts         Shared TypeScript API and result types
+    aether.ts                     Shared API, state, settings, capture, chat, and iCE types
+  renderer/
+    index.html                    Renderer HTML entry
+    src/
+      App.tsx                     Main shell, app switching, settings, task orchestration
+      main.tsx                    React mount
+      assets/
+        base.css                  Base styling
+        main.css                  Main UI system and animations
+      components/
+        BrowserChrome.tsx         Tabs, address bar, capture controls, favicon/theme tinting
+        CaptureDetailCard.tsx     Capture card variant for detail/recent views
+        CollectionDialog.tsx      Knowledge hub create/edit/delete modal
+        Crystallizer.tsx          iCE Information Complexity Explorer
+        Dashboard.tsx             Portals, knowledge hubs, recent captures
+        IntelligencePanel.tsx     AiON search/ask sidepanel and model controls
+        OllamaStatusMenu.tsx      Ollama status/model popover
+        SourceTray.tsx            Search/citation source display
+        icons.tsx                 Local icon components
+      utils/
+        aether-ui.ts              UI formatting helpers
+        collection-icon-data.ts   Knowledge hub icon option data
+        collection-icons.tsx      Knowledge hub icon renderer
 ```
 
-## UI Model
+## Electron Builder Configuration
 
-Æther currently uses a restrained, light-mode desktop shell:
+Packaging is configured in `electron-builder.yml`.
 
-- a left rail for home/dashboard and browser
-- a top titlebar and browser address bar
-- a central dashboard or native web content region
-- a right AiON panel for search and Ask mode
+Important details:
 
-The dashboard is the internal home surface. It shows portal shortcuts and knowledge hubs. Each knowledge hub is an accordion; expanding it shows captured source cards. Source cards can be dragged from one hub accordion to another, while source links remain clickable and open in a new browser tab.
+- `directories.buildResources: build`
+- `asarUnpack: resources/**`
+- Runtime files are packaged from the compiled app and production dependencies.
+- `npmRebuild: false` is currently set.
+- `publish` is configured as a generic provider pointing at `https://canpixel.com/auto-updates`.
 
-The browser view keeps quick actions, capture controls, the selected hub dropdown, and the address bar. The dashboard view keeps the tab row for fast navigation but hides browser-only quick actions.
+If a module is required at runtime by Electron main, it must be in `dependencies`, not only `devDependencies`. For example, LanceDB requires `apache-arrow`, so `apache-arrow` must be packaged as a runtime dependency.
 
-AiON is Æther's local intelligence sidepanel. The Ask panel lists only populated knowledge hubs; each row shows the hub icon, name, and capture count. If there are no populated hubs, Ask defaults to current-page-only context.
+## Development Guidelines
+
+Prefer:
+
+- Bun scripts over npm scripts.
+- Vite/Electron-native development over Next.js-style web app assumptions.
+- Main-process ownership for privileged APIs, database work, file writes, and web contents access.
+- Typed IPC through `src/shared/aether.ts` and `src/preload/index.ts`.
+- Renderer-only components for presentation and interaction logic.
+- Local Ollama REST calls rather than cloud model SDKs for app intelligence.
+
+Avoid:
+
+- Direct database access from the renderer.
+- Raw Electron IPC from renderer components.
+- Hard-coded absolute asset URLs that break in packaged `app.asar` builds.
+- Moving capture metadata without also updating LanceDB chunk metadata.
+- Adding runtime-only packages to `devDependencies`.
 
 ## Troubleshooting
 
-### `Ollama is not reachable`
+### Ollama is not reachable
 
-Start Ollama and confirm the local API is reachable:
+Start Ollama and verify the local API:
 
 ```bash
 ollama serve
@@ -327,69 +550,89 @@ ollama pull nomic-embed-text
 
 ### Chat model unavailable
 
-Install one of the preferred chat models:
+Install a preferred chat model:
 
 ```bash
 ollama pull llama3.1:8b
 ollama pull gemma3
 ```
 
+Or select an installed model from the AiON model menu.
+
 ### Capture says the page has too little readable text
 
-Some pages are login screens, app shells, canvases, or script-heavy views with little static text. Try navigating to a content page first, then capture again.
+Some pages are login screens, app shells, canvases, PDFs, or script-heavy views with little static readable text. Navigate to a text-heavy page first, then capture again.
 
-### Native dependency issues after installing packages
+### Google SSO or passkey popup does not behave like a normal browser
 
-Electron native modules may need rebuilds after dependency changes:
+The app allows browser popups through Electron's window-open handling and routes external flows where appropriate. If a specific provider still fails, check whether the site requires browser APIs Electron does not expose by default, third-party cookies, or platform authenticator behavior that needs additional Electron permissions.
+
+### Packaged app cannot find a module
+
+Move the missing runtime package into `dependencies`, reinstall, and rebuild:
+
+```bash
+bun install
+bun run postinstall
+bun run build:unpack
+```
+
+### Packaged app has missing dashboard images or renderer assets
+
+Use Vite-compatible asset imports or renderer-public assets. Avoid assuming `/some-file.svg` will resolve the same way in development and inside packaged `app.asar`.
+
+### Native dependency issues after dependency changes
+
+Rebuild Electron app dependencies:
 
 ```bash
 bun run postinstall
 ```
 
-### Packaged app cannot find a module
+### macOS packaged app fails with Electron Framework Team ID mismatch
 
-Make sure runtime dependencies are listed in `dependencies`, not only `devDependencies`. For example, LanceDB requires `apache-arrow` at runtime, so it must be packaged with the app.
-
-### Packaged app has missing images or dashboard assets
-
-Renderer assets referenced by the dashboard should live in the renderer asset pipeline and be resolved through Vite-compatible URLs. Avoid hard-coded absolute web paths for packaged-only assets.
-
-### macOS says Electron Framework has a Team ID mismatch
-
-Delete the old packaged output and rebuild. If the issue persists, rebuild app dependencies and create a fresh package:
+Stale package output can preserve mismatched signatures. Rebuild from a fresh package state:
 
 ```bash
 bun run postinstall
 bun run build:unpack
 ```
 
-## Implementation Notes
+If needed, delete stale `dist/` output manually before rebuilding.
 
-- Æther uses `WebContentsView`, not deprecated `BrowserView`.
-- Browser app state is currently managed in the main process.
-- The MVP app registry currently exposes a single browser app pointed at `https://www.google.com`.
-- Popups are blocked or opened externally depending on flow.
-- Legacy realm table migration is handled once and recorded in `library.json`.
-- LanceDB stays in the Electron main process; the renderer receives only typed summaries and results.
-- The Ollama integration uses direct REST calls instead of the `ollama` npm wrapper to avoid module-shape issues in Electron.
-- Capture moves are implemented as a main-process operation that updates the manifest and the LanceDB `collectionId` field for matching chunks.
+### iCE returns invalid or empty results
 
-## Roadmap
+iCE depends on the local chat model returning parseable JSON. Try:
 
-Likely next steps:
+- Use a stronger chat model.
+- Regenerate with a simpler topic.
+- Confirm Ollama is reachable.
+- Check the model menu for the active chat model.
 
-- Knowledge hub detail editing without prompts.
-- Full capture list view with filtering and bulk deletion.
-- Import and export for knowledge hubs.
-- Better handling for app-like authenticated services.
-- Capture selected text or a specific page region.
-- WebGPU or local transformer fallback for embeddings.
-- More precise token-based chunking.
-- Per-hub model and retrieval settings.
-- Production packaging polish.
+## Current Limitations
 
-## Privacy Boundary
+- macOS packages are local unsigned/ad-hoc builds until Developer ID signing and notarization are configured.
+- Capture quality depends on page structure and Readability extraction quality.
+- App-like authenticated services can still have browser API or popup edge cases.
+- iCE generation depends on local model quality and JSON compliance.
+- Search and Ask currently use one selected hub plus optional current page, not arbitrary multi-hub selection.
+- Settings are intentionally minimal right now.
 
-Æther is designed so local intelligence work stays on the machine. Captured page text, embeddings, knowledge hub metadata, semantic search, and RAG prompts are handled locally through LanceDB and Ollama.
+## Roadmap Ideas
 
-This does not anonymize normal browsing. Websites loaded in the browser can still make their usual network requests, track sessions, and execute their own JavaScript. The privacy guarantee applies to Æther's indexing and inference pipeline.
+Likely next improvements:
+
+- Production signing and notarization flow.
+- Import/export for knowledge hubs.
+- Full capture library view with filtering and bulk actions.
+- Per-hub retrieval/model settings.
+- Better authenticated-app compatibility coverage.
+- Capture selected text or a selected DOM region.
+- More precise token-aware chunking.
+- Local embedding fallback beyond Ollama.
+- Richer iCE export/share behavior.
+- More complete settings surface.
+
+## License
+
+No license file is currently included. Add one before distributing or accepting external contributions.
