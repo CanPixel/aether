@@ -10,9 +10,9 @@ import {
 import {
   BookOpen,
   Compass,
-/*   ExternalLink,
-  FolderOpen,
-  Layers, */
+  /*   ExternalLink,
+  FolderOpen, */
+  Layers,
   Move,
   Search,
   Snowflake
@@ -47,6 +47,13 @@ const NODE_WIDTH = 306
 const NODE_HEIGHT = 92
 const MIN_ZOOM = 0.44
 const MAX_ZOOM = 2.25
+const FITTED_ZOOM = 0.74
+const ICEBERG_BOUNDS = {
+  minX: 172,
+  maxX: 2028,
+  minY: 120,
+  maxY: 1790
+}
 
 const LAYERS: LayerDefinition[] = [
   {
@@ -99,6 +106,20 @@ function getLayer(level: number): LayerDefinition {
   return LAYERS.find((layer) => layer.level === level) ?? LAYERS[LAYERS.length - 1]
 }
 
+function getCenteredPan(zoom: number): { x: number; y: number } {
+  const icebergCenterX = (ICEBERG_BOUNDS.minX + ICEBERG_BOUNDS.maxX) / 2
+  const icebergCenterY = (ICEBERG_BOUNDS.minY + ICEBERG_BOUNDS.maxY) / 2
+
+  return {
+    x: CANVAS_WIDTH / 2 - icebergCenterX * zoom,
+    y: CANVAS_HEIGHT / 2 - icebergCenterY * zoom
+  }
+}
+
+function easeOutCubic(value: number): number {
+  return 1 - Math.pow(1 - value, 3)
+}
+
 function positionTopics(items: IcebergItem[]): PositionedTopic[] {
   const layerHeight = CANVAS_HEIGHT / LAYERS.length
   const lanes = [14, 86, 29, 71, 50]
@@ -141,10 +162,11 @@ export function Crystallizer({
   const [result, setResult] = useState<IcebergResult | null>(null)
   const [selectedItem, setSelectedItem] = useState<IcebergItem | null>(null)
   const [activeLayer, setActiveLayer] = useState<number | 'all'>('all')
-  const [zoom, setZoom] = useState(0.62)
-  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(FITTED_ZOOM)
+  const [pan, setPan] = useState(() => getCenteredPan(FITTED_ZOOM))
   const [dragging, setDragging] = useState(false)
   const dragStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
+  const animationFrame = useRef<number | null>(null)
 
   const positionedItems = useMemo(() => positionTopics(result?.items ?? []), [result])
   const visiblePositionedItems = useMemo(
@@ -162,6 +184,7 @@ export function Crystallizer({
     selectedItem && visibleItems.some((item) => item.id === selectedItem.id)
       ? selectedItem
       : (visibleItems[0] ?? null)
+  const hasResults = Boolean(result?.items.length)
   const layerCounts = useMemo(() => {
     const counts = new Map<number, number>()
     for (const layer of LAYERS) counts.set(layer.level, 0)
@@ -208,8 +231,7 @@ export function Crystallizer({
     setResult(null)
     setSelectedItem(null)
     setActiveLayer('all')
-    setZoom(0.62)
-    setPan({ x: 0, y: 0 })
+    resetView()
 
     try {
       const nextResult = await onGenerate(topic)
@@ -224,11 +246,50 @@ export function Crystallizer({
 
   function handleWheel(event: ReactWheelEvent<SVGSVGElement>): void {
     event.preventDefault()
+    if (animationFrame.current) {
+      cancelAnimationFrame(animationFrame.current)
+      animationFrame.current = null
+    }
     setZoom((currentZoom) => clamp(currentZoom - event.deltaY * 0.001, MIN_ZOOM, MAX_ZOOM))
+  }
+
+  function animateView(nextZoom: number, nextPan = pan): void {
+    if (animationFrame.current) cancelAnimationFrame(animationFrame.current)
+
+    const startZoom = zoom
+    const startPan = pan
+    const startedAt = performance.now()
+    const duration = 340
+
+    const step = (timestamp: number): void => {
+      const progress = Math.min((timestamp - startedAt) / duration, 1)
+      const eased = easeOutCubic(progress)
+      setZoom(startZoom + (nextZoom - startZoom) * eased)
+      setPan({
+        x: startPan.x + (nextPan.x - startPan.x) * eased,
+        y: startPan.y + (nextPan.y - startPan.y) * eased
+      })
+
+      if (progress < 1) {
+        animationFrame.current = requestAnimationFrame(step)
+      } else {
+        animationFrame.current = null
+      }
+    }
+
+    animationFrame.current = requestAnimationFrame(step)
+  }
+
+  function resetView(): void {
+    animateView(FITTED_ZOOM, getCenteredPan(FITTED_ZOOM))
   }
 
   function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>): void {
     if ((event.target as Element).closest('.ice-node-hit')) return
+    if (animationFrame.current) {
+      cancelAnimationFrame(animationFrame.current)
+      animationFrame.current = null
+    }
 
     dragStart.current = {
       x: event.clientX,
@@ -294,29 +355,23 @@ export function Crystallizer({
         </form>
       </header>
 
-      <section className="crystallizer-body">
+      <section className={`crystallizer-body ${hasResults ? 'results-ready' : ''}`}>
         <div className="crystallizer-canvas-shell">
           <div className="crystallizer-tools" aria-label="Crystallizer canvas controls">
             <button
-              onClick={() => setZoom((current) => clamp(current - 0.12, MIN_ZOOM, MAX_ZOOM))}
+              onClick={() => animateView(clamp(zoom - 0.12, MIN_ZOOM, MAX_ZOOM))}
               type="button"
             >
               -
             </button>
             <span>{Math.round(zoom * 100)}%</span>
             <button
-              onClick={() => setZoom((current) => clamp(current + 0.12, MIN_ZOOM, MAX_ZOOM))}
+              onClick={() => animateView(clamp(zoom + 0.12, MIN_ZOOM, MAX_ZOOM))}
               type="button"
             >
               +
             </button>
-            <button
-              onClick={() => {
-                setZoom(0.62)
-                setPan({ x: 0, y: 0 })
-              }}
-              type="button"
-            >
+            <button onClick={resetView} type="button">
               Reset
             </button>
           </div>
@@ -333,33 +388,95 @@ export function Crystallizer({
             <defs>
               <linearGradient id="iceberg-body" x1="0" x2="1" y1="0" y2="1">
                 <stop offset="0%" stopColor="#ffffff" />
-                <stop offset="48%" stopColor="#dff5ff" />
-                <stop offset="100%" stopColor="#bcd2ea" />
+                <stop offset="28%" stopColor="#e5f8ff" />
+                <stop offset="62%" stopColor="#b8ddf2" />
+                <stop offset="100%" stopColor="#5d6a7e" />
               </linearGradient>
+              <linearGradient id="iceberg-shadow" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="#ffffff" stopOpacity="0.42" />
+                <stop offset="55%" stopColor="#8ecae6" stopOpacity="0.16" />
+                <stop offset="100%" stopColor="#0f172a" stopOpacity="0.5" />
+              </linearGradient>
+              <clipPath id="iceberg-clip">
+                <path d="M516 372 776 216 1010 292 1154 120 1372 326 1560 288 1818 458 2028 710 1732 1498 1392 1668 1100 1790 792 1668 468 1498 172 710Z" />
+              </clipPath>
             </defs>
             <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
               <path
                 className="iceberg-shape"
-                d="M1100 88 1780 286 2070 822 1688 1538 1100 1742 514 1538 130 822 420 286Z"
+                d="M516 372 776 216 1010 292 1154 120 1372 326 1560 288 1818 458 2028 710 1732 1498 1392 1668 1100 1790 792 1668 468 1498 172 710Z"
               />
-              <path className="iceberg-facet" d="M1100 88 1268 1742 514 1538 130 822 420 286Z" />
+              <g clipPath="url(#iceberg-clip)">
+                {LAYERS.map((layer) => (
+                  <rect
+                    className="iceberg-layer-zone"
+                    fill={layer.accent}
+                    height={CANVAS_HEIGHT / LAYERS.length}
+                    key={layer.level}
+                    opacity={0.1 + layer.level * 0.025}
+                    width={CANVAS_WIDTH}
+                    x="0"
+                    y={(CANVAS_HEIGHT / LAYERS.length) * (layer.level - 1)}
+                  />
+                ))}
+              </g>
+              <path
+                className="iceberg-shade"
+                d="M1154 120 2028 710 1732 1498 1100 1790 1230 804Z"
+              />
+              <path
+                className="iceberg-facet"
+                d="M516 372 776 216 1010 292 1230 804 792 1668 468 1498 172 710Z"
+              />
+              <path
+                className="iceberg-facet soft"
+                d="M776 216 1010 292 1154 120 1372 326 1560 288 1230 804Z"
+              />
+              <path
+                className="iceberg-facet low"
+                d="M172 710 1230 804 2028 710 1732 1498 1100 1790 468 1498Z"
+              />
+              <path className="iceberg-ridge" d="M1154 120 1230 804 1100 1790" />
+              <path className="iceberg-ridge" d="M516 372 1230 804 2028 710" />
+              <path className="iceberg-ridge faint" d="M468 1498 1230 804 1732 1498" />
+              <path className="iceberg-ridge faint" d="M776 216 1010 292 1230 804" />
               <line className="waterline" x1="0" x2={CANVAS_WIDTH} y1="360" y2="360" />
 
               {LAYERS.map((layer) => (
-                <g className="crystallizer-layer" key={layer.level}>
+                <g
+                  className="crystallizer-layer"
+                  key={layer.level}
+                  style={{ '--layer-accent': layer.accent } as CSSProperties}
+                >
                   <line
                     x1="74"
                     x2={CANVAS_WIDTH - 74}
                     y1={(CANVAS_HEIGHT / LAYERS.length) * layer.level}
                     y2={(CANVAS_HEIGHT / LAYERS.length) * layer.level}
                   />
-                  <text x="118" y={(CANVAS_HEIGHT / LAYERS.length) * (layer.level - 0.5)}>
-                    {layer.level} / {layer.shortName}
+                  <g
+                    className="crystallizer-layer-label"
+                    transform={`translate(128 ${(CANVAS_HEIGHT / LAYERS.length) * (layer.level - 0.68)})`}
+                  >
+                    <rect height="86" rx="14" width="310" />
+                    <text className="layer-label-name" x="20" y="31">
+                      {layer.name}
+                    </text>
+                    <text className="layer-label-caption" x="20" y="58">
+                      {layer.caption}
+                    </text>
+                  </g>
+                  <text
+                    className="layer-depth-label"
+                    x={CANVAS_WIDTH - 382}
+                    y={(CANVAS_HEIGHT / LAYERS.length) * (layer.level - 0.5)}
+                  >
+                    {layer.depth}
                   </text>
                 </g>
               ))}
 
-              {semanticThreads.map((thread) => (
+              {semanticThreads.map((thread, index) => (
                 <path
                   className="semantic-thread"
                   d={`M${thread.from.displayX} ${thread.from.displayY} C ${thread.from.displayX} ${
@@ -368,10 +485,11 @@ export function Crystallizer({
                     thread.to.displayY
                   }`}
                   key={`${thread.from.item.id}-${thread.to.item.id}`}
+                  style={{ '--reveal-index': index } as CSSProperties}
                 />
               ))}
 
-              {visiblePositionedItems.map(({ item, displayX, displayY }) => {
+              {visiblePositionedItems.map(({ item, displayX, displayY }, index) => {
                 const layer = getLayer(item.level)
                 const selected = activeSelectedItem?.id === item.id
                 return (
@@ -379,7 +497,12 @@ export function Crystallizer({
                     className={`ice-node-hit ${selected ? 'selected' : ''}`}
                     key={item.id}
                     onClick={() => setSelectedItem(item)}
-                    style={{ '--layer-accent': layer.accent } as CSSProperties}
+                    style={
+                      {
+                        '--layer-accent': layer.accent,
+                        '--reveal-index': index
+                      } as CSSProperties
+                    }
                     tabIndex={0}
                   >
                     <foreignObject
@@ -402,15 +525,25 @@ export function Crystallizer({
 
           {!result && !loading && !error && (
             <div className="crystallizer-empty">
-              <SnowflakeIcon />
-              <h2>Enter a topic to begin.</h2>
+              <div className="crystallizer-state-card">
+                <SnowflakeIcon />
+                <h2>Enter a topic to begin.</h2>
+              </div>
             </div>
           )}
 
           {loading && (
-            <div className="crystallizer-empty">
-              <SpinnerIcon />
-              <h2>Crystallizing</h2>
+            <div className="crystallizer-empty crystallizing">
+              <div className="crystallizer-state-card">
+                <div className="answer-loading-haze" aria-hidden="true" />
+                <div className="answer-loading-ring" aria-hidden="true">
+                  {Array.from({ length: 14 }).map((_, index) => (
+                    <span key={index} style={{ '--particle-index': index } as CSSProperties} />
+                  ))}
+                </div>
+                <SpinnerIcon />
+                <h2>Crystallizing</h2>
+              </div>
             </div>
           )}
 
@@ -434,22 +567,26 @@ export function Crystallizer({
           <div className="layer-strip compact" aria-label="Layer filters">
             <button
               className={activeLayer === 'all' ? 'active' : undefined}
+              disabled={!hasResults}
               onClick={() => setActiveLayer('all')}
               type="button"
             >
-              All
-              <span>{result?.items.length ?? 0}</span>
+              <Layers size={14} aria-hidden />
+              <strong>All</strong>
+              <span className="filter-count">{result?.items.length ?? 0}</span>
             </button>
             {LAYERS.map((layer) => (
               <button
                 className={activeLayer === layer.level ? 'active' : undefined}
+                disabled={!hasResults}
                 key={layer.level}
                 onClick={() => setActiveLayer(layer.level)}
                 style={{ '--layer-accent': layer.accent } as CSSProperties}
                 type="button"
               >
-                {layer.level}
-                <span>{layerCounts.get(layer.level) ?? 0}</span>
+                <span className="layer-number">{layer.level}</span>
+                <strong>{layer.shortName}</strong>
+                <span className="filter-count">{layerCounts.get(layer.level) ?? 0}</span>
               </button>
             ))}
           </div>
@@ -493,11 +630,17 @@ export function Crystallizer({
           )}
 
           <div className="crystallizer-list">
-            {visibleItems.map((item) => (
+            {visibleItems.map((item, index) => (
               <button
                 className={activeSelectedItem?.id === item.id ? 'active' : undefined}
                 key={item.id}
                 onClick={() => setSelectedItem(item)}
+                style={
+                  {
+                    '--layer-accent': getLayer(item.level).accent,
+                    '--reveal-index': index
+                  } as CSSProperties
+                }
                 type="button"
               >
                 <span>{item.level}</span>
