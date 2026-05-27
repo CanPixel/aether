@@ -18,6 +18,8 @@ type BrowserChromeProps = {
   capturesBlocked: boolean
   collections: CollectionSummary[]
   dashboardOpen: boolean
+  dashboardSubtitle?: string
+  dashboardTitle?: string
   lastCapture: CaptureResult | null
   quickActions: QuickAction[]
   selectedCollection?: CollectionSummary
@@ -46,6 +48,8 @@ export function BrowserChrome({
   capturesBlocked,
   collections,
   dashboardOpen,
+  dashboardSubtitle = 'Knowledge Hub',
+  dashboardTitle = 'ÆTHER',
   lastCapture,
   quickActions,
   /* selectedCollection, */
@@ -89,9 +93,9 @@ export function BrowserChrome({
           </button>
         </div>
         <div className="active-app">
-          <span>{dashboardOpen ? 'ÆTHER' : activeTab?.title || 'Browser'}</span>
+          <span>{dashboardOpen ? dashboardTitle : activeTab?.title || 'Browser'}</span>
           <small>
-            {dashboardOpen ? 'Knowledge Hub' : activeTab?.isLoading ? 'Loading' : activeTab?.host}
+            {dashboardOpen ? dashboardSubtitle : activeTab?.isLoading ? 'Loading' : activeTab?.host}
           </small>
         </div>
         <input

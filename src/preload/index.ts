@@ -46,6 +46,9 @@ const api: AetherApi = {
   chat: {
     ask: (input) => ipcRenderer.invoke('aether:chat:ask', input)
   },
+  crystallizer: {
+    generate: (input) => ipcRenderer.invoke('aether:crystallizer:generate', input)
+  },
   system: {
     status: () => ipcRenderer.invoke('aether:system:status'),
     settings: () => ipcRenderer.invoke('aether:system:settings'),

@@ -2464,6 +2464,482 @@ button {
   height: 13px;
 }
 
+.crystallizer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 102px);
+  overflow: hidden;
+  color: #102033;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.78), rgba(240, 250, 255, 0.68) 48%, rgba(255, 252, 246, 0.72)),
+    linear-gradient(90deg, rgba(14, 165, 233, 0.08), transparent 34%, rgba(20, 184, 166, 0.07) 66%, rgba(184, 110, 45, 0.06));
+}
+
+.crystallizer::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  opacity: 0.46;
+  background-image:
+    linear-gradient(rgba(14, 165, 233, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(14, 165, 233, 0.06) 1px, transparent 1px);
+  background-size: 58px 58px;
+  mask-image: linear-gradient(to bottom, black, transparent 88%);
+}
+
+.crystallizer-header {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  min-height: 78px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px 24px 14px 28px;
+  border-bottom: 1px solid rgba(125, 211, 252, 0.32);
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(24px) saturate(1.12);
+}
+
+.crystallizer-brand {
+  display: flex;
+  align-items: center;
+  min-width: 280px;
+  gap: 12px;
+}
+
+.crystallizer-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(14, 165, 233, 0.3);
+  border-radius: 8px;
+  color: #0f8cc2;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 16px 36px rgba(8, 47, 73, 0.1);
+}
+
+.crystallizer-mark svg {
+  width: 25px;
+  height: 25px;
+}
+
+.crystallizer-brand p {
+  margin: 0 0 3px;
+  color: #0f8cc2;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.crystallizer-brand h1 {
+  margin: 0;
+  color: #102033;
+  font-family: 'New York', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.crystallizer-search {
+  display: flex;
+  width: min(100%, 640px);
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.crystallizer-search input {
+  height: 42px;
+  border-radius: 8px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.78);
+  font-size: 14px;
+  font-weight: 680;
+}
+
+.crystallizer-search button {
+  display: inline-flex;
+  width: 148px;
+  height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.crystallizer-search button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.crystallizer-body {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) 318px;
+}
+
+.crystallizer-canvas-shell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.crystallizer-tools {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 8px;
+  padding: 5px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 16px 40px rgba(8, 47, 73, 0.1);
+  backdrop-filter: blur(18px);
+}
+
+.crystallizer-tools button {
+  width: auto;
+  height: 28px;
+  border-radius: 6px;
+  padding: 0 10px;
+  box-shadow: none;
+}
+
+.crystallizer-tools span {
+  width: 48px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.crystallizer-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.crystallizer-canvas.dragging {
+  cursor: grabbing;
+}
+
+.iceberg-shape {
+  fill: url(#iceberg-body);
+  stroke: rgba(15, 140, 194, 0.34);
+  stroke-width: 4px;
+  filter: drop-shadow(0 30px 46px rgba(8, 47, 73, 0.14));
+}
+
+.iceberg-facet {
+  fill: rgba(255, 255, 255, 0.28);
+  stroke: rgba(255, 255, 255, 0.48);
+  stroke-width: 2px;
+}
+
+.waterline {
+  stroke: rgba(255, 255, 255, 0.88);
+  stroke-width: 15px;
+}
+
+.crystallizer-layer line {
+  stroke: rgba(15, 140, 194, 0.18);
+  stroke-dasharray: 14 18;
+  stroke-width: 2px;
+}
+
+.crystallizer-layer text {
+  fill: rgba(71, 85, 105, 0.7);
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.semantic-thread {
+  fill: none;
+  stroke: rgba(71, 85, 105, 0.18);
+  stroke-width: 3px;
+}
+
+.ice-node-hit {
+  outline: none;
+}
+
+.ice-node {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  column-gap: 10px;
+  align-content: start;
+  border: 1px solid color-mix(in srgb, var(--layer-accent) 34%, transparent);
+  border-radius: 8px;
+  padding: 10px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.68)),
+    color-mix(in srgb, var(--layer-accent) 7%, white);
+  color: #102033;
+  text-align: left;
+  box-shadow: 0 18px 36px rgba(8, 47, 73, 0.12);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.ice-node-hit.selected .ice-node,
+.ice-node:hover {
+  border-color: color-mix(in srgb, var(--layer-accent) 58%, white);
+  box-shadow:
+    0 24px 48px rgba(8, 47, 73, 0.16),
+    0 0 0 4px color-mix(in srgb, var(--layer-accent) 12%, transparent);
+  transform: translateY(-2px);
+}
+
+.ice-node span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  grid-row: 1 / span 2;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--layer-accent) 14%, white);
+  color: var(--layer-accent);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.ice-node strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #102033;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ice-node small {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #526173;
+  font-size: 10px;
+  font-weight: 680;
+  line-height: 1.32;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.crystallizer-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  pointer-events: none;
+  color: #0f8cc2;
+  text-align: center;
+}
+
+.crystallizer-empty svg {
+  width: 58px;
+  height: 58px;
+}
+
+.crystallizer-empty h2 {
+  margin: 0;
+  color: #334155;
+  font-family: 'New York', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 25px;
+  font-weight: 750;
+}
+
+.crystallizer-empty.error {
+  color: var(--danger);
+}
+
+.crystallizer-dock {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+  border-left: 1px solid rgba(125, 211, 252, 0.26);
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.52);
+  backdrop-filter: blur(22px) saturate(1.08);
+}
+
+.layer-strip.compact {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.layer-strip.compact button {
+  display: grid;
+  height: 44px;
+  place-items: center;
+  border-radius: 8px;
+  padding: 5px;
+  box-shadow: none;
+  color: #475569;
+}
+
+.layer-strip.compact button.active {
+  border-color: color-mix(in srgb, var(--layer-accent, #0f8cc2) 46%, white);
+  background: color-mix(in srgb, var(--layer-accent, #0f8cc2) 10%, white);
+  color: color-mix(in srgb, var(--layer-accent, #0f8cc2) 84%, #102033);
+}
+
+.layer-strip.compact span {
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.crystallizer-detail {
+  display: grid;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--layer-accent) 28%, transparent);
+  border-radius: 8px;
+  padding: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.62)),
+    color-mix(in srgb, var(--layer-accent) 7%, white);
+  box-shadow: 0 18px 42px rgba(8, 47, 73, 0.1);
+}
+
+.crystallizer-detail p,
+.crystallizer-detail h2,
+.crystallizer-detail small {
+  margin: 0;
+}
+
+.crystallizer-detail p {
+  color: var(--layer-accent);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.crystallizer-detail h2 {
+  color: #102033;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.crystallizer-detail > span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.crystallizer-detail small {
+  color: #475569;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.crystallizer-detail button {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 8px;
+  margin-top: 5px;
+  box-shadow: none;
+}
+
+.crystallizer-detail button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.crystallizer-placeholder {
+  display: grid;
+  min-height: 138px;
+  place-items: center;
+  border: 1px dashed rgba(100, 116, 139, 0.24);
+  border-radius: 8px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.crystallizer-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.crystallizer-list button {
+  display: grid;
+  min-height: 38px;
+  height: auto;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border-radius: 8px;
+  padding: 7px 9px;
+  text-align: left;
+  box-shadow: none;
+}
+
+.crystallizer-list button.active {
+  border-color: rgba(15, 140, 194, 0.32);
+  background: rgba(231, 246, 255, 0.82);
+}
+
+.crystallizer-list span {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: rgba(14, 165, 233, 0.1);
+  color: #0f8cc2;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.crystallizer-list strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 820;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-overlay {
   position: fixed;
   inset: 0;
@@ -3159,6 +3635,34 @@ button:disabled:hover {
 }
 
 @media (max-width: 1120px) {
+  .crystallizer-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .crystallizer-brand {
+    min-width: 0;
+  }
+
+  .crystallizer-search {
+    width: 100%;
+  }
+
+  .crystallizer-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 260px;
+  }
+
+  .crystallizer-dock {
+    border-top: 1px solid rgba(125, 211, 252, 0.26);
+    border-left: 0;
+  }
+
+  .crystallizer-detail {
+    display: none;
+  }
+
   .tab-chip {
     flex-basis: 138px;
     min-width: 84px;
