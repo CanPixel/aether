@@ -86,7 +86,7 @@ export function IntelligencePanel({
       <div className="panel-content" aria-hidden={panelCollapsed} inert={panelCollapsed}>
         <header className="panel-header">
           <div>
-            <p>ÆTHERs AiON</p>
+            <p>ÆTHER • AiON</p>
             <h1>Local context for the web you explore.</h1>
           </div>
           <div className="panel-header-actions">

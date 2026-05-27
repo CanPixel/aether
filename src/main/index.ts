@@ -19,6 +19,8 @@ import {
   ChatResult,
   CollectionSummary,
   HubShortcutSummary,
+  IcebergItem,
+  IcebergResult,
   SearchEngineId,
   SearchResult,
   SystemStatus
@@ -33,6 +35,7 @@ const EMBEDDING_MODEL = 'nomic-embed-text'
 const PREFERRED_CHAT_MODELS = ['llama3.1:8b', 'gemma3:latest', 'gemma3']
 const MIN_CAPTURE_TEXT_LENGTH = 120
 const OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
+const ICEBERG_LEVEL_LANES = [13, 87, 28, 72, 42]
 const SEARCH_ENGINES: Record<SearchEngineId, string> = {
   google: 'https://www.google.com/search?q=',
   bing: 'https://www.bing.com/search?q=',
@@ -115,6 +118,11 @@ interface OllamaChatResponse {
     role: string
     content: string
   }
+}
+
+interface OllamaGenerateResponse {
+  model: string
+  response: string
 }
 
 const APP_DEFINITIONS: AppDefinition[] = [
@@ -782,6 +790,41 @@ class OllamaClient {
     }
   }
 
+  async generateIceberg(keyword: string): Promise<IcebergResult> {
+    const topic = keyword.trim()
+    if (!topic) {
+      throw new Error('Enter a topic before crystallizing.')
+    }
+
+    const models = await this.listModels()
+    const model = this.pickChatModel(models)
+    if (!model) {
+      throw new Error('No local generative model found in Ollama. Install llama3.1:8b or gemma3.')
+    }
+
+    const response = await this.request<OllamaGenerateResponse>('/api/generate', {
+      method: 'POST',
+      body: {
+        model,
+        prompt: buildIcebergPrompt(topic),
+        stream: false,
+        format: 'json',
+        options: {
+          temperature: 0.35,
+          num_predict: 5000
+        }
+      },
+      timeoutMs: 180000
+    })
+
+    return {
+      keyword: topic,
+      model,
+      items: normalizeIcebergItems(extractIcebergItems(response.response)),
+      generatedAt: new Date().toISOString()
+    }
+  }
+
   private pickChatModel(models: string[]): string | null {
     if (this.chatModelOverride && models.includes(this.chatModelOverride)) {
       return this.chatModelOverride
@@ -1438,6 +1481,104 @@ function dedupeCitations(citations: SearchResult[]): SearchResult[] {
   return [...unique.values()]
 }
 
+function buildIcebergPrompt(keyword: string): string {
+  return `Create an iceberg chart for the topic "${keyword}".
+
+Return JSON only with this exact shape:
+{
+  "items": [
+    { "name": "Visible phrase", "description": "One short explanation.", "level": 1 },
+    { "name": "Another phrase", "description": "One short explanation.", "level": 1 }
+  ]
+}
+
+Rules:
+- level must be an integer from 1 to 5.
+- level 1 is broad, familiar, or introductory.
+- level 5 is obscure, technical, hidden, or specialist knowledge.
+- Return exactly 25 items total.
+- Return exactly 5 items for each level.
+- Use concise item names that fit on a node.
+- Every item must include a non-empty description.
+- Do not include markdown, prose, or comments.`
+}
+
+function extractIcebergItems(response: string): Array<Partial<IcebergItem>> {
+  let json = response.trim()
+
+  if (json.startsWith('```')) {
+    json = json
+      .replace(/^```json/i, '')
+      .replace(/^```/i, '')
+      .replace(/```$/i, '')
+      .trim()
+  }
+
+  try {
+    const parsed = JSON.parse(json) as unknown
+    if (isIcebergItemsEnvelope(parsed)) return parsed.items
+    if (Array.isArray(parsed)) return parsed as Array<Partial<IcebergItem>>
+  } catch {
+    const firstBracket = json.indexOf('[')
+    const lastBracket = json.lastIndexOf(']')
+    if (firstBracket >= 0 && lastBracket > firstBracket) {
+      const sliced = json.slice(firstBracket, lastBracket + 1)
+      const parsed = JSON.parse(sliced) as unknown
+      if (Array.isArray(parsed)) return parsed as Array<Partial<IcebergItem>>
+    }
+  }
+
+  throw new Error('Ollama did not return valid iceberg JSON.')
+}
+
+function isIcebergItemsEnvelope(value: unknown): value is { items: Array<Partial<IcebergItem>> } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'items' in value &&
+    Array.isArray((value as { items?: unknown }).items)
+  )
+}
+
+function normalizeIcebergItems(items: Array<Partial<IcebergItem>>): IcebergItem[] {
+  const byLevel = new Map<number, IcebergItem[]>()
+
+  for (const raw of items) {
+    const name = typeof raw.name === 'string' ? raw.name.trim() : ''
+    const description = typeof raw.description === 'string' ? raw.description.trim() : ''
+    if (!name || !description) continue
+
+    const level = clampInteger(Number(raw.level), 1, 5)
+    const levelItems = byLevel.get(level) ?? []
+    if (levelItems.length >= 5) continue
+
+    const index = levelItems.length
+    levelItems.push({
+      id: uniqueSlug(`${level}-${index + 1}-${name}`, []),
+      name,
+      description,
+      level,
+      x: ICEBERG_LEVEL_LANES[index % ICEBERG_LEVEL_LANES.length],
+      y: 120 + index * 44
+    })
+    byLevel.set(level, levelItems)
+  }
+
+  const normalized = Array.from({ length: 5 }, (_value, index) => index + 1).flatMap(
+    (level) => byLevel.get(level) ?? []
+  )
+  if (normalized.length === 0) {
+    throw new Error('Ollama did not return any usable iceberg items.')
+  }
+
+  return normalized
+}
+
+function clampInteger(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min
+  return Math.min(Math.max(Math.round(value), min), max)
+}
+
 function normalizeCitationKey(url: string): string {
   try {
     const parsed = new URL(url)
@@ -1570,6 +1711,10 @@ function registerIpcHandlers(): void {
     (_event, input: { collectionId?: string; prompt: string; includeCurrentPage?: boolean }) =>
       askChat(input)
   )
+  ipcMain.handle('aether:crystallizer:generate', async (_event, input: { keyword: string }) => {
+    await loadOllamaSettings()
+    return ollamaClient.generateIceberg(input.keyword)
+  })
   ipcMain.handle('aether:system:status', async () => {
     await loadOllamaSettings()
     return ollamaClient.status(getLibrary(), getDatabase())

@@ -92,6 +92,22 @@ export interface ChatResult {
   citations: SearchResult[]
 }
 
+export interface IcebergItem {
+  id: string
+  name: string
+  description: string
+  level: number
+  x: number
+  y: number
+}
+
+export interface IcebergResult {
+  keyword: string
+  model: string
+  items: IcebergItem[]
+  generatedAt: string
+}
+
 export interface SystemStatus {
   ollamaReachable: boolean
   embeddingModel: string
@@ -169,6 +185,9 @@ export interface AetherApi {
       prompt: string
       includeCurrentPage?: boolean
     }): Promise<ChatResult>
+  }
+  crystallizer: {
+    generate(input: { keyword: string }): Promise<IcebergResult>
   }
   system: {
     status(): Promise<SystemStatus>

@@ -9,14 +9,17 @@ import {
   ChatResult,
   CollectionSummary,
   HubShortcutSummary,
+  IcebergItem,
+  IcebergResult,
   SearchEngineId,
   SearchResult,
   SystemStatus
 } from '../../shared/aether'
 import { BrowserChrome } from './components/BrowserChrome'
 import { CollectionDialog, CollectionDialogState } from './components/CollectionDialog'
+import { Crystallizer } from './components/Crystallizer'
 import { Dashboard } from './components/Dashboard'
-import { GlobeIcon, CloudIcon, GearIcon } from './components/icons'
+import { GlobeIcon, CloudIcon, GearIcon, SnowflakeIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
 import { getQuickActions } from './utils/aether-ui'
@@ -34,6 +37,7 @@ function App(): React.JSX.Element {
     browser: { defaultSearchEngine: 'google' }
   })
   const [dashboardOpen, setDashboardOpen] = useState(true)
+  const [workspaceMode, setWorkspaceMode] = useState<'dashboard' | 'crystallizer'>('dashboard')
   const [activeTabId, setActiveTabId] = useState('')
   const [selectedCollectionId, setSelectedCollectionId] = useState('')
   const [addressDraft, setAddressDraft] = useState('aether://dashboard')
@@ -81,7 +85,9 @@ function App(): React.JSX.Element {
   const addressValue = addressFocused
     ? addressDraft
     : dashboardOpen
-      ? 'æther://dashboard'
+      ? workspaceMode === 'crystallizer'
+        ? 'ice://crystallizer'
+        : 'æther://dashboard'
       : (activeTab?.url ?? '')
 
   const refreshCollections = useCallback(
@@ -150,6 +156,7 @@ function App(): React.JSX.Element {
         const tab = await window.aether.tabs.create(input)
         setActiveTabId(tab.id)
         setDashboardOpen(false)
+        setWorkspaceMode('dashboard')
         await refreshShell()
       } catch (error) {
         setNotice(error instanceof Error ? error.message : 'Æther hit an unexpected error.')
@@ -198,12 +205,20 @@ function App(): React.JSX.Element {
 
   async function openDashboard(): Promise<void> {
     await window.aether.dashboard.open()
+    setWorkspaceMode('dashboard')
+    setDashboardOpen(true)
+  }
+
+  async function openCrystallizer(): Promise<void> {
+    await window.aether.dashboard.open()
+    setWorkspaceMode('crystallizer')
     setDashboardOpen(true)
   }
 
   async function openBrowser(): Promise<void> {
     if (activeTab) {
       await window.aether.tabs.activate(activeTab.id)
+      setWorkspaceMode('dashboard')
       setDashboardOpen(false)
       return
     }
@@ -213,6 +228,7 @@ function App(): React.JSX.Element {
   async function activateTab(tabId: string): Promise<void> {
     await window.aether.tabs.activate(tabId)
     setActiveTabId(tabId)
+    setWorkspaceMode('dashboard')
     setDashboardOpen(false)
   }
 
@@ -437,6 +453,30 @@ function App(): React.JSX.Element {
     setDashboardOpen(false)
   }
 
+  async function generateIceberg(keyword: string): Promise<IcebergResult> {
+    setBusy('Crystallizing topic')
+    setNotice(null)
+
+    try {
+      const result = await window.aether.crystallizer.generate({ keyword })
+      setNotice(`Mapped ${result.items.length} fragments with ${result.model}.`)
+      return result
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Crystallization failed.'
+      setNotice(message)
+      throw error
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function openCrystallizedTopic(keyword: string, item: IcebergItem): Promise<void> {
+    const url = `https://www.google.com/search?q=${encodeURIComponent(`${keyword} ${item.name}`)}`
+    await createTab({ url })
+    setWorkspaceMode('dashboard')
+    setDashboardOpen(false)
+  }
+
   async function deleteShortcut(shortcutId: string): Promise<void> {
     await runTask('Removing shortcut', async () => {
       await window.aether.hub.delete(shortcutId)
@@ -505,6 +545,8 @@ function App(): React.JSX.Element {
   }
 
   const showAppTooltips = dashboardOpen
+  const crystallizerOpen = dashboardOpen && workspaceMode === 'crystallizer'
+  const dashboardHomeOpen = dashboardOpen && workspaceMode === 'dashboard'
 
   return (
     <main className={`aether-shell ${panelCollapsed ? 'panel-collapsed' : ''}`}>
@@ -514,7 +556,7 @@ function App(): React.JSX.Element {
 
       <aside className="app-rail">
         <button
-          className={`brand-mark tooltip-host ${dashboardOpen ? 'active' : ''}`}
+          className={`brand-mark tooltip-host ${dashboardHomeOpen ? 'active' : ''}`}
           aria-label="Open ÆTHER dashboard"
           data-tooltip="ÆTHER"
           data-tooltip-side="right"
@@ -537,6 +579,17 @@ function App(): React.JSX.Element {
             type="button"
           >
             <GlobeIcon />
+            <span className="app-dot" aria-hidden="true" />
+          </button>
+          <button
+            className={`app-button tooltip-host ${crystallizerOpen ? 'active' : ''}`}
+            data-tooltip={showAppTooltips ? 'iCE' : undefined}
+            data-tooltip-side={showAppTooltips ? 'right' : undefined}
+            onClick={openCrystallizer}
+            title={showAppTooltips ? 'iCE' : undefined}
+            type="button"
+          >
+            <SnowflakeIcon />
             <span className="app-dot" aria-hidden="true" />
           </button>
         </nav>
@@ -564,6 +617,8 @@ function App(): React.JSX.Element {
           }
           collections={collections}
           dashboardOpen={dashboardOpen}
+          dashboardSubtitle={crystallizerOpen ? 'Info Crystallizer Engine' : 'Knowledge Hub'}
+          dashboardTitle={crystallizerOpen ? 'iCE' : 'ÆTHER'}
           lastCapture={lastCapture}
           quickActions={dashboardOpen ? [] : quickActions}
           selectedCollection={selectedCollection}
@@ -587,7 +642,13 @@ function App(): React.JSX.Element {
           onSelectCollection={selectCollection}
         />
 
-        {dashboardOpen ? (
+        {crystallizerOpen ? (
+          <Crystallizer
+            busy={busy}
+            onGenerate={generateIceberg}
+            onOpenTopic={openCrystallizedTopic}
+          />
+        ) : dashboardOpen ? (
           <Dashboard
             busy={busy}
             capturesByCollection={capturesByCollection}

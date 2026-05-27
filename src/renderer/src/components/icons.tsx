@@ -117,6 +117,21 @@ export function SparkIcon(): React.JSX.Element {
   )
 }
 
+export function SnowflakeIcon(): React.JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="M12 3v18M5 6l14 12M19 6 5 18M7.2 4.9 12 7.7l4.8-2.8M7.2 19.1l4.8-2.8 4.8 2.8M3.8 9.4l4.8 2.6-4.8 2.6M20.2 9.4 15.4 12l4.8 2.6"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+    </svg>
+  )
+}
+
 export function AetherLensIcon(): React.JSX.Element {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
