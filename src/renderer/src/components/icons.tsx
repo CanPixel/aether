@@ -117,6 +117,72 @@ export function SparkIcon(): React.JSX.Element {
   )
 }
 
+export function AetherLensIcon(): React.JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="M12 3.8c3.7 0 6.9 2.2 8.6 5.4-1.7 3.2-4.9 5.4-8.6 5.4S5.1 12.4 3.4 9.2C5.1 6 8.3 3.8 12 3.8Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+      <path
+        d="M12 7.1a2.2 2.2 0 1 1 0 4.4 2.2 2.2 0 0 1 0-4.4ZM7.7 18.8c2.8-1.4 5.8-1.4 8.6 0M12 14.7v3.1"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.7"
+      />
+    </svg>
+  )
+}
+
+export function AetherGlyphIcon(): React.JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="M12 3.2 18.8 7v7.8L12 20.8l-6.8-6V7L12 3.2Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M8.2 13.7 12 6.9l3.8 6.8M9.4 11.5h5.2M7.8 16.1c2.7-1.2 5.7-1.2 8.4 0"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.6"
+      />
+    </svg>
+  )
+}
+
+export function AetherSigilIcon(): React.JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path
+        d="M12 3.5c3.2 2.3 5.5 5 7 8.5-1.5 3.5-3.8 6.2-7 8.5-3.2-2.3-5.5-5-7-8.5 1.5-3.5 3.8-6.2 7-8.5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.55"
+      />
+      <path
+        d="M7.5 12h9M12 7.5v9M8.9 8.9l6.2 6.2m0-6.2-6.2 6.2"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.35"
+      />
+      <circle cx="12" cy="12" r="2.1" fill="none" stroke="currentColor" strokeWidth="1.55" />
+    </svg>
+  )
+}
+
 export function CubeIcon(): React.JSX.Element {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">

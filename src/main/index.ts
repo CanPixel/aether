@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell, WebContentsView } from 'electron'
+import type { Session } from 'electron'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
@@ -22,7 +23,7 @@ import {
 } from '../shared/aether'
 
 const SIDEBAR_WIDTH = 76
-const TOP_BAR_HEIGHT = 130
+const TOP_BAR_HEIGHT = 138
 const PANEL_WIDTH = 404
 const PANEL_COLLAPSED_WIDTH = 58
 const CHUNKS_TABLE = 'chunks'
@@ -46,6 +47,7 @@ interface ManagedTab {
   title: string
   isLoading: boolean
   favicon?: string
+  themeColor?: string
 }
 
 interface CapturedPage {
@@ -1003,8 +1005,29 @@ class AppContainerManager {
       isLoading: false
     }
 
+    configureBrowserSession(view.webContents.session)
     view.setBackgroundColor('#f6f7f9')
     view.webContents.setWindowOpenHandler((details) => {
+      if (isAuthWindowUrl(details.url)) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            width: 520,
+            height: 720,
+            minWidth: 420,
+            minHeight: 540,
+            title: 'Sign in',
+            autoHideMenuBar: true,
+            parent: this.mainWindow,
+            webPreferences: {
+              partition: `persist:aether-app-${definition.id}`,
+              nodeIntegration: false,
+              contextIsolation: true,
+              sandbox: true
+            }
+          }
+        }
+      }
       this.createTab({ url: details.url })
       return { action: 'deny' }
     })
@@ -1015,6 +1038,7 @@ class AppContainerManager {
     view.webContents.on('did-stop-loading', () => {
       tab.isLoading = false
       this.updateNavigationState(tab)
+      this.updateTabPageMetadata(tab)
     })
     view.webContents.on('page-title-updated', (_event, title) => {
       tab.title = title || getTabHost(tab.url) || 'Untitled'
@@ -1056,6 +1080,37 @@ class AppContainerManager {
     this.emitState()
   }
 
+  private updateTabPageMetadata(tab: ManagedTab): void {
+    const script = `(() => {
+      const theme = document.querySelector('meta[name="theme-color"], meta[name="msapplication-TileColor"]');
+      const icon = document.querySelector('link[rel~="icon" i], link[rel="shortcut icon" i], link[rel="apple-touch-icon" i]');
+      return {
+        themeColor: theme?.getAttribute('content') || '',
+        favicon: icon?.href || ''
+      };
+    })()`
+
+    tab.view.webContents
+      .executeJavaScript(script, true)
+      .then((value) => {
+        const metadata = value as { themeColor?: unknown; favicon?: unknown }
+        const nextColor = normalizeThemeColor(
+          typeof metadata?.themeColor === 'string' ? metadata.themeColor : ''
+        )
+        const nextFavicon =
+          typeof metadata?.favicon === 'string' && metadata.favicon ? metadata.favicon : tab.favicon
+        if (tab.themeColor === nextColor && tab.favicon === nextFavicon) return
+        tab.themeColor = nextColor
+        tab.favicon = nextFavicon
+        this.emitState()
+      })
+      .catch(() => {
+        if (!tab.themeColor) return
+        tab.themeColor = undefined
+        this.emitState()
+      })
+  }
+
   private toTabSummary(tab: ManagedTab): BrowserTabSummary {
     return {
       id: tab.id,
@@ -1067,7 +1122,8 @@ class AppContainerManager {
       isLoading: tab.isLoading,
       canGoBack: tab.view.webContents.navigationHistory.canGoBack(),
       canGoForward: tab.view.webContents.navigationHistory.canGoForward(),
-      favicon: tab.favicon
+      favicon: tab.favicon,
+      themeColor: tab.themeColor
     }
   }
 
@@ -1083,6 +1139,7 @@ let database: AetherDatabase | null = null
 let library: LibraryStore | null = null
 let settings: SettingsStore | null = null
 const ollamaClient = new OllamaClient()
+const configuredBrowserSessions = new WeakSet<Session>()
 
 app.setName('Æther')
 
@@ -1474,6 +1531,69 @@ function getTabHost(url: string): string {
   } catch {
     return ''
   }
+}
+
+function configureBrowserSession(browserSession: Session): void {
+  if (configuredBrowserSessions.has(browserSession)) return
+  configuredBrowserSessions.add(browserSession)
+
+  browserSession.setPermissionRequestHandler((_webContents, permission, callback, details) => {
+    const requestUrl =
+      'requestingUrl' in details && typeof details.requestingUrl === 'string'
+        ? details.requestingUrl
+        : ''
+
+    callback(isAuthPermission(permission) && isAuthWindowUrl(requestUrl))
+  })
+
+  browserSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin) => {
+    return isAuthPermission(permission) && isAuthWindowUrl(requestingOrigin)
+  })
+}
+
+function isAuthPermission(permission: string): boolean {
+  return [
+    'storage-access',
+    'top-level-storage-access',
+    'openExternal',
+    'window-management'
+  ].includes(permission)
+}
+
+function isAuthWindowUrl(rawUrl: string): boolean {
+  try {
+    const host = new URL(rawUrl).hostname.replace(/^www\./, '')
+    return (
+      host === 'accounts.google.com' ||
+      host === 'gsi.google.com' ||
+      host === 'google.com' ||
+      host.endsWith('.google.com') ||
+      host.includes('login') ||
+      host.includes('auth') ||
+      host.includes('oauth') ||
+      host.includes('sso')
+    )
+  } catch {
+    return false
+  }
+}
+
+function normalizeThemeColor(color: string): string | undefined {
+  const value = color.trim().slice(0, 64)
+  if (/^#[0-9a-f]{3,8}$/i.test(value)) return value
+  if (
+    /^rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i.test(value)
+  ) {
+    return value
+  }
+  if (
+    /^hsla?\(\s*\d{1,3}(?:deg)?\s*,\s*\d{1,3}%\s*,\s*\d{1,3}%(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i.test(
+      value
+    )
+  ) {
+    return value
+  }
+  return undefined
 }
 
 function asLanceRecord(record: ChunkRecord): Record<string, unknown> {

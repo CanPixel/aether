@@ -2,7 +2,7 @@ import { CSSProperties, FormEvent, useState } from 'react'
 import { ChatResult, CollectionSummary, SearchResult, SystemStatus } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
 import { getCaptureHost } from '../utils/aether-ui'
-import { ChevronRightIcon, SparkIcon } from './icons'
+import { AetherSigilIcon, ChevronRightIcon } from './icons'
 
 type IntelligencePanelProps = {
   busy: string | null
@@ -73,30 +73,30 @@ export function IntelligencePanel({
     <aside className={`intelligence-panel ${panelCollapsed ? 'collapsed' : ''}`}>
       <button
         className="panel-icon-toggle tooltip-host"
-        data-tooltip={showTooltips ? 'Open AI Sidepanel' : undefined}
+        data-tooltip={showTooltips ? 'Open AIon' : undefined}
         data-tooltip-side={showTooltips ? 'left' : undefined}
         aria-hidden={!panelCollapsed}
         onClick={onTogglePanel}
         tabIndex={panelCollapsed ? 0 : -1}
-        title="Open AI sidepanel"
+        title="Open AIon"
         type="button"
       >
-        <SparkIcon />
+        <AetherSigilIcon />
       </button>
       <div className="panel-content" aria-hidden={panelCollapsed} inert={panelCollapsed}>
         <header className="panel-header">
           <div>
-            <p>ÆTHER</p>
+            <p>ÆTHERs AiON</p>
             <h1>Local context for the web you explore.</h1>
           </div>
           <div className="panel-header-actions">
             <StatusPill status={status} />
             <button
               className="panel-close tooltip-host"
-              data-tooltip={showTooltips ? 'Collapse AI Sidepanel' : undefined}
+              data-tooltip={showTooltips ? 'Collapse AIon' : undefined}
               data-tooltip-side={showTooltips ? 'left' : undefined}
               onClick={onTogglePanel}
-              title="Collapse AI sidepanel"
+              title="Collapse AIon"
               type="button"
             >
               <ChevronRightIcon />
@@ -134,7 +134,7 @@ export function IntelligencePanel({
               type="submit"
               disabled={Boolean(busy) || !chatPrompt.trim() || !hasAskContext || chatBlocked}
             >
-              Ask ÆTHER
+              Ask AiON
             </button>
           </form>
           {busy === 'Asking Æther' && <AnswerLoading />}
@@ -235,7 +235,7 @@ function AskContextControls({
       ) : (
         <div className="ask-current-default">
           <span>
-            <SparkIcon />
+            <AetherSigilIcon />
           </span>
           <strong>Current page</strong>
         </div>

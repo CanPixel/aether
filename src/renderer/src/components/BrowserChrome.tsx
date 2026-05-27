@@ -1,4 +1,4 @@
-import { FormEvent } from 'react'
+import { CSSProperties, FormEvent, useState } from 'react'
 import { BrowserTabSummary, CaptureResult, CollectionSummary } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
 import {
@@ -117,16 +117,19 @@ export function BrowserChrome({
             }`}
             key={tab.id}
             onClick={() => onSelectTab(tab.id)}
+            style={getTabStyle(tab)}
             title={tab.title}
             type="button"
           >
             <span className="tab-status" aria-hidden="true">
               {tab.isLoading ? (
                 <SpinnerIcon />
-              ) : tab.favicon ? (
-                <img src={tab.favicon} alt="" />
               ) : (
-                <GlobeIcon />
+                <PageFavicon
+                  key={`${tab.host}-${tab.favicon ?? ''}`}
+                  host={tab.host}
+                  icon={tab.favicon}
+                />
               )}
             </span>
             <span className="tab-title">{tab.title || tab.host || 'New tab'}</span>
@@ -195,4 +198,66 @@ export function BrowserChrome({
       )}
     </div>
   )
+}
+
+function getTabStyle(tab: BrowserTabSummary): CSSProperties {
+  return {
+    '--tab-tint': getBrandTint(tab.host) || tab.themeColor || getHostTint(tab.host)
+  } as CSSProperties
+}
+
+function PageFavicon({ host, icon }: { host: string; icon?: string }): React.JSX.Element {
+  const sources = [icon, getServiceFavicon(host), getFallbackFavicon(host)].filter(Boolean)
+  const [sourceIndex, setSourceIndex] = useState(0)
+  const source = sources[sourceIndex]
+
+  if (!source) return <GlobeIcon />
+
+  return (
+    <img
+      src={source}
+      alt=""
+      onError={() => {
+        setSourceIndex((current) => current + 1)
+      }}
+    />
+  )
+}
+
+function getServiceFavicon(host: string): string {
+  return host ? `https://www.google.com/s2/favicons?domain=${host}&sz=32` : ''
+}
+
+function getFallbackFavicon(host: string): string {
+  return host ? `https://${host}/favicon.ico` : ''
+}
+
+function getBrandTint(host: string): string {
+  const normalized = host.replace(/^www\./, '')
+
+  if (normalized === 'reddit.com' || normalized.endsWith('.reddit.com')) return '#ff4500'
+  if (
+    normalized === 'youtube.com' ||
+    normalized === 'youtu.be' ||
+    normalized.endsWith('.youtube.com')
+  ) {
+    return '#ff0033'
+  }
+  if (normalized === 'google.com' || normalized.endsWith('.google.com')) return '#4285f4'
+  if (normalized === 'github.com' || normalized.endsWith('.github.com')) return '#6e7681'
+  if (normalized === 'x.com' || normalized === 'twitter.com') return '#111827'
+
+  return ''
+}
+
+function getHostTint(host: string): string {
+  const palette = ['#4f8fd6', '#3aaea1', '#c07f43', '#7772d6', '#4e9a62', '#b95f79', '#547aa5']
+  const key = host || 'aether'
+  let hash = 0
+
+  for (let index = 0; index < key.length; index += 1) {
+    hash = (hash * 31 + key.charCodeAt(index)) >>> 0
+  }
+
+  return palette[hash % palette.length]
 }
