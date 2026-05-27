@@ -569,6 +569,17 @@ function App(): React.JSX.Element {
         </button>
         <nav className="app-list" aria-label="Apps">
           <button
+            className={`app-button tooltip-host ${crystallizerOpen ? 'active' : ''}`}
+            data-tooltip={showAppTooltips ? 'iCE' : undefined}
+            data-tooltip-side={showAppTooltips ? 'right' : undefined}
+            onClick={openCrystallizer}
+            title={showAppTooltips ? 'iCE' : undefined}
+            type="button"
+          >
+            <SnowflakeIcon />
+            <span className="app-dot" aria-hidden="true" />
+          </button>
+          <button
             className={`app-button tooltip-host ${!dashboardOpen ? 'active' : ''}`}
             data-tooltip={showAppTooltips ? 'Web View' : undefined}
             data-tooltip-side={showAppTooltips ? 'right' : undefined}
@@ -579,17 +590,6 @@ function App(): React.JSX.Element {
             type="button"
           >
             <GlobeIcon />
-            <span className="app-dot" aria-hidden="true" />
-          </button>
-          <button
-            className={`app-button tooltip-host ${crystallizerOpen ? 'active' : ''}`}
-            data-tooltip={showAppTooltips ? 'iCE' : undefined}
-            data-tooltip-side={showAppTooltips ? 'right' : undefined}
-            onClick={openCrystallizer}
-            title={showAppTooltips ? 'iCE' : undefined}
-            type="button"
-          >
-            <SnowflakeIcon />
             <span className="app-dot" aria-hidden="true" />
           </button>
         </nav>

@@ -117,9 +117,9 @@ export function SparkIcon(): React.JSX.Element {
   )
 }
 
-export function SnowflakeIcon(): React.JSX.Element {
+export function SnowflakeIcon({ className }: { className?: string }): React.JSX.Element {
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
+    <svg className={className} aria-hidden="true" viewBox="0 0 24 24">
       <path
         d="M12 3v18M5 6l14 12M19 6 5 18M7.2 4.9 12 7.7l4.8-2.8M7.2 19.1l4.8-2.8 4.8 2.8M3.8 9.4l4.8 2.6-4.8 2.6M20.2 9.4 15.4 12l4.8 2.6"
         fill="none"
@@ -178,7 +178,7 @@ export function AetherGlyphIcon(): React.JSX.Element {
 
 export function AetherSigilIcon(): React.JSX.Element {
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
+    <svg aria-hidden="true" viewBox="2 2 20 20">
       <path
         d="M12 3.5c3.2 2.3 5.5 5 7 8.5-1.5 3.5-3.8 6.2-7 8.5-3.2-2.3-5.5-5-7-8.5 1.5-3.5 3.8-6.2 7-8.5Z"
         fill="none"
