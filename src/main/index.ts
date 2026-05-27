@@ -1033,6 +1033,8 @@ class AppContainerManager {
     })
     view.webContents.on('did-start-loading', () => {
       tab.isLoading = true
+      tab.favicon = undefined
+      tab.themeColor = undefined
       this.emitState()
     })
     view.webContents.on('did-stop-loading', () => {
@@ -1045,7 +1047,9 @@ class AppContainerManager {
       this.emitState()
     })
     view.webContents.on('page-favicon-updated', (_event, favicons) => {
-      tab.favicon = favicons[0]
+      const nextFavicon = favicons.find(Boolean)
+      if (!nextFavicon || tab.favicon === nextFavicon) return
+      tab.favicon = nextFavicon
       this.emitState()
     })
     view.webContents.on('did-navigate', () => this.updateNavigationState(tab))
@@ -1083,10 +1087,26 @@ class AppContainerManager {
   private updateTabPageMetadata(tab: ManagedTab): void {
     const script = `(() => {
       const theme = document.querySelector('meta[name="theme-color"], meta[name="msapplication-TileColor"]');
-      const icon = document.querySelector('link[rel~="icon" i], link[rel="shortcut icon" i], link[rel="apple-touch-icon" i]');
+      const icons = Array.from(document.querySelectorAll('link[rel]'))
+        .map((link) => {
+          const rel = link.getAttribute('rel') || '';
+          if (!/\\b(icon|apple-touch-icon|shortcut icon)\\b/i.test(rel)) return null;
+          const href = link.href || '';
+          const sizes = link.getAttribute('sizes') || '';
+          const size = sizes
+            .split(/\\s+/)
+            .map((item) => Number.parseInt(item, 10) || 0)
+            .reduce((largest, value) => Math.max(largest, value), 0);
+          return { href, rel, size };
+        })
+        .filter(Boolean)
+        .sort((left, right) => {
+          if (right.size !== left.size) return right.size - left.size;
+          return Number(/apple-touch-icon/i.test(right.rel)) - Number(/apple-touch-icon/i.test(left.rel));
+        });
       return {
         themeColor: theme?.getAttribute('content') || '',
-        favicon: icon?.href || ''
+        favicon: icons[0]?.href || ''
       };
     })()`
 

@@ -22,7 +22,7 @@ The current vertical slice includes:
 - Local embeddings through Ollama's REST API.
 - Disk-persistent LanceDB chunk table.
 - Semantic search scoped to the selected knowledge hub.
-- Ask mode with selectable knowledge hub context and optional current-page context.
+- AiON Ask mode with selectable knowledge hub context and optional current-page context.
 - Local chat answers grounded in retrieved chunks with clickable citations.
 - Typed preload API between renderer and Electron main.
 
@@ -133,13 +133,13 @@ Search and chat both start with local embeddings:
 4. Chat builds a context block from top retrieved chunks.
 5. The local chat model is instructed to answer only from supplied context when querying a knowledge hub.
 
-Ask mode supports three practical context shapes:
+AiON Ask mode supports three practical context shapes:
 
 - current page only, used automatically when no populated knowledge hubs exist
 - one populated knowledge hub
 - one populated knowledge hub plus the current browser page
 
-Empty hubs with `0 captures` or `0 chunks` are hidden from Ask mode because they cannot contribute retrieval context.
+Empty hubs with `0 captures` or `0 chunks` are hidden from AiON Ask mode because they cannot contribute retrieval context.
 
 Default models:
 
@@ -284,7 +284,7 @@ src/
     index.ts          Typed bridge exposed as window.aether
   renderer/
     src/
-      App.tsx         Æther shell, dashboard, intelligence panel
+      App.tsx         Æther shell, dashboard, AiON panel
       assets/
         main.css      Light mythic UI system
   shared/
@@ -298,13 +298,13 @@ src/
 - a left rail for home/dashboard and browser
 - a top titlebar and browser address bar
 - a central dashboard or native web content region
-- a right intelligence panel for search and Ask mode
+- a right AiON panel for search and Ask mode
 
 The dashboard is the internal home surface. It shows portal shortcuts and knowledge hubs. Each knowledge hub is an accordion; expanding it shows captured source cards. Source cards can be dragged from one hub accordion to another, while source links remain clickable and open in a new browser tab.
 
 The browser view keeps quick actions, capture controls, the selected hub dropdown, and the address bar. The dashboard view keeps the tab row for fast navigation but hides browser-only quick actions.
 
-The Ask panel lists only populated knowledge hubs. Each row shows the hub icon, name, and capture count. If there are no populated hubs, Ask defaults to current-page-only context.
+AiON is Æther's local intelligence sidepanel. The Ask panel lists only populated knowledge hubs; each row shows the hub icon, name, and capture count. If there are no populated hubs, Ask defaults to current-page-only context.
 
 ## Troubleshooting
 

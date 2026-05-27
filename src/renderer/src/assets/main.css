@@ -1955,7 +1955,7 @@ button {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
   --tab-max-width: min(240px, 33%);
   padding: 4px 14px 7px;
@@ -1981,10 +1981,10 @@ button {
 
 .tab-chip {
   grid-template-columns: 16px minmax(42px, 1fr);
-  flex: 1 1 158px;
+  flex: 1 1 clamp(112px, 18vw, 188px);
   gap: 5px;
   width: auto;
-  min-width: 96px;
+  min-width: 92px;
   max-width: var(--tab-max-width);
   border-color: color-mix(in srgb, var(--tab-tint, #6d97c8) 28%, rgba(120, 150, 190, 0.28));
   padding: 0 5px;
@@ -1996,15 +1996,17 @@ button {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.82),
     0 7px 18px rgba(52, 86, 132, 0.1);
+  transform-origin: center bottom;
   transition:
-    transform 140ms ease,
-    flex-basis 180ms ease,
-    max-width 180ms ease,
-    min-width 180ms ease,
-    border-color 140ms ease,
-    background 140ms ease,
-    box-shadow 140ms ease,
-    color 140ms ease;
+    flex-basis 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    max-width 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    min-width 360ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 280ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color 220ms ease,
+    background 260ms ease,
+    box-shadow 260ms ease,
+    color 220ms ease;
+  will-change: flex-basis, transform;
 }
 
 .tab-chip.closable {
@@ -2021,7 +2023,7 @@ button {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.9),
     0 10px 24px color-mix(in srgb, var(--tab-tint, #6d97c8) 22%, rgba(84, 130, 199, 0.12));
-  transform: translateY(-1px);
+  transform: translateY(-1px) scale(1.012);
 }
 
 .tab-chip.active {
@@ -2056,6 +2058,13 @@ button {
   font-weight: 720;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition:
+    opacity 180ms ease,
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tab-chip:hover .tab-title {
+  transform: translateX(1px);
 }
 
 .tab-close {
@@ -2127,6 +2136,28 @@ button {
   border-color: rgba(73, 126, 204, 0.28);
   background: rgba(232, 243, 255, 0.76);
   color: var(--accent-strong);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease,
+    color 160ms ease;
+}
+
+.browser-capture-dock .capture-page-button:hover:not(:disabled) {
+  border-color: rgba(54, 122, 178, 0.42);
+  background:
+    radial-gradient(circle at 35% 18%, rgba(255, 255, 255, 0.98), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(219, 240, 255, 0.9));
+  color: #1d6f97;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.92),
+    0 8px 18px rgba(70, 124, 180, 0.16);
+  transform: translateY(-1px);
+}
+
+.browser-capture-dock .capture-page-button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .browser-capture-dock span {
@@ -2279,7 +2310,7 @@ button {
 .hub-launch {
   display: grid;
   width: 100%;
-  height: 112px;
+  height: 118px;
   justify-items: center;
   gap: 7px;
   border-radius: 16px;
@@ -2308,7 +2339,7 @@ button {
   display: grid;
   place-items: center;
   width: 38px;
-  height: 38px;
+  height: 40px;
   border-radius: 12px;
   background:
     radial-gradient(circle at 35% 22%, #ffffff, transparent 44%),
@@ -2323,13 +2354,15 @@ button {
 .hub-launch small {
   max-width: 100%;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .hub-launch strong {
-  font-size: 12px;
-  font-weight: 820;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.1;
+
+  white-space: normal;
+  word-break: break-word;
 }
 
 .hub-launch small {
