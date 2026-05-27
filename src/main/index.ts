@@ -11,6 +11,7 @@ import { Readability } from '@mozilla/readability'
 import { RecursiveCharacterTextSplitter } from '@langchain/classic/text_splitter'
 import {
   AetherState,
+  AppSettings,
   AppSummary,
   BrowserTabSummary,
   CaptureResult,
@@ -18,6 +19,7 @@ import {
   ChatResult,
   CollectionSummary,
   HubShortcutSummary,
+  SearchEngineId,
   SearchResult,
   SystemStatus
 } from '../shared/aether'
@@ -31,6 +33,16 @@ const EMBEDDING_MODEL = 'nomic-embed-text'
 const PREFERRED_CHAT_MODELS = ['llama3.1:8b', 'gemma3:latest', 'gemma3']
 const MIN_CAPTURE_TEXT_LENGTH = 120
 const OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
+const SEARCH_ENGINES: Record<SearchEngineId, string> = {
+  google: 'https://www.google.com/search?q=',
+  bing: 'https://www.bing.com/search?q=',
+  yahoo: 'https://search.yahoo.com/search?p=',
+  ecosia: 'https://www.ecosia.org/search?q=',
+  duckduckgo: 'https://duckduckgo.com/?q='
+}
+const DEFAULT_SEARCH_ENGINE: SearchEngineId = 'google'
+
+let activeSearchEngine: SearchEngineId = DEFAULT_SEARCH_ENGINE
 
 interface AppDefinition {
   id: string
@@ -79,6 +91,9 @@ interface LibraryData {
 
 interface UserSettings {
   version: 1
+  browser: {
+    defaultSearchEngine: SearchEngineId
+  }
   ollama: {
     embeddingModel: string | null
     chatModel: string | null
@@ -122,7 +137,7 @@ class LibraryStore {
 
   async listShortcuts(): Promise<HubShortcutSummary[]> {
     const data = await this.load()
-    return [...data.shortcuts].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    return [...data.shortcuts]
   }
 
   async createShortcut(input: { title: string; url: string }): Promise<HubShortcutSummary> {
@@ -152,6 +167,21 @@ class LibraryStore {
     const data = await this.load()
     data.shortcuts = data.shortcuts.filter((shortcut) => shortcut.id !== id)
     await this.save(data)
+  }
+
+  async reorderShortcuts(ids: string[]): Promise<HubShortcutSummary[]> {
+    const data = await this.load()
+    const requestedIds = ids.filter(Boolean)
+    const idSet = new Set(requestedIds)
+    const shortcutById = new Map(data.shortcuts.map((shortcut) => [shortcut.id, shortcut]))
+    const ordered = requestedIds
+      .map((id) => shortcutById.get(id))
+      .filter((shortcut): shortcut is HubShortcutSummary => Boolean(shortcut))
+    const remaining = data.shortcuts.filter((shortcut) => !idSet.has(shortcut.id))
+
+    data.shortcuts = [...ordered, ...remaining]
+    await this.save(data)
+    return this.listShortcuts()
   }
 
   async listCaptures(collectionId: string): Promise<CaptureSummary[]> {
@@ -366,8 +396,12 @@ class SettingsStore {
     try {
       const raw = await readFile(this.settingsPath, 'utf8')
       const parsed = JSON.parse(raw) as Partial<UserSettings>
+      const defaultSearchEngine = normalizeSearchEngineId(parsed.browser?.defaultSearchEngine)
       this.data = {
         version: 1,
+        browser: {
+          defaultSearchEngine
+        },
         ollama: {
           embeddingModel: parsed.ollama?.embeddingModel ?? null,
           chatModel: parsed.ollama?.chatModel ?? null
@@ -376,6 +410,9 @@ class SettingsStore {
     } catch {
       this.data = {
         version: 1,
+        browser: {
+          defaultSearchEngine: DEFAULT_SEARCH_ENGINE
+        },
         ollama: {
           embeddingModel: null,
           chatModel: null
@@ -385,6 +422,25 @@ class SettingsStore {
     }
 
     return this.data
+  }
+
+  async getAppSettings(): Promise<AppSettings> {
+    const data = await this.load()
+    return {
+      browser: {
+        defaultSearchEngine: data.browser.defaultSearchEngine
+      }
+    }
+  }
+
+  async updateAppSettings(input: Partial<AppSettings>): Promise<AppSettings> {
+    const data = await this.load()
+    if (input.browser?.defaultSearchEngine) {
+      data.browser.defaultSearchEngine = normalizeSearchEngineId(input.browser.defaultSearchEngine)
+    }
+
+    await this.save(data)
+    return this.getAppSettings()
   }
 
   async updateModels(input: {
@@ -779,6 +835,7 @@ class AppContainerManager {
   private activeAppId = APP_DEFINITIONS[0].id
   private activeTabId = ''
   private dashboardOpen = true
+  private modalOverlayOpen = false
   private panelCollapsed = true
 
   constructor(private readonly mainWindow: BrowserWindow) {
@@ -879,8 +936,10 @@ class AppContainerManager {
     this.activeTabId = tab.id
     this.activeAppId = tab.appId
     this.dashboardOpen = false
-    this.attachActiveView()
-    this.resize()
+    if (!this.modalOverlayOpen) {
+      this.attachActiveView()
+      this.resize()
+    }
     this.emitState()
   }
 
@@ -906,7 +965,7 @@ class AppContainerManager {
       shouldAttachActiveView = true
     }
 
-    if (!this.dashboardOpen && shouldAttachActiveView) {
+    if (!this.dashboardOpen && !this.modalOverlayOpen && shouldAttachActiveView) {
       this.attachActiveView()
       this.resize()
     }
@@ -941,8 +1000,23 @@ class AppContainerManager {
     this.emitState()
   }
 
+  setModalOverlayOpen(open: boolean): void {
+    if (this.modalOverlayOpen === open) return
+
+    this.modalOverlayOpen = open
+    if (open) {
+      this.detachActiveView()
+      return
+    }
+
+    if (!this.dashboardOpen) {
+      this.attachActiveView()
+      this.resize()
+    }
+  }
+
   resize(): void {
-    if (this.dashboardOpen) return
+    if (this.dashboardOpen || this.modalOverlayOpen) return
 
     const active = this.getActiveTab()
     const [width, height] = this.mainWindow.getContentSize()
@@ -1201,7 +1275,10 @@ function createWindow(): void {
   settings = new SettingsStore(join(app.getPath('userData'), 'aether-settings', 'settings.json'))
   settings
     .load()
-    .then((data) => ollamaClient.setModelOverrides(data.ollama))
+    .then((data) => {
+      activeSearchEngine = data.browser.defaultSearchEngine
+      ollamaClient.setModelOverrides(data.ollama)
+    })
     .catch((error) => console.error('Æther settings load failed:', error))
   database.migrateLegacyRealms(library).catch((error) => {
     console.error('Legacy realm migration failed:', error)
@@ -1425,6 +1502,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle('aether:hub:create', (_event, input: { title: string; url: string }) =>
     getLibrary().createShortcut(input)
   )
+  ipcMain.handle('aether:hub:reorder', (_event, ids: string[]) =>
+    getLibrary().reorderShortcuts(ids)
+  )
   ipcMain.handle('aether:hub:delete', (_event, id: string) => getLibrary().deleteShortcut(id))
   ipcMain.handle('aether:collections:list', () => getLibrary().listCollections())
   ipcMain.handle(
@@ -1474,6 +1554,15 @@ function registerIpcHandlers(): void {
     await loadOllamaSettings()
     return ollamaClient.status(getLibrary(), getDatabase())
   })
+  ipcMain.handle('aether:system:settings', async () => {
+    await loadBrowserSettings()
+    return getSettings().getAppSettings()
+  })
+  ipcMain.handle('aether:system:update-settings', async (_event, input: Partial<AppSettings>) => {
+    const nextSettings = await getSettings().updateAppSettings(input)
+    activeSearchEngine = nextSettings.browser.defaultSearchEngine
+    return nextSettings
+  })
   ipcMain.handle(
     'aether:system:update-models',
     async (_event, input: { embeddingModel?: string; chatModel?: string }) => {
@@ -1484,6 +1573,9 @@ function registerIpcHandlers(): void {
   )
   ipcMain.handle('aether:layout:set-panel-collapsed', (_event, collapsed: boolean) =>
     getContainers().setPanelCollapsed(collapsed)
+  )
+  ipcMain.handle('aether:layout:set-modal-overlay-open', (_event, open: boolean) =>
+    getContainers().setModalOverlayOpen(open)
   )
 }
 
@@ -1517,7 +1609,13 @@ function getSettings(): SettingsStore {
 
 async function loadOllamaSettings(): Promise<void> {
   const data = await getSettings().load()
+  activeSearchEngine = data.browser.defaultSearchEngine
   ollamaClient.setModelOverrides(data.ollama)
+}
+
+async function loadBrowserSettings(): Promise<void> {
+  const data = await getSettings().load()
+  activeSearchEngine = data.browser.defaultSearchEngine
 }
 
 function normalizeCapturedText(text: string): string {
@@ -1536,13 +1634,19 @@ function normalizeUrl(rawUrl: string): string {
     return trimmed
   }
   if (/\s/.test(trimmed) || !/[.:]/.test(trimmed)) {
-    return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`
+    return `${SEARCH_ENGINES[activeSearchEngine]}${encodeURIComponent(trimmed)}`
   }
   if (/^(localhost|127\.0\.0\.1|\[?::1\]?)(:\d+)?(\/.*)?$/i.test(trimmed)) {
     return `http://${trimmed}`
   }
 
   return `https://${trimmed}`
+}
+
+function normalizeSearchEngineId(value: unknown): SearchEngineId {
+  return typeof value === 'string' && value in SEARCH_ENGINES
+    ? (value as SearchEngineId)
+    : DEFAULT_SEARCH_ENGINE
 }
 
 function getTabHost(url: string): string {

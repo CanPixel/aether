@@ -24,6 +24,7 @@ const api: AetherApi = {
   hub: {
     list: () => ipcRenderer.invoke('aether:hub:list'),
     create: (input) => ipcRenderer.invoke('aether:hub:create', input),
+    reorder: (ids) => ipcRenderer.invoke('aether:hub:reorder', ids),
     delete: (id) => ipcRenderer.invoke('aether:hub:delete', id)
   },
   collections: {
@@ -46,11 +47,14 @@ const api: AetherApi = {
   },
   system: {
     status: () => ipcRenderer.invoke('aether:system:status'),
+    settings: () => ipcRenderer.invoke('aether:system:settings'),
+    updateSettings: (input) => ipcRenderer.invoke('aether:system:update-settings', input),
     updateModels: (input) => ipcRenderer.invoke('aether:system:update-models', input)
   },
   layout: {
     setIntelligencePanelCollapsed: (collapsed) =>
-      ipcRenderer.invoke('aether:layout:set-panel-collapsed', collapsed)
+      ipcRenderer.invoke('aether:layout:set-panel-collapsed', collapsed),
+    setModalOverlayOpen: (open) => ipcRenderer.invoke('aether:layout:set-modal-overlay-open', open)
   },
   events: {
     onState: (listener: (state: AetherState) => void) => {

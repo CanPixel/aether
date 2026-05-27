@@ -33,6 +33,16 @@ export interface HubShortcutSummary {
   createdAt: string
 }
 
+export type SearchEngineId = 'google' | 'bing' | 'yahoo' | 'ecosia' | 'duckduckgo'
+
+export interface BrowserSettings {
+  defaultSearchEngine: SearchEngineId
+}
+
+export interface AppSettings {
+  browser: BrowserSettings
+}
+
 export interface CollectionSummary {
   id: string
   name: string
@@ -125,6 +135,7 @@ export interface AetherApi {
   hub: {
     list(): Promise<HubShortcutSummary[]>
     create(input: { title: string; url: string }): Promise<HubShortcutSummary>
+    reorder(ids: string[]): Promise<HubShortcutSummary[]>
     delete(id: string): Promise<void>
   }
   collections: {
@@ -160,10 +171,13 @@ export interface AetherApi {
   }
   system: {
     status(): Promise<SystemStatus>
+    settings(): Promise<AppSettings>
+    updateSettings(input: Partial<AppSettings>): Promise<AppSettings>
     updateModels(input: { embeddingModel?: string; chatModel?: string }): Promise<SystemStatus>
   }
   layout: {
     setIntelligencePanelCollapsed(collapsed: boolean): Promise<void>
+    setModalOverlayOpen(open: boolean): Promise<void>
   }
   events: {
     onState(listener: (state: AetherState) => void): () => void

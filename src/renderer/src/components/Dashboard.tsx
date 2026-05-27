@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { CSSProperties, useState } from 'react'
 import { CaptureSummary, CollectionSummary, HubShortcutSummary } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
 import { formatDate, getCaptureHost } from '../utils/aether-ui'
@@ -20,6 +20,7 @@ type DashboardProps = {
   openCapture: (capture: CaptureSummary) => Promise<void>
   openShortcut: (shortcut: HubShortcutSummary) => Promise<void>
   openCollectionDialog: (state: CollectionDialogState) => void
+  reorderShortcuts: (ids: string[]) => Promise<void>
   saveActiveTabToHub: () => Promise<void>
   selectedCollectionId: string
   shortcuts: HubShortcutSummary[]
@@ -53,6 +54,32 @@ function getRootDomainLetter(hostString: string): string {
   return cleanHost.charAt(0).toUpperCase()
 }
 
+function getPortalTint(host: string): string {
+  const normalized = host.replace(/^www\./, '')
+  const brandColors: Record<string, string> = {
+    'reddit.com': '#ff8800',
+    'youtube.com': '#ff0000',
+    'youtu.be': '#ff0000',
+    'google.com': '#4285f4',
+    'github.com': '#6e7681',
+    'duckduckgo.com': '#de5833',
+    'ecosia.org': '#39a96b',
+    'wikipedia.org': '#727b86'
+  }
+  const matchedBrand = Object.entries(brandColors).find(
+    ([domain]) => normalized === domain || normalized.endsWith(`.${domain}`)
+  )
+  if (matchedBrand) return matchedBrand[1]
+
+  const palette = ['#4f8fd6', '#3aaea1', '#c07f43', '#7772d6', '#4e9a62', '#b95f79', '#547aa5']
+  let hash = 0
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = (hash * 31 + normalized.charCodeAt(index)) >>> 0
+  }
+
+  return palette[hash % palette.length]
+}
+
 export function Dashboard({
   busy,
   capturesByCollection,
@@ -63,12 +90,15 @@ export function Dashboard({
   openCapture,
   openShortcut,
   openCollectionDialog,
+  reorderShortcuts,
   saveActiveTabToHub,
   selectedCollectionId,
   shortcuts,
   selectCollection
 }: DashboardProps): React.JSX.Element {
   const [openCollectionId, setOpenCollectionId] = useState(selectedCollectionId)
+  const [draggedShortcutId, setDraggedShortcutId] = useState('')
+  const [dragOverShortcutId, setDragOverShortcutId] = useState('')
   const [draggedCapture, setDraggedCapture] = useState<CaptureSummary | null>(null)
   const [dragOverCollectionId, setDragOverCollectionId] = useState('')
   const aetherMarkSrc = new URL('aether-mark.svg', window.location.href).toString()
@@ -81,6 +111,20 @@ export function Dashboard({
     return matches.length > 0
       ? matches
       : collections.filter((item) => item.id === capture.collectionId)
+  }
+
+  async function reorderPortal(targetId: string): Promise<void> {
+    if (!draggedShortcutId || draggedShortcutId === targetId) return
+
+    const currentIds = shortcuts.map((shortcut) => shortcut.id)
+    const fromIndex = currentIds.indexOf(draggedShortcutId)
+    const toIndex = currentIds.indexOf(targetId)
+    if (fromIndex === -1 || toIndex === -1) return
+
+    const nextIds = [...currentIds]
+    const [movedId] = nextIds.splice(fromIndex, 1)
+    nextIds.splice(toIndex, 0, movedId)
+    await reorderShortcuts(nextIds)
   }
 
   return (
@@ -120,10 +164,44 @@ export function Dashboard({
           <div className="empty-row">Saved pages will appear here as launch tiles.</div>
         ) : (
           <div className="hub-shortcuts">
-            {shortcuts.slice(0, 8).map((shortcut) => (
-              <article className="hub-shortcut" key={shortcut.id}>
+            {shortcuts.map((shortcut) => (
+              <article
+                className={`hub-shortcut ${
+                  draggedShortcutId === shortcut.id ? 'dragging' : ''
+                } ${dragOverShortcutId === shortcut.id ? 'drop-target' : ''}`}
+                draggable
+                key={shortcut.id}
+                onDragEnd={() => {
+                  setDraggedShortcutId('')
+                  setDragOverShortcutId('')
+                }}
+                onDragEnter={(event) => {
+                  if (!draggedShortcutId || draggedShortcutId === shortcut.id) return
+                  event.preventDefault()
+                  setDragOverShortcutId(shortcut.id)
+                }}
+                onDragOver={(event) => {
+                  if (!draggedShortcutId || draggedShortcutId === shortcut.id) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                }}
+                onDragStart={(event) => {
+                  setDraggedShortcutId(shortcut.id)
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData('application/x-aether-shortcut', shortcut.id)
+                  event.dataTransfer.setData('text/plain', shortcut.title)
+                }}
+                onDrop={async (event) => {
+                  event.preventDefault()
+                  await reorderPortal(shortcut.id)
+                  setDraggedShortcutId('')
+                  setDragOverShortcutId('')
+                }}
+                style={{ '--portal-tint': getPortalTint(shortcut.host) } as CSSProperties}
+              >
                 <button
                   className="hub-launch"
+                  draggable={false}
                   onClick={() => openShortcut(shortcut)}
                   title={shortcut.url}
                   type="button"
@@ -134,6 +212,7 @@ export function Dashboard({
                 </button>
                 <button
                   className="hub-delete"
+                  draggable={false}
                   onClick={() => deleteShortcut(shortcut.id)}
                   title="Remove from Hub"
                   type="button"

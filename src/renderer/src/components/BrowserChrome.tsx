@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, useState } from 'react'
+import { CSSProperties, FormEvent, useLayoutEffect, useRef, useState } from 'react'
 import { BrowserTabSummary, CaptureResult, CollectionSummary } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
 import {
@@ -65,6 +65,57 @@ export function BrowserChrome({
   onSelectTab,
   onSelectCollection
 }: BrowserChromeProps): React.JSX.Element {
+  const tabRefs = useRef(new Map<string, HTMLButtonElement>())
+  const previousTabRects = useRef(new Map<string, DOMRect>())
+
+  useLayoutEffect(() => {
+    const currentRects = new Map<string, DOMRect>()
+
+    tabRefs.current.forEach((element, tabId) => {
+      currentRects.set(tabId, element.getBoundingClientRect())
+    })
+
+    currentRects.forEach((rect, tabId) => {
+      const previous = previousTabRects.current.get(tabId)
+      const element = tabRefs.current.get(tabId)
+      if (!element) return
+
+      if (!previous) {
+        element.animate(
+          [
+            { opacity: 0, transform: 'translateY(3px) scale(0.985)' },
+            { opacity: 1, transform: 'translateY(0) scale(1)' }
+          ],
+          {
+            duration: 260,
+            easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+          }
+        )
+        return
+      }
+
+      const deltaX = previous.left - rect.left
+      const deltaY = previous.top - rect.top
+      const scaleX = previous.width / rect.width
+      if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5 && Math.abs(scaleX - 1) < 0.01) {
+        return
+      }
+
+      element.animate(
+        [
+          { transform: `translate(${deltaX}px, ${deltaY}px) scaleX(${scaleX})` },
+          { transform: 'translate(0, 0) scaleX(1)' }
+        ],
+        {
+          duration: 420,
+          easing: 'cubic-bezier(0.22, 1, 0.36, 1)'
+        }
+      )
+    })
+
+    previousTabRects.current = currentRects
+  }, [tabs])
+
   return (
     <div className={`browser-chrome ${dashboardOpen ? 'dashboard-open' : ''}`}>
       <form className="address-bar" onSubmit={onNavigate}>
@@ -117,6 +168,13 @@ export function BrowserChrome({
             }`}
             key={tab.id}
             onClick={() => onSelectTab(tab.id)}
+            ref={(element) => {
+              if (element) {
+                tabRefs.current.set(tab.id, element)
+              } else {
+                tabRefs.current.delete(tab.id)
+              }
+            }}
             style={getTabStyle(tab)}
             title={tab.title}
             type="button"

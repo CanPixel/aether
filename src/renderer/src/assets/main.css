@@ -254,6 +254,11 @@ button:disabled {
     linear-gradient(145deg, #ffffff, #dbeeff);
 }
 
+.settings-button {
+  flex: 0 0 auto;
+  color: #6f82a0;
+}
+
 .tooltip-host {
   position: relative;
 }
@@ -2299,12 +2304,29 @@ button {
   display: flex;
   gap: 12px;
   overflow-x: auto;
-  padding: 2px 0 4px;
+  padding: 3px 2px 6px;
+  scroll-behavior: smooth;
 }
 
 .hub-shortcut {
   position: relative;
   flex: 0 0 138px;
+  transition:
+    opacity 180ms ease,
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.hub-shortcut.dragging {
+  opacity: 0.52;
+  transform: scale(0.985);
+}
+
+.hub-shortcut.drop-target .hub-launch {
+  border-color: color-mix(in srgb, var(--portal-tint, var(--accent)) 54%, rgba(255, 255, 255, 0.5));
+  box-shadow:
+    0 18px 36px color-mix(in srgb, var(--portal-tint, var(--accent)) 22%, rgba(62, 132, 163, 0.12)),
+    0 0 0 4px color-mix(in srgb, var(--portal-tint, var(--accent)) 18%, transparent);
+  transform: translateY(-2px) scale(1.018);
 }
 
 .hub-launch {
@@ -2315,9 +2337,18 @@ button {
   gap: 7px;
   border-radius: 16px;
   padding: 13px 10px 10px;
+  border-color: color-mix(
+    in srgb,
+    var(--portal-tint, var(--accent)) 28%,
+    rgba(104, 140, 190, 0.22)
+  );
   background:
     radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.96), transparent 48%),
-    radial-gradient(circle at 88% 90%, rgba(98, 216, 198, 0.13), transparent 42%),
+    radial-gradient(
+      circle at 88% 90%,
+      color-mix(in srgb, var(--portal-tint, var(--accent)) 18%, transparent),
+      transparent 42%
+    ),
     rgba(255, 255, 255, 0.58);
   color: var(--ink);
   box-shadow: 0 12px 28px rgba(94, 132, 185, 0.08);
@@ -2329,9 +2360,21 @@ button {
 }
 
 .hub-launch:hover {
-  border-color: rgba(79, 174, 202, 0.34);
-  background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 16px 34px rgba(62, 132, 163, 0.14);
+  border-color: color-mix(
+    in srgb,
+    var(--portal-tint, var(--accent)) 46%,
+    rgba(255, 255, 255, 0.46)
+  );
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.98), transparent 48%),
+    radial-gradient(
+      circle at 88% 90%,
+      color-mix(in srgb, var(--portal-tint, var(--accent)) 24%, transparent),
+      transparent 42%
+    ),
+    rgba(255, 255, 255, 0.86);
+  box-shadow: 0 16px 34px
+    color-mix(in srgb, var(--portal-tint, var(--accent)) 18%, rgba(62, 132, 163, 0.12));
   transform: translateY(-2px);
 }
 
@@ -2403,6 +2446,137 @@ button {
 .hub-delete svg {
   width: 13px;
   height: 13px;
+}
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(210, 247, 255, 0.58), transparent 28%),
+    radial-gradient(circle at 72% 82%, rgba(166, 219, 255, 0.34), transparent 30%),
+    rgba(242, 249, 255, 0.72);
+  backdrop-filter: blur(26px) saturate(1.18);
+}
+
+.settings-modal {
+  width: min(560px, calc(100vw - 56px));
+  border: 1px solid rgba(101, 145, 190, 0.24);
+  border-radius: 28px;
+  padding: 20px;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.96), transparent 42%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(232, 246, 255, 0.88));
+  box-shadow:
+    0 32px 80px rgba(54, 91, 132, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.settings-modal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.settings-modal header p {
+  margin: 0 0 4px;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.settings-modal h2 {
+  margin: 0;
+  font-family: 'New York', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 25px;
+}
+
+.settings-modal header button {
+  height: 31px;
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.settings-field {
+  border: 1px solid rgba(123, 158, 190, 0.2);
+  border-radius: 18px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.settings-field label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.settings-field p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-field select {
+  width: 100%;
+  height: 36px;
+  border-radius: 12px;
+  padding: 0 12px;
+  font-weight: 760;
+}
+
+.settings-engine-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.settings-engine-list button {
+  display: grid;
+  height: auto;
+  min-height: 70px;
+  justify-items: start;
+  gap: 5px;
+  border-radius: 16px;
+  padding: 12px;
+  text-align: left;
+  box-shadow: none;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.settings-engine-list button:hover:not(:disabled),
+.settings-engine-list button.selected {
+  border-color: rgba(54, 122, 178, 0.34);
+  background:
+    radial-gradient(circle at 20% 16%, rgba(255, 255, 255, 0.95), transparent 42%),
+    linear-gradient(145deg, rgba(233, 247, 255, 0.94), rgba(255, 255, 255, 0.8));
+  box-shadow: 0 10px 24px rgba(70, 124, 180, 0.12);
+  transform: translateY(-1px);
+}
+
+.settings-engine-list strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.settings-engine-list span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .empty-state button {
