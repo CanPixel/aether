@@ -449,6 +449,11 @@ function App(): React.JSX.Element {
     setShortcuts(nextShortcuts)
   }
 
+  async function reorderCollections(ids: string[]): Promise<void> {
+    const nextCollections = await window.aether.collections.reorder(ids)
+    setCollections(nextCollections)
+  }
+
   async function openSettings(): Promise<void> {
     setSettingsOpen(true)
     await window.aether.layout.setModalOverlayOpen(true)
@@ -593,6 +598,7 @@ function App(): React.JSX.Element {
             openCapture={openCapture}
             openShortcut={openShortcut}
             openCollectionDialog={setCollectionDialog}
+            reorderCollections={reorderCollections}
             reorderShortcuts={reorderShortcuts}
             saveActiveTabToHub={saveActiveTabToHub}
             selectedCollectionId={selectedCollectionId}
@@ -676,19 +682,31 @@ function SettingsModal({
   ]
 
   return (
-    <div className="settings-overlay" role="presentation">
+    <div
+      className="settings-overlay"
+      onClick={() => {
+        void onClose()
+      }}
+      role="presentation"
+    >
       <section
         className="settings-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
+        onClick={(event) => event.stopPropagation()}
       >
         <header>
           <div>
             <p>General</p>
             <h2 id="settings-title">Æther Settings</h2>
           </div>
-          <button onClick={onClose} type="button">
+          <button
+            onClick={() => {
+              void onClose()
+            }}
+            type="button"
+          >
             Close
           </button>
         </header>

@@ -20,6 +20,7 @@ type DashboardProps = {
   openCapture: (capture: CaptureSummary) => Promise<void>
   openShortcut: (shortcut: HubShortcutSummary) => Promise<void>
   openCollectionDialog: (state: CollectionDialogState) => void
+  reorderCollections: (ids: string[]) => Promise<void>
   reorderShortcuts: (ids: string[]) => Promise<void>
   saveActiveTabToHub: () => Promise<void>
   selectedCollectionId: string
@@ -90,6 +91,7 @@ export function Dashboard({
   openCapture,
   openShortcut,
   openCollectionDialog,
+  reorderCollections,
   reorderShortcuts,
   saveActiveTabToHub,
   selectedCollectionId,
@@ -99,6 +101,7 @@ export function Dashboard({
   const [openCollectionId, setOpenCollectionId] = useState(selectedCollectionId)
   const [draggedShortcutId, setDraggedShortcutId] = useState('')
   const [dragOverShortcutId, setDragOverShortcutId] = useState('')
+  const [draggedCollectionId, setDraggedCollectionId] = useState('')
   const [draggedCapture, setDraggedCapture] = useState<CaptureSummary | null>(null)
   const [dragOverCollectionId, setDragOverCollectionId] = useState('')
   const aetherMarkSrc = new URL('aether-mark.svg', window.location.href).toString()
@@ -125,6 +128,20 @@ export function Dashboard({
     const [movedId] = nextIds.splice(fromIndex, 1)
     nextIds.splice(toIndex, 0, movedId)
     await reorderShortcuts(nextIds)
+  }
+
+  async function reorderCollection(targetId: string): Promise<void> {
+    if (!draggedCollectionId || draggedCollectionId === targetId) return
+
+    const currentIds = collections.map((collection) => collection.id)
+    const fromIndex = currentIds.indexOf(draggedCollectionId)
+    const toIndex = currentIds.indexOf(targetId)
+    if (fromIndex === -1 || toIndex === -1) return
+
+    const nextIds = [...currentIds]
+    const [movedId] = nextIds.splice(fromIndex, 1)
+    nextIds.splice(toIndex, 0, movedId)
+    await reorderCollections(nextIds)
   }
 
   return (
@@ -259,18 +276,27 @@ export function Dashboard({
               const isOpen = openCollectionId === collection.id
               const canDropCapture =
                 Boolean(draggedCapture) && draggedCapture?.collectionId !== collection.id
+              const canDropCollection =
+                Boolean(draggedCollectionId) && draggedCollectionId !== collection.id
               return (
                 <article
                   className={`collection-accordion ${isOpen ? 'open' : ''} ${
+                    draggedCollectionId === collection.id ? 'dragging' : ''
+                  } ${
                     canDropCapture && dragOverCollectionId === collection.id ? 'drop-target' : ''
+                  } ${
+                    canDropCollection && dragOverCollectionId === collection.id
+                      ? 'reorder-target'
+                      : ''
                   }`}
+                  draggable
                   onDragEnter={(event) => {
-                    if (!canDropCapture) return
+                    if (!canDropCapture && !canDropCollection) return
                     event.preventDefault()
                     setDragOverCollectionId(collection.id)
                   }}
                   onDragOver={(event) => {
-                    if (!canDropCapture) return
+                    if (!canDropCapture && !canDropCollection) return
                     event.preventDefault()
                     event.dataTransfer.dropEffect = 'move'
                   }}
@@ -279,9 +305,29 @@ export function Dashboard({
                       setDragOverCollectionId('')
                     }
                   }}
+                  onDragStart={(event) => {
+                    if ((event.target as HTMLElement).closest('.collection-captures')) return
+                    setDraggedCollectionId(collection.id)
+                    event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.setData('application/x-aether-collection', collection.id)
+                    event.dataTransfer.setData('text/plain', collection.name)
+                  }}
+                  onDragEnd={() => {
+                    setDraggedCollectionId('')
+                    setDragOverCollectionId('')
+                  }}
                   onDrop={async (event) => {
                     event.preventDefault()
                     setDragOverCollectionId('')
+                    const collectionId = event.dataTransfer.getData(
+                      'application/x-aether-collection'
+                    )
+                    if (collectionId && canDropCollection) {
+                      await reorderCollection(collection.id)
+                      setDraggedCollectionId('')
+                      return
+                    }
+
                     const captureId =
                       event.dataTransfer.getData('application/x-aether-capture') ||
                       draggedCapture?.id
