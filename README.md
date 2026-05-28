@@ -1,4 +1,4 @@
-# Æther Browser
+# 🌥️ ÆTHER Browser
 
 Æther is an Electron-native research browser for local knowledge work. It combines normal web browsing, persistent knowledge hubs, local page capture, semantic retrieval, AiON question answering, and the iCE Information Complexity Explorer in one desktop shell.
 
@@ -54,6 +54,7 @@ Recommended Ollama models:
 ollama pull nomic-embed-text
 ollama pull llama3.1:8b
 ollama pull gemma3
+ollama pull gemma4
 ```
 
 Check that Ollama is reachable:
@@ -229,13 +230,7 @@ Knowledge hub behavior:
 
 AiON is the local intelligence sidepanel.
 
-Search mode:
-
-- Searches a selected knowledge hub using local embeddings.
-- Returns matched chunks with source metadata.
-
-Ask mode:
-
+**Ask mode**:
 - Pressing Enter submits a non-empty prompt.
 - Empty hubs with `0 captures` or `0 chunks` are hidden because they cannot contribute context.
 - If no populated hubs exist, AiON defaults to current-page-only context.
