@@ -1,8 +1,13 @@
 import { CSSProperties, useState } from 'react'
-import { CaptureSummary, CollectionSummary, HubShortcutSummary } from '../../../shared/aether'
+import {
+  CaptureSummary,
+  CollectionSummary,
+  HubShortcutSummary,
+  SavedIcebergSummary
+} from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
 import { formatDate, getCaptureHost } from '../utils/aether-ui'
-import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, TrashIcon } from './icons'
+import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, SnowflakeIcon, TrashIcon } from './icons'
 
 type CollectionDialogState =
   | { mode: 'create' }
@@ -18,12 +23,14 @@ type DashboardProps = {
   deleteShortcut: (shortcutId: string) => Promise<void>
   moveCapture: (captureId: string, collectionId: string) => Promise<void>
   openCapture: (capture: CaptureSummary) => Promise<void>
+  openSavedIceberg: (id: string) => Promise<unknown>
   openShortcut: (shortcut: HubShortcutSummary) => Promise<void>
   openCollectionDialog: (state: CollectionDialogState) => void
   reorderCollections: (ids: string[]) => Promise<void>
   reorderShortcuts: (ids: string[]) => Promise<void>
   saveActiveTabToHub: () => Promise<void>
   selectedCollectionId: string
+  savedIcebergs: SavedIcebergSummary[]
   shortcuts: HubShortcutSummary[]
   selectCollection: (value: string) => Promise<void>
 }
@@ -89,12 +96,14 @@ export function Dashboard({
   deleteShortcut,
   moveCapture,
   openCapture,
+  openSavedIceberg,
   openShortcut,
   openCollectionDialog,
   reorderCollections,
   reorderShortcuts,
   saveActiveTabToHub,
   selectedCollectionId,
+  savedIcebergs,
   shortcuts,
   selectCollection
 }: DashboardProps): React.JSX.Element {
@@ -237,6 +246,40 @@ export function Dashboard({
                   <CloseIcon />
                 </button>
               </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="iceberg-band">
+        <div className="section-title compact">
+          <span className="section-symbol">
+            <SnowflakeIcon />
+          </span>
+          <div>
+            <h2>Saved Icebergs</h2>
+            <p>Reopen local complexity atlases from iCE.</p>
+          </div>
+        </div>
+
+        {savedIcebergs.length === 0 ? (
+          <div className="empty-row">Saved iCE atlases will appear here.</div>
+        ) : (
+          <div className="saved-iceberg-grid">
+            {savedIcebergs.map((iceberg) => (
+              <button
+                className="saved-iceberg-card"
+                disabled={Boolean(busy)}
+                key={iceberg.id}
+                onClick={() => {
+                  void openSavedIceberg(iceberg.id)
+                }}
+                type="button"
+              >
+                <span>{iceberg.itemCount} fragments</span>
+                <strong>{iceberg.title}</strong>
+                <small>{iceberg.keyword}</small>
+              </button>
             ))}
           </div>
         )}

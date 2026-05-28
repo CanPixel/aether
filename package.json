@@ -24,34 +24,33 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "@lancedb/lancedb": "^0.27.2",
-    "@langchain/community": "^1.1.28",
+    "@lancedb/lancedb": "^0.29.0",
+    "@langchain/community": "^1.1.29",
     "@mozilla/readability": "^0.6.0",
-    "apache-arrow": "18.0.0",
+    "apache-arrow": "^21.1.0",
     "framer-motion": "^12.40.0",
     "jsdom": "^29.1.1",
-    "lucide-react": "^1.16.0"
+    "lucide-react": "^1.17.0"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
     "@electron-toolkit/eslint-config-ts": "^3.1.0",
     "@electron-toolkit/tsconfig": "^2.0.0",
     "@types/jsdom": "^28.0.3",
-    "@types/node": "^22.19.19",
+    "@types/node": "^25.9.1",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^39.8.10",
+    "@vitejs/plugin-react": "^6.0.2",
+    "electron": "^42.3.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
-    "eslint": "^9.39.4",
-    "eslint-plugin-react": "^7.37.5",
+    "eslint": "^10.4.0",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.4.26",
+    "eslint-plugin-react-refresh": "^0.5.2",
     "prettier": "^3.8.3",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "typescript": "^5.9.3",
-    "vite": "^7.3.3"
+    "typescript": "^6.0.3",
+    "vite": "^8.0.14"
   }
 }

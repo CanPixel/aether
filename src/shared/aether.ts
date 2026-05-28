@@ -108,6 +108,32 @@ export interface IcebergResult {
   generatedAt: string
 }
 
+export interface SavedIcebergSummary {
+  id: string
+  title: string
+  keyword: string
+  model: string
+  generatedAt: string
+  savedAt: string
+  updatedAt: string
+  itemCount: number
+}
+
+export interface SavedIceberg extends IcebergResult {
+  id: string
+  title: string
+  savedAt: string
+  updatedAt: string
+}
+
+export interface SaveIcebergInput {
+  title: string
+  keyword: string
+  model: string
+  generatedAt: string
+  items: IcebergItem[]
+}
+
 export interface SystemStatus {
   ollamaReachable: boolean
   embeddingModel: string
@@ -188,6 +214,10 @@ export interface AetherApi {
   }
   crystallizer: {
     generate(input: { keyword: string }): Promise<IcebergResult>
+    listSaved(): Promise<SavedIcebergSummary[]>
+    getSaved(id: string): Promise<SavedIceberg>
+    save(input: SaveIcebergInput): Promise<SavedIceberg>
+    deleteSaved(id: string): Promise<void>
   }
   system: {
     status(): Promise<SystemStatus>
