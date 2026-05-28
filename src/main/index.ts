@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, WebContentsView } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, shell, WebContentsView } from 'electron'
 import type { Session } from 'electron'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import { dirname, join } from 'path'
@@ -21,8 +21,11 @@ import {
   HubShortcutSummary,
   IcebergItem,
   IcebergResult,
+  SaveIcebergInput,
   SearchEngineId,
   SearchResult,
+  SavedIceberg,
+  SavedIcebergSummary,
   SystemStatus
 } from '../shared/aether'
 
@@ -101,6 +104,11 @@ interface UserSettings {
     embeddingModel: string | null
     chatModel: string | null
   }
+}
+
+interface IcebergData {
+  version: 1
+  icebergs: SavedIceberg[]
 }
 
 interface OllamaTagsResponse {
@@ -488,6 +496,193 @@ class SettingsStore {
     await mkdir(dirname(this.settingsPath), { recursive: true })
     await writeFile(this.settingsPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
     this.data = data
+  }
+}
+
+class IcebergStore {
+  private data: IcebergData | null = null
+
+  constructor(private readonly icebergsPath: string) {}
+
+  get path(): string {
+    return this.icebergsPath
+  }
+
+  async listSaved(): Promise<SavedIcebergSummary[]> {
+    const data = await this.load()
+    return data.icebergs
+      .map((iceberg) => this.toSummary(iceberg))
+      .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt))
+  }
+
+  async getSaved(id: string): Promise<SavedIceberg> {
+    const data = await this.load()
+    const iceberg = data.icebergs.find((item) => item.id === id.trim())
+    if (!iceberg) {
+      throw new Error('Saved iceberg not found.')
+    }
+
+    return this.cloneIceberg(iceberg)
+  }
+
+  async saveIceberg(input: SaveIcebergInput): Promise<SavedIceberg> {
+    const title = input.title.trim()
+    const keyword = input.keyword.trim()
+    const model = input.model.trim()
+    const generatedAt = input.generatedAt.trim()
+    const items = this.normalizeItems(input.items)
+
+    if (!title) {
+      throw new Error('Iceberg title is required.')
+    }
+    if (!keyword) {
+      throw new Error('Iceberg keyword is required.')
+    }
+    if (!model) {
+      throw new Error('Iceberg model is required.')
+    }
+    if (!generatedAt) {
+      throw new Error('Iceberg generation time is required.')
+    }
+    if (items.length === 0) {
+      throw new Error('Iceberg has no usable items to save.')
+    }
+
+    const data = await this.load()
+    const now = new Date().toISOString()
+    const iceberg: SavedIceberg = {
+      id: crypto.randomUUID(),
+      title,
+      keyword,
+      model,
+      generatedAt,
+      savedAt: now,
+      updatedAt: now,
+      items
+    }
+
+    data.icebergs.unshift(iceberg)
+    await this.save(data)
+    return this.cloneIceberg(iceberg)
+  }
+
+  async deleteSaved(id: string): Promise<void> {
+    const data = await this.load()
+    data.icebergs = data.icebergs.filter((item) => item.id !== id.trim())
+    await this.save(data)
+  }
+
+  private async load(): Promise<IcebergData> {
+    if (this.data) return this.data
+
+    try {
+      const raw = await readFile(this.icebergsPath, 'utf8')
+      const parsed = JSON.parse(raw) as Partial<IcebergData>
+      this.data = {
+        version: 1,
+        icebergs: Array.isArray(parsed.icebergs)
+          ? parsed.icebergs
+              .map((iceberg) => this.normalizeSavedIceberg(iceberg))
+              .filter((iceberg): iceberg is SavedIceberg => Boolean(iceberg))
+          : []
+      }
+    } catch {
+      this.data = {
+        version: 1,
+        icebergs: []
+      }
+      await this.save(this.data)
+    }
+
+    return this.data
+  }
+
+  private async save(data: IcebergData): Promise<void> {
+    await mkdir(dirname(this.icebergsPath), { recursive: true })
+    await writeFile(this.icebergsPath, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
+    this.data = data
+  }
+
+  private normalizeSavedIceberg(value: unknown): SavedIceberg | null {
+    if (typeof value !== 'object' || value === null) return null
+
+    const candidate = value as Partial<SavedIceberg>
+    const id = typeof candidate.id === 'string' ? candidate.id.trim() : ''
+    const title = typeof candidate.title === 'string' ? candidate.title.trim() : ''
+    const keyword = typeof candidate.keyword === 'string' ? candidate.keyword.trim() : ''
+    const model = typeof candidate.model === 'string' ? candidate.model.trim() : ''
+    const generatedAt =
+      typeof candidate.generatedAt === 'string' ? candidate.generatedAt.trim() : ''
+    const savedAt = typeof candidate.savedAt === 'string' ? candidate.savedAt.trim() : ''
+    const updatedAt = typeof candidate.updatedAt === 'string' ? candidate.updatedAt.trim() : savedAt
+    const items = this.normalizeItems(candidate.items)
+
+    if (!id || !title || !keyword || !model || !generatedAt || !savedAt || items.length === 0) {
+      return null
+    }
+
+    return {
+      id,
+      title,
+      keyword,
+      model,
+      generatedAt,
+      savedAt,
+      updatedAt: updatedAt || savedAt,
+      items
+    }
+  }
+
+  private normalizeItems(items: unknown): IcebergItem[] {
+    if (!Array.isArray(items)) return []
+
+    return items
+      .map((item): IcebergItem | null => {
+        if (typeof item !== 'object' || item === null) return null
+
+        const candidate = item as Partial<IcebergItem>
+        const name = typeof candidate.name === 'string' ? candidate.name.trim() : ''
+        const description =
+          typeof candidate.description === 'string' ? candidate.description.trim() : ''
+        const level = clampInteger(Number(candidate.level), 1, 5)
+        const x = Number(candidate.x)
+        const y = Number(candidate.y)
+
+        if (!name || !description) return null
+
+        return {
+          id:
+            typeof candidate.id === 'string' && candidate.id.trim()
+              ? candidate.id.trim()
+              : uniqueSlug(`${level}-${name}`, []),
+          name,
+          description,
+          level,
+          x: Number.isFinite(x) ? x : ICEBERG_LEVEL_LANES[0],
+          y: Number.isFinite(y) ? y : 120
+        }
+      })
+      .filter((item): item is IcebergItem => Boolean(item))
+  }
+
+  private toSummary(iceberg: SavedIceberg): SavedIcebergSummary {
+    return {
+      id: iceberg.id,
+      title: iceberg.title,
+      keyword: iceberg.keyword,
+      model: iceberg.model,
+      generatedAt: iceberg.generatedAt,
+      savedAt: iceberg.savedAt,
+      updatedAt: iceberg.updatedAt,
+      itemCount: iceberg.items.length
+    }
+  }
+
+  private cloneIceberg(iceberg: SavedIceberg): SavedIceberg {
+    return {
+      ...iceberg,
+      items: iceberg.items.map((item) => ({ ...item }))
+    }
   }
 }
 
@@ -1292,10 +1487,12 @@ let appContainers: AppContainerManager | null = null
 let database: AetherDatabase | null = null
 let library: LibraryStore | null = null
 let settings: SettingsStore | null = null
+let icebergStore: IcebergStore | null = null
 const ollamaClient = new OllamaClient()
 const configuredBrowserSessions = new WeakSet<Session>()
 
 app.setName('Æther')
+Menu.setApplicationMenu(null)
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -1333,6 +1530,7 @@ function createWindow(): void {
   database = new AetherDatabase(join(app.getPath('userData'), 'aether-realms'))
   library = new LibraryStore(join(app.getPath('userData'), 'aether-library', 'library.json'))
   settings = new SettingsStore(join(app.getPath('userData'), 'aether-settings', 'settings.json'))
+  icebergStore = new IcebergStore(join(app.getPath('userData'), 'aether-icebergs', 'icebergs.json'))
   settings
     .load()
     .then((data) => {
@@ -1715,6 +1913,16 @@ function registerIpcHandlers(): void {
     await loadOllamaSettings()
     return ollamaClient.generateIceberg(input.keyword)
   })
+  ipcMain.handle('aether:crystallizer:list-saved', () => getIcebergStore().listSaved())
+  ipcMain.handle('aether:crystallizer:get-saved', (_event, id: string) =>
+    getIcebergStore().getSaved(id)
+  )
+  ipcMain.handle('aether:crystallizer:save', (_event, input: SaveIcebergInput) =>
+    getIcebergStore().saveIceberg(input)
+  )
+  ipcMain.handle('aether:crystallizer:delete-saved', (_event, id: string) =>
+    getIcebergStore().deleteSaved(id)
+  )
   ipcMain.handle('aether:system:status', async () => {
     await loadOllamaSettings()
     return ollamaClient.status(getLibrary(), getDatabase())
@@ -1770,6 +1978,13 @@ function getSettings(): SettingsStore {
     throw new Error('Æther settings are not ready.')
   }
   return settings
+}
+
+function getIcebergStore(): IcebergStore {
+  if (!icebergStore) {
+    throw new Error('Æther iceberg store is not ready.')
+  }
+  return icebergStore
 }
 
 async function loadOllamaSettings(): Promise<void> {

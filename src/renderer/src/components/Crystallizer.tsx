@@ -8,16 +8,25 @@ import {
   useState
 } from 'react'
 import {
+  Archive,
   BookOpen,
   Compass,
   /*   ExternalLink,
   FolderOpen, */
   Layers,
   Move,
+  Save,
   Search,
-  Snowflake
+  Snowflake,
+  Trash2
 } from 'lucide-react'
-import { IcebergItem, IcebergResult } from '../../../shared/aether'
+import {
+  IcebergItem,
+  IcebergResult,
+  SaveIcebergInput,
+  SavedIceberg,
+  SavedIcebergSummary
+} from '../../../shared/aether'
 import { ChevronRightIcon, SnowflakeIcon, SpinnerIcon } from './icons'
 
 type LayerDefinition = {
@@ -37,8 +46,13 @@ type PositionedTopic = {
 
 type CrystallizerProps = {
   busy: string | null
+  openedIceberg: SavedIceberg | null
+  savedIcebergs: SavedIcebergSummary[]
+  onDeleteSaved: (id: string) => Promise<void>
   onGenerate: (keyword: string) => Promise<IcebergResult>
+  onOpenSaved: (id: string) => Promise<SavedIceberg>
   onOpenTopic: (keyword: string, item: IcebergItem) => Promise<void>
+  onSave: (input: SaveIcebergInput) => Promise<SavedIceberg>
 }
 
 const CANVAS_WIDTH = 2200
@@ -153,14 +167,32 @@ function positionTopics(items: IcebergItem[]): PositionedTopic[] {
 
 export function Crystallizer({
   busy,
+  openedIceberg,
+  savedIcebergs,
+  onDeleteSaved,
   onGenerate,
-  onOpenTopic
+  onOpenSaved,
+  onOpenTopic,
+  onSave
 }: CrystallizerProps): React.JSX.Element {
-  const [keyword, setKeyword] = useState('')
+  const [keyword, setKeyword] = useState(openedIceberg?.keyword ?? '')
   const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<IcebergResult | null>(null)
-  const [selectedItem, setSelectedItem] = useState<IcebergItem | null>(null)
+  const [result, setResult] = useState<IcebergResult | null>(() =>
+    openedIceberg
+      ? {
+          keyword: openedIceberg.keyword,
+          model: openedIceberg.model,
+          generatedAt: openedIceberg.generatedAt,
+          items: openedIceberg.items
+        }
+      : null
+  )
+  const [savedId, setSavedId] = useState<string | null>(openedIceberg?.id ?? null)
+  const [selectedItem, setSelectedItem] = useState<IcebergItem | null>(
+    openedIceberg?.items[0] ?? null
+  )
   const [activeLayer, setActiveLayer] = useState<number | 'all'>('all')
   const [zoom, setZoom] = useState(FITTED_ZOOM)
   const [pan, setPan] = useState(() => getCenteredPan(FITTED_ZOOM))
@@ -185,6 +217,7 @@ export function Crystallizer({
       ? selectedItem
       : (visibleItems[0] ?? null)
   const hasResults = Boolean(result?.items.length)
+  const hasUnsavedResult = Boolean(result && !savedId)
   const layerCounts = useMemo(() => {
     const counts = new Map<number, number>()
     for (const layer of LAYERS) counts.set(layer.level, 0)
@@ -229,6 +262,7 @@ export function Crystallizer({
     setLoading(true)
     setError(null)
     setResult(null)
+    setSavedId(null)
     setSelectedItem(null)
     setActiveLayer('all')
     resetView()
@@ -241,6 +275,52 @@ export function Crystallizer({
       setError(error instanceof Error ? error.message : 'Crystallization failed.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function saveResult(): Promise<void> {
+    if (!result || savedId || saving) return
+
+    setSaving(true)
+    setError(null)
+
+    try {
+      const saved = await onSave({
+        title: result.keyword,
+        keyword: result.keyword,
+        model: result.model,
+        generatedAt: result.generatedAt,
+        items: result.items
+      })
+      setSavedId(saved.id)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Saving iceberg failed.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function openSaved(id: string): Promise<void> {
+    setLoading(true)
+    setError(null)
+
+    try {
+      await onOpenSaved(id)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not reopen saved iceberg.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function deleteSaved(id: string): Promise<void> {
+    try {
+      await onDeleteSaved(id)
+      if (savedId === id) {
+        setSavedId(null)
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not delete saved iceberg.')
     }
   }
 
@@ -258,10 +338,11 @@ export function Crystallizer({
 
     const startZoom = zoom
     const startPan = pan
-    const startedAt = performance.now()
+    let startedAt: number | null = null
     const duration = 340
 
     const step = (timestamp: number): void => {
+      startedAt ??= timestamp
       const progress = Math.min((timestamp - startedAt) / duration, 1)
       const eased = easeOutCubic(progress)
       setZoom(startZoom + (nextZoom - startZoom) * eased)
@@ -303,10 +384,21 @@ export function Crystallizer({
 
   function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>): void {
     if (!dragStart.current) return
+
+    const SENSITIVITY = 1.75
+
+    const deltaX = (event.clientX - dragStart.current.x) * SENSITIVITY
+    const deltaY = (event.clientY - dragStart.current.y) * SENSITIVITY
+
     setPan({
-      x: dragStart.current.panX + event.clientX - dragStart.current.x,
-      y: dragStart.current.panY + event.clientY - dragStart.current.y
+      x: dragStart.current.panX + deltaX,
+      y: dragStart.current.panY + deltaY
     })
+  }
+
+  function handlePointerLeave(): void {
+    dragStart.current = null
+    setDragging(false)
   }
 
   function handlePointerUp(event: ReactPointerEvent<SVGSVGElement>): void {
@@ -352,6 +444,19 @@ export function Crystallizer({
             {loading ? <SpinnerIcon /> : <SnowflakeIcon />}
             <span>{loading ? 'Crystallizing' : 'Crystallize'}</span>
           </button>
+          {hasUnsavedResult && (
+            <button
+              className="crystallizer-save-button"
+              disabled={saving || Boolean(busy)}
+              onClick={() => {
+                void saveResult()
+              }}
+              type="button"
+            >
+              <Save size={16} aria-hidden />
+              <span>{saving ? 'Saving' : 'Save'}</span>
+            </button>
+          )}
         </form>
       </header>
 
@@ -376,11 +481,39 @@ export function Crystallizer({
             </button>
           </div>
 
+          <div className="layer-strip compact canvas-layer-hud" aria-label="Layer filters">
+            <button
+              className={activeLayer === 'all' ? 'active' : undefined}
+              disabled={!hasResults}
+              onClick={() => setActiveLayer('all')}
+              type="button"
+            >
+              <Layers size={14} aria-hidden />
+              <strong>All</strong>
+              <span className="filter-count">{result?.items.length ?? 0}</span>
+            </button>
+            {LAYERS.map((layer) => (
+              <button
+                className={activeLayer === layer.level ? 'active' : undefined}
+                disabled={!hasResults}
+                key={layer.level}
+                onClick={() => setActiveLayer(layer.level)}
+                style={{ '--layer-accent': layer.accent } as CSSProperties}
+                type="button"
+              >
+                <span className="layer-number">{layer.level}</span>
+                <strong>{layer.shortName}</strong>
+                <span className="filter-count">{layerCounts.get(layer.level) ?? 0}</span>
+              </button>
+            ))}
+          </div>
+
           <svg
             className={`crystallizer-canvas ${dragging ? 'dragging' : ''}`}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerLeave}
             onWheel={handleWheel}
             role="img"
             viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
@@ -564,32 +697,6 @@ export function Crystallizer({
               <h2>{result ? `${visibleItems.length} fragments` : 'Awaiting query'}</h2>
             </div>
           </div>
-          <div className="layer-strip compact" aria-label="Layer filters">
-            <button
-              className={activeLayer === 'all' ? 'active' : undefined}
-              disabled={!hasResults}
-              onClick={() => setActiveLayer('all')}
-              type="button"
-            >
-              <Layers size={14} aria-hidden />
-              <strong>All</strong>
-              <span className="filter-count">{result?.items.length ?? 0}</span>
-            </button>
-            {LAYERS.map((layer) => (
-              <button
-                className={activeLayer === layer.level ? 'active' : undefined}
-                disabled={!hasResults}
-                key={layer.level}
-                onClick={() => setActiveLayer(layer.level)}
-                style={{ '--layer-accent': layer.accent } as CSSProperties}
-                type="button"
-              >
-                <span className="layer-number">{layer.level}</span>
-                <strong>{layer.shortName}</strong>
-                <span className="filter-count">{layerCounts.get(layer.level) ?? 0}</span>
-              </button>
-            ))}
-          </div>
 
           {activeSelectedItem ? (
             <article
@@ -605,12 +712,13 @@ export function Crystallizer({
               <span>{getLayer(activeSelectedItem.level).caption}</span>
               <small>{activeSelectedItem.description}</small>
               <button
+                className="explore-web-button"
                 onClick={() => {
                   if (result) void onOpenTopic(result.keyword, activeSelectedItem)
                 }}
                 type="button"
               >
-                Explore in Browser
+                Explore in Web
                 <ChevronRightIcon />
               </button>
             </article>
@@ -647,6 +755,52 @@ export function Crystallizer({
                 <strong>{item.name}</strong>
               </button>
             ))}
+          </div>
+
+          <div className="saved-atlas-drawer">
+            <div className="saved-atlas-head">
+              <span>
+                <Archive size={14} />
+                Saved Atlases
+              </span>
+              <strong>{savedIcebergs.length}</strong>
+            </div>
+            {savedIcebergs.length === 0 ? (
+              <p>No saved icebergs yet.</p>
+            ) : (
+              <div className="saved-atlas-list">
+                {savedIcebergs.map((iceberg) => (
+                  <article
+                    className={savedId === iceberg.id ? 'active' : undefined}
+                    key={iceberg.id}
+                  >
+                    <button
+                      disabled={loading || Boolean(busy)}
+                      onClick={() => {
+                        void openSaved(iceberg.id)
+                      }}
+                      type="button"
+                    >
+                      <strong>{iceberg.title}</strong>
+                      <small>
+                        {iceberg.itemCount} fragments / {iceberg.model}
+                      </small>
+                    </button>
+                    <button
+                      aria-label={`Delete ${iceberg.title}`}
+                      disabled={loading || Boolean(busy)}
+                      onClick={() => {
+                        void deleteSaved(iceberg.id)
+                      }}
+                      title="Delete saved iceberg"
+                      type="button"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
 
           <span className="atlas-heading" style={{ margin: 'auto' }}>

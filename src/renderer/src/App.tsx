@@ -13,6 +13,9 @@ import {
   IcebergResult,
   SearchEngineId,
   SearchResult,
+  SaveIcebergInput,
+  SavedIceberg,
+  SavedIcebergSummary,
   SystemStatus
 } from '../../shared/aether'
 import { BrowserChrome } from './components/BrowserChrome'
@@ -28,6 +31,8 @@ function App(): React.JSX.Element {
   const [apps, setApps] = useState<AppSummary[]>([])
   const [tabs, setTabs] = useState<BrowserTabSummary[]>([])
   const [shortcuts, setShortcuts] = useState<HubShortcutSummary[]>([])
+  const [savedIcebergs, setSavedIcebergs] = useState<SavedIcebergSummary[]>([])
+  const [activeSavedIceberg, setActiveSavedIceberg] = useState<SavedIceberg | null>(null)
   const [collections, setCollections] = useState<CollectionSummary[]>([])
   const [capturesByCollection, setCapturesByCollection] = useState<
     Record<string, CaptureSummary[]>
@@ -143,9 +148,18 @@ function App(): React.JSX.Element {
     setShortcuts(await window.aether.hub.list())
   }, [])
 
+  const refreshSavedIcebergs = useCallback(async (): Promise<void> => {
+    setSavedIcebergs(await window.aether.crystallizer.listSaved())
+  }, [])
+
   const refreshAll = useCallback(async (): Promise<void> => {
-    await Promise.all([refreshShell(), refreshCollections(), refreshShortcuts()])
-  }, [refreshCollections, refreshShell, refreshShortcuts])
+    await Promise.all([
+      refreshShell(),
+      refreshCollections(),
+      refreshShortcuts(),
+      refreshSavedIcebergs()
+    ])
+  }, [refreshCollections, refreshSavedIcebergs, refreshShell, refreshShortcuts])
 
   const createTab = useCallback(
     async (input?: { url?: string }): Promise<void> => {
@@ -470,6 +484,66 @@ function App(): React.JSX.Element {
     }
   }
 
+  async function saveIceberg(input: SaveIcebergInput): Promise<SavedIceberg> {
+    setBusy('Saving iceberg')
+    setNotice(null)
+
+    try {
+      const saved = await window.aether.crystallizer.save(input)
+      setActiveSavedIceberg(saved)
+      await refreshSavedIcebergs()
+      setNotice(`Saved ${saved.title}.`)
+      return saved
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Saving iceberg failed.'
+      setNotice(message)
+      throw error
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function openSavedIceberg(id: string): Promise<SavedIceberg> {
+    setBusy('Opening saved iceberg')
+    setNotice(null)
+
+    try {
+      const saved = await window.aether.crystallizer.getSaved(id)
+      await window.aether.dashboard.open()
+      setActiveSavedIceberg(saved)
+      setWorkspaceMode('crystallizer')
+      setDashboardOpen(true)
+      setNotice(`Opened ${saved.title}.`)
+      return saved
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not open saved iceberg.'
+      setNotice(message)
+      throw error
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function deleteSavedIceberg(id: string): Promise<void> {
+    setBusy('Deleting iceberg')
+    setNotice(null)
+
+    try {
+      await window.aether.crystallizer.deleteSaved(id)
+      if (activeSavedIceberg?.id === id) {
+        setActiveSavedIceberg(null)
+      }
+      await refreshSavedIcebergs()
+      setNotice('Saved iceberg deleted.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not delete saved iceberg.'
+      setNotice(message)
+      throw error
+    } finally {
+      setBusy(null)
+    }
+  }
+
   async function openCrystallizedTopic(keyword: string, item: IcebergItem): Promise<void> {
     const url = `https://www.google.com/search?q=${encodeURIComponent(`${keyword} ${item.name}`)}`
     await createTab({ url })
@@ -645,8 +719,14 @@ function App(): React.JSX.Element {
         {crystallizerOpen ? (
           <Crystallizer
             busy={busy}
+            key={activeSavedIceberg?.id ?? 'new-iceberg'}
+            openedIceberg={activeSavedIceberg}
+            savedIcebergs={savedIcebergs}
+            onDeleteSaved={deleteSavedIceberg}
             onGenerate={generateIceberg}
+            onOpenSaved={openSavedIceberg}
             onOpenTopic={openCrystallizedTopic}
+            onSave={saveIceberg}
           />
         ) : dashboardOpen ? (
           <Dashboard
@@ -657,12 +737,14 @@ function App(): React.JSX.Element {
             deleteShortcut={deleteShortcut}
             moveCapture={moveCapture}
             openCapture={openCapture}
+            openSavedIceberg={openSavedIceberg}
             openShortcut={openShortcut}
             openCollectionDialog={setCollectionDialog}
             reorderCollections={reorderCollections}
             reorderShortcuts={reorderShortcuts}
             saveActiveTabToHub={saveActiveTabToHub}
             selectedCollectionId={selectedCollectionId}
+            savedIcebergs={savedIcebergs.slice(0, 4)}
             shortcuts={shortcuts}
             selectCollection={selectCollection}
           />

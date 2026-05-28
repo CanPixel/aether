@@ -110,28 +110,28 @@ open dist/mac-arm64/Æther.app
 
 ## Project Scripts
 
-| Script | Purpose |
-| --- | --- |
-| `bun run dev` | Start Electron through `electron-vite` for development. |
-| `bun run typecheck` | Run TypeScript checks for main/preload and renderer projects. |
-| `bun run lint` | Run ESLint. |
-| `bun run build` | Typecheck and build main, preload, and renderer bundles into `out/`. |
-| `bun run start` | Preview the built Electron app through `electron-vite preview`. |
-| `bun run postinstall` | Rebuild/install Electron app dependencies through `electron-builder install-app-deps`. |
-| `bun run build:unpack` | Run `bun run build`, then create an unpacked app directory in `dist/`. |
-| `bun run build:mac` | Build bundles and create macOS artifacts in `dist/`. This script currently skips `bun run typecheck`, so run checks manually before release. |
-| `bun run build:win` | Build bundles and create Windows artifacts in `dist/`. |
-| `bun run build:linux` | Build bundles and create Linux artifacts in `dist/`. |
+| Script                 | Purpose                                                                                                                                      |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bun run dev`          | Start Electron through `electron-vite` for development.                                                                                      |
+| `bun run typecheck`    | Run TypeScript checks for main/preload and renderer projects.                                                                                |
+| `bun run lint`         | Run ESLint.                                                                                                                                  |
+| `bun run build`        | Typecheck and build main, preload, and renderer bundles into `out/`.                                                                         |
+| `bun run start`        | Preview the built Electron app through `electron-vite preview`.                                                                              |
+| `bun run postinstall`  | Rebuild/install Electron app dependencies through `electron-builder install-app-deps`.                                                       |
+| `bun run build:unpack` | Run `bun run build`, then create an unpacked app directory in `dist/`.                                                                       |
+| `bun run build:mac`    | Build bundles and create macOS artifacts in `dist/`. This script currently skips `bun run typecheck`, so run checks manually before release. |
+| `bun run build:win`    | Build bundles and create Windows artifacts in `dist/`.                                                                                       |
+| `bun run build:linux`  | Build bundles and create Linux artifacts in `dist/`.                                                                                         |
 
 ## Build Outputs
 
 There are three important output/resource directories:
 
-| Path | Owner | Purpose |
-| --- | --- | --- |
-| `out/` | `electron-vite` | Compiled Electron main, preload, and renderer bundles. This is not a distributable app by itself. |
-| `dist/` | `electron-builder` | Packaged apps and installers. This is where `.app`, `.dmg`, `.AppImage`, `.deb`, etc. appear. |
-| `build/` | project resources | Packaging resources such as icons and macOS entitlements. This is input to packaging, not output. |
+| Path     | Owner              | Purpose                                                                                           |
+| -------- | ------------------ | ------------------------------------------------------------------------------------------------- |
+| `out/`   | `electron-vite`    | Compiled Electron main, preload, and renderer bundles. This is not a distributable app by itself. |
+| `dist/`  | `electron-builder` | Packaged apps and installers. This is where `.app`, `.dmg`, `.AppImage`, `.deb`, etc. appear.     |
+| `build/` | project resources  | Packaging resources such as icons and macOS entitlements. This is input to packaging, not output. |
 
 Common macOS outputs:
 
@@ -231,6 +231,7 @@ Knowledge hub behavior:
 AiON is the local intelligence sidepanel.
 
 **Ask mode**:
+
 - Pressing Enter submits a non-empty prompt.
 - Empty hubs with `0 captures` or `0 chunks` are hidden because they cannot contribute context.
 - If no populated hubs exist, AiON defaults to current-page-only context.
@@ -256,6 +257,7 @@ The iCE canvas includes:
 
 - Topic search input.
 - Local Ollama generation.
+- Manual saving and reopening of generated atlases.
 - Zoom in/out/reset controls.
 - Smooth view reset and zoom transitions.
 - Layer zone tinting and labels.
@@ -275,6 +277,7 @@ Current storage paths:
 <userData>/aether-library/library.json
 <userData>/aether-realms/chunks.lance
 <userData>/aether-settings/settings.json
+<userData>/aether-icebergs/icebergs.json
 ```
 
 `library.json` stores:
@@ -300,6 +303,12 @@ Current storage paths:
 - `chunkIndex`
 
 `settings.json` stores app preferences such as the default search engine.
+
+`icebergs.json` stores manually saved iCE generations:
+
+- Saved iceberg metadata.
+- Original keyword, model, and generation timestamp.
+- Full iceberg item lists for reopening in iCE.
 
 ## Capture Pipeline
 
@@ -444,6 +453,10 @@ window.aether.search.collection({ collectionId, query, limit })
 window.aether.chat.ask({ collectionId, prompt, includeCurrentPage })
 
 window.aether.crystallizer.generate({ keyword })
+window.aether.crystallizer.listSaved()
+window.aether.crystallizer.getSaved(id)
+window.aether.crystallizer.save({ title, keyword, model, generatedAt, items })
+window.aether.crystallizer.deleteSaved(id)
 
 window.aether.system.status()
 window.aether.system.settings()

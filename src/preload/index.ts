@@ -47,7 +47,11 @@ const api: AetherApi = {
     ask: (input) => ipcRenderer.invoke('aether:chat:ask', input)
   },
   crystallizer: {
-    generate: (input) => ipcRenderer.invoke('aether:crystallizer:generate', input)
+    generate: (input) => ipcRenderer.invoke('aether:crystallizer:generate', input),
+    listSaved: () => ipcRenderer.invoke('aether:crystallizer:list-saved'),
+    getSaved: (id) => ipcRenderer.invoke('aether:crystallizer:get-saved', id),
+    save: (input) => ipcRenderer.invoke('aether:crystallizer:save', input),
+    deleteSaved: (id) => ipcRenderer.invoke('aether:crystallizer:delete-saved', id)
   },
   system: {
     status: () => ipcRenderer.invoke('aether:system:status'),
