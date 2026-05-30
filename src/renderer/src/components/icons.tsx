@@ -232,9 +232,9 @@ export function GridIcon(): React.JSX.Element {
   )
 }
 
-export function GearIcon(): React.JSX.Element {
+export function GearIcon({ style }: { style?: React.CSSProperties }): React.JSX.Element {
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
+    <svg style={style} aria-hidden="true" viewBox="0 0 24 24">
       <path
         d="M9.2 4.2 10 2.8h4l.8 1.4 2 .8 1.5-.4 2 3.5-1.1 1.2c.1.5.2 1.1.2 1.7s-.1 1.2-.2 1.7l1.1 1.2-2 3.5-1.5-.4-2 .8-.8 1.4h-4l-.8-1.4-2-.8-1.5.4-2-3.5 1.1-1.2c-.1-.5-.2-1.1-.2-1.7s.1-1.2.2-1.7L3.7 8.1l2-3.5 1.5.4 2-.8Z"
         fill="none"

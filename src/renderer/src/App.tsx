@@ -26,6 +26,7 @@ import { GlobeIcon, CloudIcon, GearIcon, SnowflakeIcon } from './components/icon
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
 import { getQuickActions } from './utils/aether-ui'
+import { SearchIcon } from 'lucide-react'
 
 function App(): React.JSX.Element {
   const [apps, setApps] = useState<AppSummary[]>([])
@@ -840,11 +841,29 @@ function SettingsModal({
         onClick={(event) => event.stopPropagation()}
       >
         <header>
-          <div>
-            <p>General</p>
-            <h2 id="settings-title">Æther Settings</h2>
+          <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: '18px' }}>
+            <GearIcon
+              style={{ width: '25px', color: 'var(--accent-strong)', marginBottom: '2px' }}
+            />
+            <p
+              id="settings-title"
+              style={{ textAlign: 'center', margin: 'auto', fontSize: '18px' }}
+            >
+              <span
+                style={{
+                  fontWeight: 'bold',
+                  marginRight: '-1px',
+                  color: 'var(--accent-strong)',
+                  fontSize: '23px'
+                }}
+              >
+                Æ
+              </span>
+              ther Settings
+            </p>
           </div>
           <button
+            className="button"
             onClick={() => {
               void onClose()
             }}
@@ -855,38 +874,35 @@ function SettingsModal({
         </header>
 
         <div className="settings-field">
-          <label htmlFor="default-search-engine">Default search engine</label>
-          <p>Used when the address bar receives plain search text instead of a URL.</p>
-          <select
-            id="default-search-engine"
-            disabled={Boolean(busy)}
-            value={settings.browser.defaultSearchEngine}
-            onChange={(event) => onDefaultSearchEngineChange(event.target.value as SearchEngineId)}
-          >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <SearchIcon height={30} width={30} />
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <label style={{ margin: 0 }} htmlFor="default-search-engine">
+                Default search engine
+              </label>
+              <p style={{ margin: 0 }}>
+                Used when the address bar receives plain search text instead of a URL.
+              </p>
+            </div>
+          </div>
+          <div className="settings-engine-list" aria-label="Available search engines">
             {searchEngines.map((engine) => (
-              <option key={engine.id} value={engine.id}>
-                {engine.name}
-              </option>
+              <button
+                className={
+                  settings.browser.defaultSearchEngine === engine.id ? 'crystal-button' : ''
+                }
+                disabled={Boolean(busy)}
+                key={engine.id}
+                onClick={() => onDefaultSearchEngineChange(engine.id)}
+                type="button"
+              >
+                <strong>{engine.name}</strong>
+                <span>{engine.description}</span>
+              </button>
             ))}
-          </select>
+          </div>
         </div>
 
-        <div className="settings-engine-list" aria-label="Available search engines">
-          {searchEngines.map((engine) => (
-            <button
-              className={
-                settings.browser.defaultSearchEngine === engine.id ? 'selected' : undefined
-              }
-              disabled={Boolean(busy)}
-              key={engine.id}
-              onClick={() => onDefaultSearchEngineChange(engine.id)}
-              type="button"
-            >
-              <strong>{engine.name}</strong>
-              <span>{engine.description}</span>
-            </button>
-          ))}
-        </div>
       </section>
     </div>
   )

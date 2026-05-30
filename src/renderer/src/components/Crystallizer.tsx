@@ -415,7 +415,6 @@ export function Crystallizer({
         <div className="brand-cluster" aria-label="ICE Knowledge Crystallizer">
           <span className="crystallizer-mark">
             <Snowflake size={25} className="brand-crystal animate-spin-slow" />
-            {/* <SnowflakeIcon className="brand-crystal animate-spin-slow" /> */}
           </span>
           <h1>ICE</h1>
           <div className="brand-divider" />
@@ -464,6 +463,7 @@ export function Crystallizer({
         <div className="crystallizer-canvas-shell">
           <div className="crystallizer-tools" aria-label="Crystallizer canvas controls">
             <button
+              className="button"
               onClick={() => animateView(clamp(zoom - 0.12, MIN_ZOOM, MAX_ZOOM))}
               type="button"
             >
@@ -471,24 +471,26 @@ export function Crystallizer({
             </button>
             <span>{Math.round(zoom * 100)}%</span>
             <button
+              className="button"
               onClick={() => animateView(clamp(zoom + 0.12, MIN_ZOOM, MAX_ZOOM))}
               type="button"
             >
               +
             </button>
-            <button onClick={resetView} type="button">
+            <button onClick={resetView} type="button" className="responsive-button">
               Reset
             </button>
           </div>
 
           <div className="layer-strip compact canvas-layer-hud" aria-label="Layer filters">
             <button
+              style={{ display: 'grid', gridTemplateColumns: '24px 1fr 40px' }}
               className={activeLayer === 'all' ? 'active' : undefined}
               disabled={!hasResults}
               onClick={() => setActiveLayer('all')}
               type="button"
             >
-              <Layers size={14} aria-hidden />
+              <Layers size={16} aria-hidden />
               <strong>All</strong>
               <span className="filter-count">{result?.items.length ?? 0}</span>
             </button>
@@ -498,7 +500,13 @@ export function Crystallizer({
                 disabled={!hasResults}
                 key={layer.level}
                 onClick={() => setActiveLayer(layer.level)}
-                style={{ '--layer-accent': layer.accent } as CSSProperties}
+                style={
+                  {
+                    '--layer-accent': layer.accent,
+                    display: 'grid',
+                    gridTemplateColumns: '24px 1fr 40px'
+                  } as CSSProperties
+                }
                 type="button"
               >
                 <span className="layer-number">{layer.level}</span>
@@ -740,7 +748,7 @@ export function Crystallizer({
           <div className="crystallizer-list">
             {visibleItems.map((item, index) => (
               <button
-                className={activeSelectedItem?.id === item.id ? 'active' : undefined}
+                className={`button ${activeSelectedItem?.id === item.id ? 'active' : ''}`}
                 key={item.id}
                 onClick={() => setSelectedItem(item)}
                 style={
@@ -775,6 +783,7 @@ export function Crystallizer({
                     key={iceberg.id}
                   >
                     <button
+                      className="responsive-button"
                       disabled={loading || Boolean(busy)}
                       onClick={() => {
                         void openSaved(iceberg.id)
