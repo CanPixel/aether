@@ -510,9 +510,7 @@ class IcebergStore {
 
   async listSaved(): Promise<SavedIcebergSummary[]> {
     const data = await this.load()
-    return data.icebergs
-      .map((iceberg) => this.toSummary(iceberg))
-      .sort((first, second) => second.updatedAt.localeCompare(first.updatedAt))
+    return data.icebergs.map((iceberg) => this.toSummary(iceberg))
   }
 
   async getSaved(id: string): Promise<SavedIceberg> {
@@ -555,6 +553,7 @@ class IcebergStore {
       title,
       keyword,
       model,
+      icon: normalizeIcebergIcon(input.icon),
       generatedAt,
       savedAt: now,
       updatedAt: now,
@@ -564,6 +563,21 @@ class IcebergStore {
     data.icebergs.unshift(iceberg)
     await this.save(data)
     return this.cloneIceberg(iceberg)
+  }
+
+  async reorderSaved(ids: string[]): Promise<SavedIcebergSummary[]> {
+    const data = await this.load()
+    const requestedIds = ids.filter(Boolean)
+    const idSet = new Set(requestedIds)
+    const icebergById = new Map(data.icebergs.map((iceberg) => [iceberg.id, iceberg]))
+    const ordered = requestedIds
+      .map((id) => icebergById.get(id))
+      .filter((iceberg): iceberg is SavedIceberg => Boolean(iceberg))
+    const remaining = data.icebergs.filter((iceberg) => !idSet.has(iceberg.id))
+
+    data.icebergs = [...ordered, ...remaining]
+    await this.save(data)
+    return this.listSaved()
   }
 
   async deleteSaved(id: string): Promise<void> {
@@ -611,6 +625,7 @@ class IcebergStore {
     const title = typeof candidate.title === 'string' ? candidate.title.trim() : ''
     const keyword = typeof candidate.keyword === 'string' ? candidate.keyword.trim() : ''
     const model = typeof candidate.model === 'string' ? candidate.model.trim() : ''
+    const icon = normalizeIcebergIcon(candidate.icon)
     const generatedAt =
       typeof candidate.generatedAt === 'string' ? candidate.generatedAt.trim() : ''
     const savedAt = typeof candidate.savedAt === 'string' ? candidate.savedAt.trim() : ''
@@ -626,6 +641,7 @@ class IcebergStore {
       title,
       keyword,
       model,
+      icon,
       generatedAt,
       savedAt,
       updatedAt: updatedAt || savedAt,
@@ -671,6 +687,7 @@ class IcebergStore {
       title: iceberg.title,
       keyword: iceberg.keyword,
       model: iceberg.model,
+      icon: iceberg.icon,
       generatedAt: iceberg.generatedAt,
       savedAt: iceberg.savedAt,
       updatedAt: iceberg.updatedAt,
@@ -1920,6 +1937,9 @@ function registerIpcHandlers(): void {
   ipcMain.handle('aether:crystallizer:save', (_event, input: SaveIcebergInput) =>
     getIcebergStore().saveIceberg(input)
   )
+  ipcMain.handle('aether:crystallizer:reorder-saved', (_event, ids: string[]) =>
+    getIcebergStore().reorderSaved(ids)
+  )
   ipcMain.handle('aether:crystallizer:delete-saved', (_event, id: string) =>
     getIcebergStore().deleteSaved(id)
   )
@@ -2027,6 +2047,36 @@ function normalizeSearchEngineId(value: unknown): SearchEngineId {
   return typeof value === 'string' && value in SEARCH_ENGINES
     ? (value as SearchEngineId)
     : DEFAULT_SEARCH_ENGINE
+}
+
+function normalizeIcebergIcon(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+
+  const icon = value.trim().toLowerCase()
+  const allowed = new Set([
+    'atom',
+    'book',
+    'brain',
+    'briefcase',
+    'code',
+    'cpu',
+    'dna',
+    'film',
+    'flask',
+    'gamepad',
+    'globe',
+    'heart',
+    'landmark',
+    'microscope',
+    'music',
+    'palette',
+    'shield',
+    'snowflake',
+    'sprout',
+    'telescope'
+  ])
+
+  return allowed.has(icon) ? icon : undefined
 }
 
 function getTabHost(url: string): string {

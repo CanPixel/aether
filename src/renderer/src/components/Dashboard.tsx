@@ -1,4 +1,26 @@
-import { CSSProperties, useState } from 'react'
+import { CSSProperties, DragEvent, useState, type ComponentType } from 'react'
+import {
+  Atom,
+  BookOpen,
+  BrainCircuit,
+  BriefcaseBusiness,
+  Code2,
+  Cpu,
+  Dna,
+  Film,
+  FlaskConical,
+  Gamepad2,
+  Globe2,
+  HeartPulse,
+  Landmark,
+  Microscope,
+  Music,
+  Palette,
+  Shield,
+  Snowflake,
+  Sprout,
+  Telescope
+} from 'lucide-react'
 import {
   CaptureSummary,
   CollectionSummary,
@@ -6,7 +28,7 @@ import {
   SavedIcebergSummary
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
-import { formatDate, getCaptureHost } from '../utils/aether-ui'
+import { formatDate, getCaptureHost, inferIcebergIcon } from '../utils/aether-ui'
 import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, SnowflakeIcon, TrashIcon } from './icons'
 
 type CollectionDialogState =
@@ -20,6 +42,7 @@ type DashboardProps = {
   capturesByCollection: Record<string, CaptureSummary[]>
   collections: CollectionSummary[]
   deleteCapture: (captureId: string) => Promise<void>
+  deleteSavedIceberg: (id: string) => Promise<void>
   deleteShortcut: (shortcutId: string) => Promise<void>
   moveCapture: (captureId: string, collectionId: string) => Promise<void>
   openCapture: (capture: CaptureSummary) => Promise<void>
@@ -27,8 +50,8 @@ type DashboardProps = {
   openShortcut: (shortcut: HubShortcutSummary) => Promise<void>
   openCollectionDialog: (state: CollectionDialogState) => void
   reorderCollections: (ids: string[]) => Promise<void>
+  reorderSavedIcebergs: (ids: string[]) => Promise<void>
   reorderShortcuts: (ids: string[]) => Promise<void>
-  saveActiveTabToHub: () => Promise<void>
   selectedCollectionId: string
   savedIcebergs: SavedIcebergSummary[]
   shortcuts: HubShortcutSummary[]
@@ -93,6 +116,7 @@ export function Dashboard({
   capturesByCollection,
   collections,
   deleteCapture,
+  deleteSavedIceberg,
   deleteShortcut,
   moveCapture,
   openCapture,
@@ -100,8 +124,8 @@ export function Dashboard({
   openShortcut,
   openCollectionDialog,
   reorderCollections,
+  reorderSavedIcebergs,
   reorderShortcuts,
-  saveActiveTabToHub,
   selectedCollectionId,
   savedIcebergs,
   shortcuts,
@@ -110,6 +134,8 @@ export function Dashboard({
   const [openCollectionId, setOpenCollectionId] = useState(selectedCollectionId)
   const [draggedShortcutId, setDraggedShortcutId] = useState('')
   const [dragOverShortcutId, setDragOverShortcutId] = useState('')
+  const [draggedIcebergId, setDraggedIcebergId] = useState('')
+  const [dragOverIcebergId, setDragOverIcebergId] = useState('')
   const [draggedCollectionId, setDraggedCollectionId] = useState('')
   const [draggedCapture, setDraggedCapture] = useState<CaptureSummary | null>(null)
   const [dragOverCollectionId, setDragOverCollectionId] = useState('')
@@ -137,6 +163,20 @@ export function Dashboard({
     const [movedId] = nextIds.splice(fromIndex, 1)
     nextIds.splice(toIndex, 0, movedId)
     await reorderShortcuts(nextIds)
+  }
+
+  async function reorderIceberg(targetId: string): Promise<void> {
+    if (!draggedIcebergId || draggedIcebergId === targetId) return
+
+    const currentIds = savedIcebergs.map((iceberg) => iceberg.id)
+    const fromIndex = currentIds.indexOf(draggedIcebergId)
+    const toIndex = currentIds.indexOf(targetId)
+    if (fromIndex === -1 || toIndex === -1) return
+
+    const nextIds = [...currentIds]
+    const [movedId] = nextIds.splice(fromIndex, 1)
+    nextIds.splice(toIndex, 0, movedId)
+    await reorderSavedIcebergs(nextIds)
   }
 
   async function reorderCollection(targetId: string): Promise<void> {
@@ -177,14 +217,6 @@ export function Dashboard({
             <h2>Portals</h2>
             <p>Launch saved pages like local workspaces.</p>
           </div>
-          <button
-            className="save-page-button"
-            disabled={Boolean(busy)}
-            onClick={saveActiveTabToHub}
-            type="button"
-          >
-            Save Current Page
-          </button>
         </div>
         {shortcuts.length === 0 ? (
           <div className="empty-row">Saved pages will appear here as launch tiles.</div>
@@ -267,19 +299,69 @@ export function Dashboard({
         ) : (
           <div className="saved-iceberg-grid">
             {savedIcebergs.map((iceberg) => (
-              <button
-                className="saved-iceberg-card"
-                disabled={Boolean(busy)}
+              <article
+                className={`saved-iceberg-card ${
+                  draggedIcebergId === iceberg.id ? 'dragging' : ''
+                } ${dragOverIcebergId === iceberg.id ? 'drop-target' : ''}`}
+                draggable
                 key={iceberg.id}
-                onClick={() => {
-                  void openSavedIceberg(iceberg.id)
+                onDragEnd={() => {
+                  setDraggedIcebergId('')
+                  setDragOverIcebergId('')
                 }}
-                type="button"
+                onDragEnter={(event) => {
+                  if (!draggedIcebergId || draggedIcebergId === iceberg.id) return
+                  event.preventDefault()
+                  setDragOverIcebergId(iceberg.id)
+                }}
+                onDragOver={(event) => {
+                  if (!draggedIcebergId || draggedIcebergId === iceberg.id) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                }}
+                onDragStart={(event) => {
+                  setDraggedIcebergId(iceberg.id)
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData('application/x-aether-iceberg', iceberg.id)
+                  event.dataTransfer.setData('text/plain', iceberg.title)
+                }}
+                onDrop={async (event) => {
+                  event.preventDefault()
+                  await reorderIceberg(iceberg.id)
+                  setDraggedIcebergId('')
+                  setDragOverIcebergId('')
+                }}
               >
-                <span>{iceberg.itemCount} fragments</span>
-                <strong>{iceberg.title}</strong>
-                <small>{iceberg.keyword}</small>
-              </button>
+                <button
+                  className="saved-iceberg-open"
+                  disabled={Boolean(busy)}
+                  draggable={false}
+                  onClick={() => {
+                    void openSavedIceberg(iceberg.id)
+                  }}
+                  type="button"
+                >
+                  <span>{iceberg.itemCount} frozen fragments</span>
+                  <strong>{iceberg.title}</strong>
+                  <small>
+                    {formatDate(iceberg.savedAt)} / {iceberg.model}
+                  </small>
+                </button>
+                <button
+                  aria-label={`Delete ${iceberg.title}`}
+                  className="saved-iceberg-delete"
+                  disabled={Boolean(busy)}
+                  draggable={false}
+                  onClick={() => deleteSavedIceberg(iceberg.id)}
+                  title="Delete saved iceberg"
+                  type="button"
+                >
+                  <CloseIcon />
+                </button>
+                <span className="saved-iceberg-flair" aria-hidden="true">
+                  <IcebergFlairIcon icon={iceberg.icon ?? inferIcebergIcon(iceberg)} />
+                </span>
+              </article>
             ))}
           </div>
         )}
@@ -478,7 +560,7 @@ function CaptureCard({
   deleteCapture: (captureId: string) => Promise<void>
   dragging: boolean
   onDragEnd: () => void
-  onDragStart: (event: React.DragEvent<HTMLElement>) => void
+  onDragStart: (event: DragEvent<HTMLElement>) => void
   openCapture: (capture: CaptureSummary) => Promise<void>
 }): React.JSX.Element {
   return (
@@ -524,4 +606,32 @@ function CaptureCard({
       </footer>
     </article>
   )
+}
+
+function IcebergFlairIcon({ icon }: { icon: string }): React.JSX.Element {
+  const icons: Record<string, ComponentType<{ size?: number; strokeWidth?: number }>> = {
+    atom: Atom,
+    book: BookOpen,
+    brain: BrainCircuit,
+    briefcase: BriefcaseBusiness,
+    code: Code2,
+    cpu: Cpu,
+    dna: Dna,
+    film: Film,
+    flask: FlaskConical,
+    gamepad: Gamepad2,
+    globe: Globe2,
+    heart: HeartPulse,
+    landmark: Landmark,
+    microscope: Microscope,
+    music: Music,
+    palette: Palette,
+    shield: Shield,
+    snowflake: Snowflake,
+    sprout: Sprout,
+    telescope: Telescope
+  }
+  const Icon = icons[icon] ?? Snowflake
+
+  return <Icon size={24} strokeWidth={1.9} />
 }

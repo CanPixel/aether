@@ -51,6 +51,7 @@ const api: AetherApi = {
     listSaved: () => ipcRenderer.invoke('aether:crystallizer:list-saved'),
     getSaved: (id) => ipcRenderer.invoke('aether:crystallizer:get-saved', id),
     save: (input) => ipcRenderer.invoke('aether:crystallizer:save', input),
+    reorderSaved: (ids) => ipcRenderer.invoke('aether:crystallizer:reorder-saved', ids),
     deleteSaved: (id) => ipcRenderer.invoke('aether:crystallizer:delete-saved', id)
   },
   system: {

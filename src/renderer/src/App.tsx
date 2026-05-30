@@ -25,7 +25,7 @@ import { Dashboard } from './components/Dashboard'
 import { GlobeIcon, CloudIcon, GearIcon, SnowflakeIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
-import { getQuickActions } from './utils/aether-ui'
+import { getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
 import { SearchIcon } from 'lucide-react'
 
 function App(): React.JSX.Element {
@@ -88,13 +88,19 @@ function App(): React.JSX.Element {
   const hasEmbeddingModel = status ? status.availableModels.includes(status.embeddingModel) : true
   const chatBlocked = status ? !status.ollamaReachable || !status.chatModel : false
   const quickActions = useMemo<QuickAction[]>(() => getQuickActions(activeTab), [activeTab])
+  const activeTabUrl = activeTab?.url ?? ''
   const addressValue = addressFocused
     ? addressDraft
     : dashboardOpen
       ? workspaceMode === 'crystallizer'
         ? 'ice://crystallizer'
         : 'æther://dashboard'
-      : (activeTab?.url ?? '')
+      : activeTabUrl
+  const activeTabSavedToHub = useMemo(() => {
+    if (!activeTabUrl) return false
+    const activeUrl = normalizeComparableUrl(activeTabUrl)
+    return shortcuts.some((shortcut) => normalizeComparableUrl(shortcut.url) === activeUrl)
+  }, [activeTabUrl, shortcuts])
 
   const refreshCollections = useCallback(
     async (preferredCollectionId?: string): Promise<void> => {
@@ -442,6 +448,10 @@ function App(): React.JSX.Element {
       setNotice('Open a page before saving it to the Hub.')
       return
     }
+    if (activeTabSavedToHub) {
+      setNotice('This page is already saved as a portal.')
+      return
+    }
 
     await runTask('Saving to Hub', async () => {
       await window.aether.hub.create({
@@ -567,6 +577,11 @@ function App(): React.JSX.Element {
   async function reorderCollections(ids: string[]): Promise<void> {
     const nextCollections = await window.aether.collections.reorder(ids)
     setCollections(nextCollections)
+  }
+
+  async function reorderSavedIcebergs(ids: string[]): Promise<void> {
+    const nextIcebergs = await window.aether.crystallizer.reorderSaved(ids)
+    setSavedIcebergs(nextIcebergs)
   }
 
   async function openSettings(): Promise<void> {
@@ -695,6 +710,10 @@ function App(): React.JSX.Element {
           dashboardSubtitle={crystallizerOpen ? 'Info Crystallizer Engine' : 'Knowledge Hub'}
           dashboardTitle={crystallizerOpen ? 'iCE' : 'ÆTHER'}
           lastCapture={lastCapture}
+          portalSaveBlocked={dashboardOpen || !activeTab?.url || activeTabSavedToHub}
+          portalSaveTitle={
+            activeTabSavedToHub ? 'Already saved as a portal' : 'Save current page as portal'
+          }
           quickActions={dashboardOpen ? [] : quickActions}
           selectedCollection={selectedCollection}
           selectedCollectionId={selectedCollectionId}
@@ -713,6 +732,7 @@ function App(): React.JSX.Element {
           onForward={goForward}
           onNavigate={navigate}
           onQuickAction={handleQuickAction}
+          onSavePortal={saveActiveTabToHub}
           onSelectTab={activateTab}
           onSelectCollection={selectCollection}
         />
@@ -735,6 +755,7 @@ function App(): React.JSX.Element {
             capturesByCollection={capturesByCollection}
             collections={collections}
             deleteCapture={deleteCapture}
+            deleteSavedIceberg={deleteSavedIceberg}
             deleteShortcut={deleteShortcut}
             moveCapture={moveCapture}
             openCapture={openCapture}
@@ -742,10 +763,10 @@ function App(): React.JSX.Element {
             openShortcut={openShortcut}
             openCollectionDialog={setCollectionDialog}
             reorderCollections={reorderCollections}
+            reorderSavedIcebergs={reorderSavedIcebergs}
             reorderShortcuts={reorderShortcuts}
-            saveActiveTabToHub={saveActiveTabToHub}
             selectedCollectionId={selectedCollectionId}
-            savedIcebergs={savedIcebergs.slice(0, 4)}
+            savedIcebergs={savedIcebergs}
             shortcuts={shortcuts}
             selectCollection={selectCollection}
           />
@@ -902,7 +923,6 @@ function SettingsModal({
             ))}
           </div>
         </div>
-
       </section>
     </div>
   )

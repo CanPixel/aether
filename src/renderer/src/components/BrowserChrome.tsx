@@ -21,6 +21,8 @@ type BrowserChromeProps = {
   dashboardSubtitle?: string
   dashboardTitle?: string
   lastCapture: CaptureResult | null
+  portalSaveBlocked: boolean
+  portalSaveTitle: string
   quickActions: QuickAction[]
   selectedCollection?: CollectionSummary
   selectedCollectionId: string
@@ -36,6 +38,7 @@ type BrowserChromeProps = {
   onForward: () => Promise<void>
   onNavigate: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onQuickAction: (action: QuickAction) => Promise<void>
+  onSavePortal: () => Promise<void>
   onSelectTab: (tabId: string) => Promise<void>
   onSelectCollection: (value: string) => Promise<void>
 }
@@ -51,6 +54,8 @@ export function BrowserChrome({
   dashboardSubtitle = 'Knowledge Hub',
   dashboardTitle = 'ÆTHER',
   lastCapture,
+  portalSaveBlocked,
+  portalSaveTitle,
   quickActions,
   /* selectedCollection, */
   selectedCollectionId,
@@ -66,6 +71,7 @@ export function BrowserChrome({
   onForward,
   onNavigate,
   onQuickAction,
+  onSavePortal,
   onSelectTab,
   onSelectCollection
 }: BrowserChromeProps): React.JSX.Element {
@@ -116,7 +122,7 @@ export function BrowserChrome({
       <div className="tab-strip" aria-label="Browser tabs">
         {tabs.map((tab) => (
           <button
-            className={`tab-chip ${tabs.length > 1 ? 'closable' : ''} ${
+            className={`tab-chip ${tabs.length > 1 ? 'closable' : 'frozen-tab'} ${
               tab.isActive && !dashboardOpen ? 'active' : ''
             }`}
             key={tab.id}
@@ -165,6 +171,20 @@ export function BrowserChrome({
               {action.label}
             </button>
           ))}
+          <div
+            className="browser-capture-dock"
+            style={{ borderRight: '1px solid rgba(133, 158, 193, 0.18)', paddingRight: '10px' }}
+          >
+            <button
+              className="save-page-button browser-save-page-button"
+              disabled={Boolean(busy) || portalSaveBlocked}
+              onClick={onSavePortal}
+              title={portalSaveTitle}
+              type="button"
+            >
+              Save as Portal
+            </button>
+          </div>
           <div className="browser-capture-dock">
             <select
               aria-label="Capture collection"
@@ -180,9 +200,6 @@ export function BrowserChrome({
                 </option>
               ))}
             </select>
-            {/* <button type="button" onClick={onCreateCollection}>
-            New
-          </button> */}
             <button
               className="capture-page-button"
               disabled={Boolean(busy) || capturesBlocked}
@@ -192,7 +209,6 @@ export function BrowserChrome({
             >
               Capture
             </button>
-            {/* <span>{selectedCollection?.name ?? 'No hub'}</span> */}
           </div>
         </div>
       )}
