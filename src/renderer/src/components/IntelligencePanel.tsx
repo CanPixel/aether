@@ -150,6 +150,11 @@ export function IntelligencePanel({
               value={chatPrompt}
               onChange={(event) => onChatPromptChange(event.target.value)}
               onKeyDown={(event) => {
+                if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+                  event.preventDefault()
+                  event.currentTarget.setSelectionRange(0, event.currentTarget.value.length)
+                  return
+                }
                 if (event.key !== 'Enter' || event.shiftKey || !chatPrompt.trim()) return
                 event.preventDefault()
                 event.currentTarget.form?.requestSubmit()

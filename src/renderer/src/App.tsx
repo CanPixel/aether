@@ -394,15 +394,23 @@ function App(): React.JSX.Element {
     await askPrompt(chatPrompt)
   }
 
-  async function askPrompt(prompt: string): Promise<void> {
+  async function askPrompt(
+    prompt: string,
+    contextOverride?: { collectionId?: string; includeCurrentPage?: boolean }
+  ): Promise<void> {
     const hasKnowledgeHubs = usableAskCollections.length > 0
     const selectedAskCollection =
       askCollection && askCollection.captureCount > 0 && askCollection.chunkCount > 0
         ? askCollection
         : undefined
-    const collectionId =
-      hasKnowledgeHubs && !askCurrentPageOnly ? selectedAskCollection?.id : undefined
-    const includeCurrentPage = !hasKnowledgeHubs || askCurrentPageOnly || askIncludeCurrentPage
+    const collectionId = contextOverride
+      ? contextOverride.collectionId
+      : hasKnowledgeHubs && !askCurrentPageOnly
+        ? selectedAskCollection?.id
+        : undefined
+    const includeCurrentPage =
+      contextOverride?.includeCurrentPage ??
+      (!hasKnowledgeHubs || askCurrentPageOnly || askIncludeCurrentPage)
 
     if (!collectionId && !includeCurrentPage) {
       setPanelCollapsed(false)
@@ -439,8 +447,11 @@ function App(): React.JSX.Element {
     }
 
     if (!action.prompt) return
+    setAskCollectionId('')
+    setAskCurrentPageOnly(true)
+    setAskIncludeCurrentPage(true)
     setChatPrompt(action.prompt)
-    await askPrompt(action.prompt)
+    await askPrompt(action.prompt, { collectionId: undefined, includeCurrentPage: true })
   }
 
   async function saveActiveTabToHub(): Promise<void> {
