@@ -1365,15 +1365,14 @@ button {
 
 .collection-capture-list .capture-hub-row {
   flex: 0 1 auto;
-  max-width: 48%;
   margin-top: 0;
   overflow: hidden;
   flex-wrap: nowrap;
-  justify-content: flex-end;
 }
 
 .collection-capture-list .capture-hub-row span {
   min-width: 0;
+  font-size: 8px;
 }
 
 .collection-row small,
