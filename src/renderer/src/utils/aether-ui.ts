@@ -1,4 +1,4 @@
-import { BrowserTabSummary } from '../../../shared/aether'
+import { BrowserTabSummary, IcebergItem, SavedIcebergSummary } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
 
 export function getCaptureHost(url: string): string {
@@ -11,6 +11,51 @@ export function getCaptureHost(url: string): string {
 
 export function formatDate(value: string): string {
   return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+export function normalizeComparableUrl(value: string): string {
+  try {
+    const url = new URL(value)
+    url.hash = ''
+    if (url.pathname === '/') url.pathname = ''
+    return url.toString().replace(/\/$/, '')
+  } catch {
+    return value.trim().replace(/\/$/, '')
+  }
+}
+
+export function inferIcebergIcon(
+  source: Pick<SavedIcebergSummary, 'keyword'> & { title?: string; items?: IcebergItem[] }
+): string {
+  const text = `${source.keyword} ${source.title} ${
+    source.items?.map((item) => `${item.name} ${item.description}`).join(' ') ?? ''
+  }`.toLowerCase()
+
+  const matches: Array<[string, RegExp]> = [
+    [
+      'code',
+      /\b(code|software|programming|developer|javascript|typescript|python|api|github|compiler)\b/
+    ],
+    ['cpu', /\b(ai|machine learning|llm|neural|computer|hardware|semiconductor|chip|robotics)\b/],
+    ['brain', /\b(brain|mind|psychology|cognition|learning|intelligence|memory|behavior)\b/],
+    ['flask', /\b(chemistry|experiment|lab|molecule|material|polymer|reaction)\b/],
+    ['atom', /\b(physics|quantum|particle|nuclear|energy|thermodynamics)\b/],
+    ['dna', /\b(biology|genetic|dna|evolution|organism|cell|protein|ecology)\b/],
+    ['heart', /\b(health|medicine|medical|doctor|clinical|disease|therapy|nutrition)\b/],
+    ['landmark', /\b(history|politics|government|law|civilization|empire|war|policy|economics)\b/],
+    ['briefcase', /\b(business|startup|finance|market|strategy|management|company|product)\b/],
+    ['palette', /\b(art|design|visual|painting|typography|fashion|architecture|aesthetic)\b/],
+    ['music', /\b(music|song|audio|sound|album|composer|genre)\b/],
+    ['film', /\b(film|movie|cinema|television|storytelling|animation|screenplay)\b/],
+    ['gamepad', /\b(game|gaming|esport|rpg|simulation|play)\b/],
+    ['sprout', /\b(climate|nature|plant|agriculture|sustainability|forest|ocean|environment)\b/],
+    ['shield', /\b(security|privacy|cryptography|threat|malware|safety|defense)\b/],
+    ['telescope', /\b(space|astronomy|cosmos|planet|star|galaxy|telescope)\b/],
+    ['book', /\b(literature|philosophy|book|education|language|writing|research)\b/],
+    ['globe', /\b(world|global|culture|geography|travel|internet|web)\b/]
+  ]
+
+  return matches.find(([, pattern]) => pattern.test(text))?.[0] ?? 'snowflake'
 }
 
 export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {

@@ -10,6 +10,7 @@ import {
 import {
   Archive,
   BookOpen,
+  ChevronDown,
   Compass,
   /*   ExternalLink,
   FolderOpen, */
@@ -27,6 +28,7 @@ import {
   SavedIceberg,
   SavedIcebergSummary
 } from '../../../shared/aether'
+import { inferIcebergIcon } from '../utils/aether-ui'
 import { ChevronRightIcon, SnowflakeIcon, SpinnerIcon } from './icons'
 
 type LayerDefinition = {
@@ -197,6 +199,7 @@ export function Crystallizer({
   const [zoom, setZoom] = useState(FITTED_ZOOM)
   const [pan, setPan] = useState(() => getCenteredPan(FITTED_ZOOM))
   const [dragging, setDragging] = useState(false)
+  const [savedDrawerOpen, setSavedDrawerOpen] = useState(() => !openedIceberg)
   const dragStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
   const animationFrame = useRef<number | null>(null)
 
@@ -218,6 +221,8 @@ export function Crystallizer({
       : (visibleItems[0] ?? null)
   const hasResults = Boolean(result?.items.length)
   const hasUnsavedResult = Boolean(result && !savedId)
+  const hasSavedAtlases = savedIcebergs.length > 0
+  const savedAtlasExpanded = savedDrawerOpen
   const layerCounts = useMemo(() => {
     const counts = new Map<number, number>()
     for (const layer of LAYERS) counts.set(layer.level, 0)
@@ -265,6 +270,7 @@ export function Crystallizer({
     setSavedId(null)
     setSelectedItem(null)
     setActiveLayer('all')
+    setSavedDrawerOpen(false)
     resetView()
 
     try {
@@ -289,6 +295,7 @@ export function Crystallizer({
         title: result.keyword,
         keyword: result.keyword,
         model: result.model,
+        icon: inferIcebergIcon(result),
         generatedAt: result.generatedAt,
         items: result.items
       })
@@ -303,6 +310,7 @@ export function Crystallizer({
   async function openSaved(id: string): Promise<void> {
     setLoading(true)
     setError(null)
+    setSavedDrawerOpen(false)
 
     try {
       await onOpenSaved(id)
@@ -695,7 +703,12 @@ export function Crystallizer({
           )}
         </div>
 
-        <aside className="crystallizer-dock" aria-label="Crystallizer details">
+        <aside
+          className={`crystallizer-dock ${
+            hasSavedAtlases && !hasResults && !loading ? 'saved-atlas-priority' : ''
+          }`}
+          aria-label="Crystallizer details"
+        >
           <div className="dock-head">
             <div>
               <span>
@@ -765,16 +778,22 @@ export function Crystallizer({
             ))}
           </div>
 
-          <div className="saved-atlas-drawer">
-            <div className="saved-atlas-head">
-              <span>
+          <div className={`saved-atlas-drawer ${savedAtlasExpanded ? 'open' : ''}`}>
+            <button
+              className="saved-atlas-head"
+              aria-expanded={savedAtlasExpanded}
+              onClick={() => setSavedDrawerOpen((current) => !current)}
+              type="button"
+            >
+              <span className="saved-atlas-title">
                 <Archive size={14} />
-                Saved Atlases
+                <span>Saved Icebergs</span>
+                <strong>{savedIcebergs.length}</strong>
               </span>
-              <strong>{savedIcebergs.length}</strong>
-            </div>
+              <ChevronDown size={14} aria-hidden />
+            </button>
             {savedIcebergs.length === 0 ? (
-              <p>No saved icebergs yet.</p>
+              <p>No icebergs crystallized yet.</p>
             ) : (
               <div className="saved-atlas-list">
                 {savedIcebergs.map((iceberg) => (
@@ -789,22 +808,39 @@ export function Crystallizer({
                         void openSaved(iceberg.id)
                       }}
                       type="button"
-                    >
-                      <strong>{iceberg.title}</strong>
-                      <small>
-                        {iceberg.itemCount} fragments / {iceberg.model}
-                      </small>
-                    </button>
-                    <button
-                      aria-label={`Delete ${iceberg.title}`}
-                      disabled={loading || Boolean(busy)}
-                      onClick={() => {
-                        void deleteSaved(iceberg.id)
+                      style={{
+                        display: 'inline-flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '4px 12px'
                       }}
-                      title="Delete saved iceberg"
-                      type="button"
                     >
-                      <Trash2 size={13} />
+                      <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
+                        <strong>{iceberg.title}</strong>
+                        <small>
+                          {iceberg.itemCount} fragments / {iceberg.model}
+                        </small>
+                      </div>
+
+                      <button
+                        className="danger-button"
+                        aria-label={`Delete ${iceberg.title}`}
+                        disabled={loading || Boolean(busy)}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void deleteSaved(iceberg.id)
+                        }}
+                        title="Delete saved iceberg"
+                        type="button"
+                        style={{
+                          verticalAlign: 'middle',
+                          height: '30px',
+                          padding: '0 8px',
+                          margin: '0'
+                        }}
+                      >
+                        <Trash2 size={13} style={{ marginTop: '5px' }} />
+                      </button>
                     </button>
                   </article>
                 ))}
@@ -812,9 +848,7 @@ export function Crystallizer({
             )}
           </div>
 
-          <span className="atlas-heading" style={{ margin: 'auto' }}>
-            Local-first Semantic Cartography
-          </span>
+          <span className="atlas-heading dock-footer">Local-first Semantic Cartography</span>
         </aside>
       </section>
 

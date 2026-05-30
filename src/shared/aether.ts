@@ -113,6 +113,7 @@ export interface SavedIcebergSummary {
   title: string
   keyword: string
   model: string
+  icon?: string
   generatedAt: string
   savedAt: string
   updatedAt: string
@@ -122,6 +123,7 @@ export interface SavedIcebergSummary {
 export interface SavedIceberg extends IcebergResult {
   id: string
   title: string
+  icon?: string
   savedAt: string
   updatedAt: string
 }
@@ -130,6 +132,7 @@ export interface SaveIcebergInput {
   title: string
   keyword: string
   model: string
+  icon?: string
   generatedAt: string
   items: IcebergItem[]
 }
@@ -217,6 +220,7 @@ export interface AetherApi {
     listSaved(): Promise<SavedIcebergSummary[]>
     getSaved(id: string): Promise<SavedIceberg>
     save(input: SaveIcebergInput): Promise<SavedIceberg>
+    reorderSaved(ids: string[]): Promise<SavedIcebergSummary[]>
     deleteSaved(id: string): Promise<void>
   }
   system: {

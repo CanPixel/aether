@@ -71,32 +71,58 @@ export function IntelligencePanel({
 
   return (
     <aside className={`intelligence-panel ${panelCollapsed ? 'collapsed' : ''}`}>
-      <button
-        className="panel-icon-toggle tooltip-host"
-        data-tooltip={showTooltips ? 'Open AiON' : undefined}
-        data-tooltip-side={showTooltips ? 'left' : undefined}
-        aria-hidden={!panelCollapsed}
-        onClick={onTogglePanel}
-        tabIndex={panelCollapsed ? 0 : -1}
-        title="Open AiON"
-        type="button"
+      <div
+        style={
+          panelCollapsed
+            ? {
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                padding: '30px 0'
+              }
+            : {
+                display: 'none'
+              }
+        }
       >
-        <AetherSigilIcon />
-      </button>
+        <span
+          style={{
+            fontSize: '11px',
+            fontWeight: '800',
+            color: 'var(--text-secondary)',
+            letterSpacing: '0.08em',
+            marginTop: '6px'
+          }}
+          className="custom-font"
+        >
+          AiON
+        </span>
+        <button
+          className="panel-icon-toggle tooltip-host crystal-button"
+          data-tooltip={showTooltips ? 'Open sidepanel' : undefined}
+          data-tooltip-side={showTooltips ? 'left' : undefined}
+          aria-hidden={!panelCollapsed}
+          onClick={onTogglePanel}
+          tabIndex={panelCollapsed ? 0 : -1}
+          title="Open sidepanel"
+          type="button"
+        >
+          <AetherSigilIcon />
+        </button>
+      </div>
       <div className="panel-content" aria-hidden={panelCollapsed} inert={panelCollapsed}>
         <header className="panel-header">
           <div>
-            <p>ÆTHER • AiON</p>
-            <h1>Local context for the web you explore.</h1>
+            <p>AiON • Local AI</p>
+            <h1>Talk to the web you explored.</h1>
           </div>
           <div className="panel-header-actions">
             <StatusPill status={status} />
             <button
-              className="panel-close tooltip-host"
-              data-tooltip={showTooltips ? 'Collapse AIon' : undefined}
+              className="panel-close button"
               data-tooltip-side={showTooltips ? 'left' : undefined}
               onClick={onTogglePanel}
-              title="Collapse AIon"
+              title="Collapse"
               type="button"
             >
               <ChevronRightIcon />
@@ -197,7 +223,7 @@ function AskContextControls({
       {hasKnowledgeHubs ? (
         <>
           <button
-            className={`ask-current-button ${currentPageActive ? 'active' : ''}`}
+            className={`ask-current-button ${currentPageActive ? 'active frozen-tab' : ''}`}
             disabled={!canUseCurrentPage}
             onClick={() => {
               onAskCurrentPageOnlyChange(false)
@@ -347,7 +373,7 @@ function AnswerCard({
       </div>
       <footer>
         <span>{result.citations.length} local citations</span>
-        <button className="answer-copy-button" onClick={copyAnswer} type="button">
+        <button className="answer-copy-button responsive-button" onClick={copyAnswer} type="button">
           {copied ? 'Copied' : 'Copy'}
         </button>
       </footer>
