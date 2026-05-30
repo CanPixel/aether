@@ -585,14 +585,6 @@ function CaptureCard({
         >
           {getCaptureHost(capture.url)}
         </button>
-        <div className="capture-hub-row">
-          {collections.map((collection) => (
-            <span key={collection.id}>
-              <CollectionIcon icon={collection.icon} />
-              {collection.name}
-            </span>
-          ))}
-        </div>
         <button
           aria-label={`Delete ${capture.title}`}
           className="recent-delete"
@@ -610,6 +602,14 @@ function CaptureCard({
           <time>{formatDate(capture.capturedAt)}</time>
           <span>{capture.chunkCount} chunks</span>
         </div>
+      </div>
+      <div className="capture-hub-row">
+        {collections.map((collection) => (
+          <span key={collection.id}>
+            <CollectionIcon icon={collection.icon} />
+            {collection.name}
+          </span>
+        ))}
       </div>
     </article>
   )

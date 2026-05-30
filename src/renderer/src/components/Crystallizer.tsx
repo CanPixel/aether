@@ -454,7 +454,7 @@ export function Crystallizer({
               aria-label="Crystallizer topic"
               disabled={loading || Boolean(busy)}
               onChange={(event) => setKeyword(event.target.value)}
-              placeholder="Explore a topic"
+              placeholder="Delve into a topic"
               value={keyword}
             />
           </div>
