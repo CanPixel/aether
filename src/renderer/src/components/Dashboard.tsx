@@ -258,7 +258,7 @@ export function Dashboard({
           </span>
           <div>
             <h2>Saved Icebergs</h2>
-            <p>Reopen local complexity atlases from iCE.</p>
+            <p>Reopen complexity atlases from iCE.</p>
           </div>
         </div>
 

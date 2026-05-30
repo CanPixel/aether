@@ -2226,7 +2226,7 @@ button {
   transform: translateY(-1px);
 }
 
-.new-tab-button:hover {
+.button:hover, .new-tab-button:hover {
   background: rgba(255, 255, 255, 0.9);
   color: var(--accent-strong);
   box-shadow: 0 8px 18px rgba(84, 130, 199, 0.14);
@@ -2293,7 +2293,7 @@ button {
 
 .saved-iceberg-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(148px, 1fr));
+  grid-template-columns: repeat(8, minmax(148px, 0.5fr));
   gap: 12px;
 }
 
@@ -2331,6 +2331,7 @@ button {
   line-height: 1.05;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .saved-iceberg-card:hover {
@@ -3436,6 +3437,7 @@ button {
   height: 16px;
   flex: 0 0 16px;
   border-radius: 999px;
+  font-size: 13px;
 }
 
 .canvas-layer-hud.layer-strip.compact svg {
@@ -3450,9 +3452,11 @@ button {
 
 .canvas-layer-hud.layer-strip.compact .filter-count {
   min-width: 16px;
+  max-width: 32px;
   height: 16px;
   padding: 0 4px;
   font-size: 8px;
+  justify-self: end;
 }
 
 .crystallizer-detail {
@@ -3519,6 +3523,22 @@ button {
 .crystallizer-detail button svg {
   width: 16px;
   height: 16px;
+}
+
+.crystal-button, .responsive-button {
+  transition: transform 0.1s ease, border-color 0.1s ease, box-shadow 0.1s ease;
+}
+.crystal-button, .responsive-button:hover {
+  border-color: rgba(14, 165, 233, 0.58);
+  background:
+    radial-gradient(circle at 80% 12%, rgba(255, 255, 255, 0.98), transparent 24%),
+    linear-gradient(135deg, #ecfeff 0%, #bae6fd 18%, #e0f2fe 36%, #ffffff 100%);
+  color: #082f49;
+  box-shadow:
+    0 0 0 4px rgba(125, 211, 252, 0.16),
+    0 18px 34px rgba(14, 165, 233, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transform: translateY(-1px);
 }
 
 .crystallizer-detail .explore-web-button {
@@ -4009,9 +4029,7 @@ button {
 .settings-engine-list button:hover:not(:disabled),
 .settings-engine-list button.selected {
   border-color: rgba(54, 122, 178, 0.34);
-  background:
-    radial-gradient(circle at 20% 16%, rgba(255, 255, 255, 0.95), transparent 42%),
-    linear-gradient(145deg, rgba(233, 247, 255, 0.94), rgba(255, 255, 255, 0.8));
+  background-position: 10% 10%;
   box-shadow: 0 10px 24px rgba(70, 124, 180, 0.12);
   transform: translateY(-1px);
 }
