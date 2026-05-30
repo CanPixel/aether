@@ -13,10 +13,11 @@ Current major capabilities:
 - Æther dashboard with saved portals, recent captures, and knowledge hub accordions.
 - Saved portals can be reordered by dragging and reopened as browser tabs.
 - Knowledge hubs can be created, edited, deleted, reordered, assigned icons, and expanded as accordions.
-- Captured source cards can be dragged between knowledge hubs.
+- Captured source cards appear as compact scrollable lists inside hubs and can be dragged between knowledge hubs.
 - Capture pipeline extracts readable page text, chunks it, embeds it locally, stores vectors on disk, and persists capture metadata.
 - AiON sidepanel provides local search and Ask mode over selected knowledge context.
 - AiON Ask supports populated knowledge hubs, current-page context, or both.
+- Browser quick actions can prompt AiON against the current page with one click.
 - AI answers render as selectable markdown with copy support and clickable citations.
 - iCE, the Information Complexity Explorer, generates iceberg-style complexity maps for a topic using the local chat model.
 - Settings modal currently supports default search engine selection.
@@ -192,6 +193,7 @@ The browser chrome includes:
 - Address/search field.
 - Tabs with favicon fallback and dynamic theme tinting.
 - New tab creation.
+- AI quick actions for current-page prompts.
 - Capture controls in browser mode.
 - Selected knowledge hub dropdown.
 
@@ -222,6 +224,7 @@ Knowledge hub behavior:
 - Create hubs with a name, description, and searchable icon.
 - Reorder hubs by dragging.
 - Expand a hub to show its captured sources.
+- Captured sources are shown as compact scrollable lists inside expanded hubs.
 - Drag captured source cards between hub accordions.
 - Click captured source links to open them in a new browser tab.
 - Edit/delete hub controls live in the accordion header.
@@ -233,7 +236,9 @@ AiON is the local intelligence sidepanel.
 **Ask mode**:
 
 - Pressing Enter submits a non-empty prompt.
+- `Cmd+A` / `Ctrl+A` selects all text in the prompt field.
 - Empty hubs with `0 captures` or `0 chunks` are hidden because they cannot contribute context.
+- Browser quick actions open AiON and ask against current-page-only context.
 - If no populated hubs exist, AiON defaults to current-page-only context.
 - If populated hubs exist, rows show icon, hub name, and capture count.
 - Current page context can be toggled with a larger button-style control.
@@ -263,7 +268,7 @@ The iCE canvas includes:
 - Layer zone tinting and labels.
 - Layer filter buttons with counts.
 - Disabled filter controls before results exist.
-- Ordered topic list with selected fragment details.
+- Ordered topic list with selected fragment details and click-to-focus canvas zoom.
 - Loading state with glassmorphic canvas blur and icy particle effects.
 - Staggered reveal after results arrive.
 
