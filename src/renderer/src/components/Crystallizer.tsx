@@ -61,7 +61,7 @@ const CANVAS_WIDTH = 2200
 const CANVAS_HEIGHT = 1800
 const NODE_WIDTH = 306
 const NODE_HEIGHT = 92
-const MIN_ZOOM = 0.44
+const MIN_ZOOM = 0.74
 const MAX_ZOOM = 2.25
 const FITTED_ZOOM = 0.74
 const ICEBERG_BOUNDS = {
@@ -373,6 +373,17 @@ export function Crystallizer({
     animateView(FITTED_ZOOM, getCenteredPan(FITTED_ZOOM))
   }
 
+  function focusItem(item: IcebergItem): void {
+    const positionedItem = positionedItems.find(({ item: candidate }) => candidate.id === item.id)
+    if (!positionedItem) return
+
+    const nextZoom = clamp(Math.max(zoom, 1.72), MIN_ZOOM, MAX_ZOOM)
+    animateView(nextZoom, {
+      x: CANVAS_WIDTH / 2 - positionedItem.displayX * nextZoom,
+      y: CANVAS_HEIGHT / 2 - positionedItem.displayY * nextZoom
+    })
+  }
+
   function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>): void {
     if ((event.target as Element).closest('.ice-node-hit')) return
     if (animationFrame.current) {
@@ -607,11 +618,15 @@ export function Crystallizer({
                     className="crystallizer-layer-label"
                     transform={`translate(128 ${(CANVAS_HEIGHT / LAYERS.length) * (layer.level - 0.68)})`}
                   >
-                    <rect height="86" rx="14" width="310" />
-                    <text className="layer-label-name" x="20" y="31">
+                    <rect height="86" rx="14" width="336" />
+                    <circle className="layer-label-number-mark" cx="38" cy="43" r="22" />
+                    <text className="layer-label-number" x="38" y="51">
+                      {layer.level}
+                    </text>
+                    <text className="layer-label-name" x="78" y="31">
                       {layer.name}
                     </text>
-                    <text className="layer-label-caption" x="20" y="58">
+                    <text className="layer-label-caption" x="78" y="58">
                       {layer.caption}
                     </text>
                   </g>
@@ -763,7 +778,10 @@ export function Crystallizer({
               <button
                 className={`button ${activeSelectedItem?.id === item.id ? 'active' : ''}`}
                 key={item.id}
-                onClick={() => setSelectedItem(item)}
+                onClick={() => {
+                  setSelectedItem(item)
+                  focusItem(item)
+                }}
                 style={
                   {
                     '--layer-accent': getLayer(item.level).accent,
