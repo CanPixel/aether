@@ -29,7 +29,8 @@ import {
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
 import { formatDate, getCaptureHost, inferIcebergIcon } from '../utils/aether-ui'
-import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, SnowflakeIcon, TrashIcon } from './icons'
+import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, SnowflakeIcon } from './icons'
+import { Trash2 as TrashIcon } from 'lucide-react'
 
 type CollectionDialogState =
   | { mode: 'create' }
@@ -344,7 +345,7 @@ export function Dashboard({
                   <span>{iceberg.itemCount} frozen fragments</span>
                   <strong>{iceberg.title}</strong>
                   <small>
-                    {formatDate(iceberg.savedAt)} / {iceberg.model}
+                    {formatDate(iceberg.savedAt)} {iceberg.model}
                   </small>
                 </button>
                 <button
@@ -487,8 +488,10 @@ export function Dashboard({
                         </small>
                       </span>
                       <span className="collection-meta">
-                        <strong>{collection.captureCount} captures</strong>
-                        <small>{collection.chunkCount} chunks</small>
+                        <strong>
+                          {collection.captureCount} capture
+                          {collection.captureCount !== 1 ? 's' : ''}
+                        </strong>
                       </span>
                       <ChevronRightIcon />
                     </button>
@@ -500,11 +503,14 @@ export function Dashboard({
                         Edit
                       </button>
                       <button
+                        aria-label={`Delete ${collection.name}`}
                         className="danger-button"
                         onClick={() => openCollectionDialog({ mode: 'delete', collection })}
+                        title={`Delete ${collection.name}`}
                         type="button"
+                        style={{ padding: '0 4px' }}
                       >
-                        Delete
+                        <TrashIcon size={13} style={{ marginTop: '4px' }} />
                       </button>
                     </div>
                   </div>
@@ -512,7 +518,7 @@ export function Dashboard({
                     {collectionCaptures.length === 0 ? (
                       <div className="empty-row">No captures in this hub yet.</div>
                     ) : (
-                      <div className="recent-card-grid">
+                      <div className="collection-capture-list">
                         {collectionCaptures.map((capture) => (
                           <CaptureCard
                             capture={capture}
@@ -579,31 +585,32 @@ function CaptureCard({
         >
           {getCaptureHost(capture.url)}
         </button>
+        <div className="capture-hub-row">
+          {collections.map((collection) => (
+            <span key={collection.id}>
+              <CollectionIcon icon={collection.icon} />
+              {collection.name}
+            </span>
+          ))}
+        </div>
         <button
           aria-label={`Delete ${capture.title}`}
           className="recent-delete"
           draggable={false}
           onClick={() => deleteCapture(capture.id)}
-          title="Delete capture"
+          title={`Delete ${capture.title}`}
           type="button"
         >
-          <TrashIcon />
+          <TrashIcon style={{ width: '13px' }} />
         </button>
       </div>
-      <h3>{capture.title}</h3>
-      <div className="capture-hub-row">
-        {collections.map((collection) => (
-          <span key={collection.id}>
-            <CollectionIcon icon={collection.icon} />
-            {collection.name}
-          </span>
-        ))}
+      <div className="recent-card-title-row">
+        <h3>{capture.title}</h3>
+        <div className="data-badges">
+          <time>{formatDate(capture.capturedAt)}</time>
+          <span>{capture.chunkCount} chunks</span>
+        </div>
       </div>
-      <p>Captured and indexed for local retrieval.</p>
-      <footer>
-        <span>{capture.chunkCount} chunks</span>
-        <time>{formatDate(capture.capturedAt)}</time>
-      </footer>
     </article>
   )
 }
