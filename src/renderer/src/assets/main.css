@@ -130,7 +130,6 @@ button:disabled {
     radial-gradient(circle at 48% -8%, rgba(255, 255, 255, 0.9), transparent 28%),
     radial-gradient(circle at 26% 94%, rgba(195, 249, 240, 0.34), transparent 34%),
     radial-gradient(circle at 96% 62%, rgba(143, 114, 207, 0.12), transparent 24%);
-  /* transition: grid-template-columns 520ms cubic-bezier(0.16, 1, 0.3, 1); */
   transition: grid-template-columns 600ms cubic-bezier(0.25, 1.25, 0.4, 1);
 }
 
@@ -1512,10 +1511,6 @@ button {
   opacity: 1;
   transform: translateX(0);
   filter: blur(0);
-/*   transition:
-    opacity 340ms ease 120ms,
-    filter 440ms ease,
-    transform 520ms cubic-bezier(0.16, 1, 0.3, 1); */
   transition:
     opacity 300ms ease,
     filter 300ms ease,
@@ -1674,8 +1669,28 @@ button {
 .ask-panel-body {
   display: grid;
   min-height: 0;
-  animation: bubbleOpen 500ms cubic-bezier(0.34, 1.6, 0.64, 1) forwards;
   transform-origin: top center;
+  overflow: hidden;
+
+  transition: 
+    max-height 500ms cubic-bezier(0.25, 1.4, 0.5, 1),
+    transform 500ms cubic-bezier(0.25, 1.4, 0.5, 1),
+    opacity 400ms ease,
+    margin-bottom 500ms cubic-bezier(0.25, 1.4, 0.5, 1);
+}
+
+.ask-panel-body.is-open {
+  max-height: 400px;
+  transform: scale(1) translateY(0);
+  opacity: 1;
+  margin-bottom: 10px;
+}
+
+.ask-panel-body.is-closed {
+  max-height: 0;
+  transform: scale(0.94) translateY(-12px);
+  opacity: 0;
+  margin-bottom: 0;
 }
 
 .ask-context-controls {
@@ -2011,23 +2026,6 @@ button {
   color: var(--accent-strong);
   font-size: 11px;
   box-shadow: none;
-}
-
-@keyframes bubbleOpen {
-  0% {
-    opacity: 0;
-    transform: translateY(-10px) scale(0.93);
-    max-height: 0;
-    margin-bottom: 0;
-  }
-  40% {
-    opacity: 0.5;
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    max-height: 500px;
-  }
 }
 
 @keyframes answerHaze {
@@ -4075,9 +4073,9 @@ button {
 
 .crystallizer-placeholder span svg {
   display: block;
-  min-width: 30px; /* Force the icon to maintain its expected size */
+  min-width: 30px;
   min-height: 30px;
-  flex-shrink: 0; /* Prevent flexbox from squashing the icon */
+  flex-shrink: 0;
 }
 
 .crystallizer-list {

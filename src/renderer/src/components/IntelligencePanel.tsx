@@ -146,51 +146,53 @@ export function IntelligencePanel({
             <ChevronRightIcon />
           </button>
 
-          {askPanelOpen && (
-            <div className="ask-panel-body">
-              <AskContextControls
-                askCollectionId={askCollectionId}
-                askCurrentPageOnly={askCurrentPageOnly}
-                askIncludeCurrentPage={askIncludeCurrentPage}
-                canUseCurrentPage={canUseCurrentPage}
-                collections={askCollections}
-                onAskCollectionChange={onAskCollectionChange}
-                onAskCurrentPageOnlyChange={onAskCurrentPageOnlyChange}
-                onAskIncludeCurrentPageChange={onAskIncludeCurrentPageChange}
-              />
-              <form
-                className="chat-form"
-                onSubmit={async (event) => {
-                  event.preventDefault()
+          <div
+            className={`ask-panel-body ${askPanelOpen ? 'is-open' : 'is-closed'}`}
+            aria-hidden={!askPanelOpen}
+            style={!askPanelOpen ? { pointerEvents: 'none' } : undefined}
+          >
+            <AskContextControls
+              askCollectionId={askCollectionId}
+              askCurrentPageOnly={askCurrentPageOnly}
+              askIncludeCurrentPage={askIncludeCurrentPage}
+              canUseCurrentPage={canUseCurrentPage}
+              collections={askCollections}
+              onAskCollectionChange={onAskCollectionChange}
+              onAskCurrentPageOnlyChange={onAskCurrentPageOnlyChange}
+              onAskIncludeCurrentPageChange={onAskIncludeCurrentPageChange}
+            />
+            <form
+              className="chat-form"
+              onSubmit={async (event) => {
+                event.preventDefault()
 
-                  onAskPanelOpenChange(false)
-                  await onAsk(event)
-                }}
-              >
-                <textarea
-                  value={chatPrompt}
-                  onChange={(event) => onChatPromptChange(event.target.value)}
-                  onKeyDown={(event) => {
-                    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
-                      event.preventDefault()
-                      event.currentTarget.setSelectionRange(0, event.currentTarget.value.length)
-                      return
-                    }
-                    if (event.key !== 'Enter' || event.shiftKey || !chatPrompt.trim()) return
+                onAskPanelOpenChange(false)
+                await onAsk(event)
+              }}
+            >
+              <textarea
+                value={chatPrompt}
+                onChange={(event) => onChatPromptChange(event.target.value)}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
                     event.preventDefault()
-                    event.currentTarget.form?.requestSubmit()
-                  }}
-                  placeholder="Ask this collection and current page"
-                />
-                <button
-                  type="submit"
-                  disabled={Boolean(busy) || !chatPrompt.trim() || !hasAskContext || chatBlocked}
-                >
-                  Ask AiON
-                </button>
-              </form>
-            </div>
-          )}
+                    event.currentTarget.setSelectionRange(0, event.currentTarget.value.length)
+                    return
+                  }
+                  if (event.key !== 'Enter' || event.shiftKey || !chatPrompt.trim()) return
+                  event.preventDefault()
+                  event.currentTarget.form?.requestSubmit()
+                }}
+                placeholder="Ask this collection and current page"
+              />
+              <button
+                type="submit"
+                disabled={Boolean(busy) || !chatPrompt.trim() || !hasAskContext || chatBlocked}
+              >
+                Ask AiON
+              </button>
+            </form>
+          </div>
         </section>
 
         {busy === 'Asking Æther' && <AnswerLoading />}
