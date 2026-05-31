@@ -26,6 +26,7 @@ import {
   SearchResult,
   SavedIceberg,
   SavedIcebergSummary,
+  StatusToastInput,
   SystemStatus
 } from '../shared/aether'
 
@@ -33,6 +34,9 @@ const SIDEBAR_WIDTH = 76
 const TOP_BAR_HEIGHT = 138
 const PANEL_WIDTH = 404
 const PANEL_COLLAPSED_WIDTH = 58
+const STATUS_TOAST_WIDTH = 342
+const STATUS_TOAST_HEIGHT = 74
+const STATUS_TOAST_MARGIN = 18
 const CHUNKS_TABLE = 'chunks'
 const EMBEDDING_MODEL = 'nomic-embed-text'
 const PREFERRED_CHAT_MODELS = ['llama3.1:8b', 'gemma3:latest', 'gemma3']
@@ -1101,16 +1105,120 @@ class OllamaClient {
   }
 }
 
+function getStatusToastOverlayUrl(): string {
+  const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+.toast {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  width: 328px;
+  min-height: 54px;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(123, 158, 190, 0.3);
+  border-radius: 14px;
+  padding: 10px 12px;
+  color: #17243a;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 42px rgba(51, 103, 137, 0.2);
+  opacity: 0;
+  transform: translateY(12px) scale(0.98);
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+  box-sizing: border-box;
+}
+.toast.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  color: #247fa7;
+  background: rgba(232, 248, 255, 0.86);
+  font-size: 14px;
+  font-weight: 800;
+}
+.message {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 760;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.toast.success .icon {
+  color: #2b9270;
+  background: rgba(226, 249, 241, 0.92);
+}
+.toast.error .icon {
+  color: #b85b59;
+  background: rgba(255, 239, 239, 0.92);
+}
+</style>
+</head>
+<body>
+<div class="toast" id="toast" aria-live="polite">
+  <span class="icon" id="icon">i</span>
+  <span class="message" id="message"></span>
+</div>
+<script>
+const toast = document.getElementById('toast')
+const icon = document.getElementById('icon')
+const message = document.getElementById('message')
+window.showStatusToast = (input) => {
+  message.textContent = input.message || ''
+  toast.className = 'toast visible ' + (input.tone || 'info')
+  icon.textContent = input.tone === 'success' ? '✓' : input.tone === 'error' ? '!' : 'i'
+}
+window.hideStatusToast = () => {
+  toast.className = toast.className.replace(' visible', '')
+}
+</script>
+</body>
+</html>`
+
+  return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`
+}
+
 class AppContainerManager {
   private readonly apps = new Map<string, AppDefinition>()
   private readonly tabs = new Map<string, ManagedTab>()
+  private readonly statusToastView = new WebContentsView({
+    webPreferences: {
+      sandbox: true
+    }
+  })
   private activeAppId = APP_DEFINITIONS[0].id
   private activeTabId = ''
   private dashboardOpen = true
   private modalOverlayOpen = false
   private panelCollapsed = true
+  private statusToastAttached = false
+  private statusToastHideTimer: NodeJS.Timeout | null = null
+  private statusToastVersion = 0
 
   constructor(private readonly mainWindow: BrowserWindow) {
+    this.statusToastView.setBackgroundColor('#00000000')
+    this.statusToastView.webContents.loadURL(getStatusToastOverlayUrl())
+
     for (const definition of APP_DEFINITIONS) {
       this.apps.set(definition.id, definition)
     }
@@ -1160,6 +1268,7 @@ class AppContainerManager {
   }
 
   openDashboard(): void {
+    this.hideStatusToast()
     this.detachActiveView()
     this.dashboardOpen = true
     this.emitState()
@@ -1277,6 +1386,7 @@ class AppContainerManager {
 
     this.modalOverlayOpen = open
     if (open) {
+      this.hideStatusToast()
       this.detachActiveView()
       return
     }
@@ -1288,7 +1398,10 @@ class AppContainerManager {
   }
 
   resize(): void {
-    if (this.dashboardOpen || this.modalOverlayOpen) return
+    if (this.dashboardOpen || this.modalOverlayOpen) {
+      this.resizeStatusToastView()
+      return
+    }
 
     const active = this.getActiveTab()
     const [width, height] = this.mainWindow.getContentSize()
@@ -1299,6 +1412,79 @@ class AppContainerManager {
       y: TOP_BAR_HEIGHT,
       width: Math.max(280, width - SIDEBAR_WIDTH - rightWidth),
       height: Math.max(200, height - TOP_BAR_HEIGHT)
+    })
+    this.resizeStatusToastView()
+  }
+
+  showStatusToast(input: StatusToastInput): void {
+    const message = input.message.trim()
+    if (!message || this.dashboardOpen || this.modalOverlayOpen) {
+      this.hideStatusToast()
+      return
+    }
+
+    this.statusToastVersion += 1
+    if (!this.statusToastAttached) {
+      this.mainWindow.contentView.addChildView(this.statusToastView)
+      this.statusToastAttached = true
+    }
+
+    this.resizeStatusToastView()
+    this.statusToastView.webContents
+      .executeJavaScript(`window.showStatusToast(${JSON.stringify({ ...input, message })})`, true)
+      .catch(() => undefined)
+
+    if (this.statusToastHideTimer) clearTimeout(this.statusToastHideTimer)
+    this.statusToastHideTimer = setTimeout(
+      () => {
+        this.hideStatusToast()
+      },
+      input.durationMs ?? (input.tone === 'error' ? 6000 : 3600)
+    )
+  }
+
+  private hideStatusToast(): void {
+    const version = ++this.statusToastVersion
+    if (this.statusToastHideTimer) {
+      clearTimeout(this.statusToastHideTimer)
+      this.statusToastHideTimer = null
+    }
+
+    this.statusToastView.webContents
+      .executeJavaScript('window.hideStatusToast?.()', true)
+      .catch(() => undefined)
+    if (!this.statusToastAttached) return
+
+    setTimeout(() => {
+      if (version !== this.statusToastVersion) return
+      if (!this.statusToastAttached) return
+      try {
+        this.mainWindow.contentView.removeChildView(this.statusToastView)
+        this.statusToastAttached = false
+      } catch {
+        // Electron throws if the view is not currently attached.
+      }
+    }, 220)
+  }
+
+  private resizeStatusToastView(): void {
+    if (!this.statusToastAttached) return
+
+    const [width, height] = this.mainWindow.getContentSize()
+    const rightWidth = this.panelCollapsed ? PANEL_COLLAPSED_WIDTH : PANEL_WIDTH
+    const webViewRight = width - rightWidth
+
+    this.statusToastView.setBounds({
+      x: Math.max(
+        SIDEBAR_WIDTH + STATUS_TOAST_MARGIN,
+        webViewRight - STATUS_TOAST_WIDTH - STATUS_TOAST_MARGIN
+      ),
+      y: Math.max(
+        TOP_BAR_HEIGHT + STATUS_TOAST_MARGIN,
+        height - STATUS_TOAST_HEIGHT - STATUS_TOAST_MARGIN
+      ),
+      width: STATUS_TOAST_WIDTH,
+      height: STATUS_TOAST_HEIGHT
     })
   }
 
@@ -1410,6 +1596,15 @@ class AppContainerManager {
 
   private attachActiveView(): void {
     this.mainWindow.contentView.addChildView(this.getActiveTab().view)
+    if (this.statusToastAttached) {
+      try {
+        this.mainWindow.contentView.removeChildView(this.statusToastView)
+      } catch {
+        // Electron throws if the view is not currently attached.
+      }
+      this.mainWindow.contentView.addChildView(this.statusToastView)
+      this.resizeStatusToastView()
+    }
   }
 
   private detachActiveView(): void {
@@ -1567,6 +1762,14 @@ async function captureCurrentPage(input: { collectionId: string }): Promise<Capt
   const collection = await getLibrary().getCollection(input.collectionId)
   const active = containers.getCapturableApp()
   const capturedPage = await extractReadablePage(active)
+  const capturedPageKey = normalizeCaptureUrlKey(capturedPage.url)
+  const existingCapture = (await getLibrary().listCaptures(collection.id)).find(
+    (capture) => normalizeCaptureUrlKey(capture.url) === capturedPageKey
+  )
+  if (existingCapture) {
+    throw new Error(`Page is already in ${collection.name}.`)
+  }
+
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize: 2200,
     chunkOverlap: 240
@@ -1804,6 +2007,17 @@ function normalizeCitationKey(url: string): string {
   }
 }
 
+function normalizeCaptureUrlKey(url: string): string {
+  try {
+    const parsed = new URL(url)
+    parsed.hash = ''
+    if (parsed.pathname === '/') parsed.pathname = ''
+    return parsed.toString().replace(/\/$/, '')
+  } catch {
+    return url.trim().replace(/\/$/, '')
+  }
+}
+
 async function extractReadablePage(active: ManagedTab): Promise<CapturedPage> {
   const page = (await active.view.webContents.executeJavaScriptInIsolatedWorld(999, [
     {
@@ -1969,6 +2183,9 @@ function registerIpcHandlers(): void {
   )
   ipcMain.handle('aether:layout:set-modal-overlay-open', (_event, open: boolean) =>
     getContainers().setModalOverlayOpen(open)
+  )
+  ipcMain.handle('aether:layout:show-status-toast', (_event, input: StatusToastInput) =>
+    getContainers().showStatusToast(input)
   )
 }
 

@@ -11,6 +11,7 @@ type IntelligencePanelProps = {
   askCollectionId: string
   askCurrentPageOnly: boolean
   askIncludeCurrentPage: boolean
+  askPanelOpen: boolean
   canUseCurrentPage: boolean
   collections: CollectionSummary[]
   dashboardOpen: boolean
@@ -23,6 +24,7 @@ type IntelligencePanelProps = {
   selectedCollection?: CollectionSummary
   status: SystemStatus | null
   onAsk: (event: FormEvent) => Promise<void>
+  onAskPanelOpenChange: (value: boolean) => void
   onSearch: (event?: FormEvent) => Promise<void>
   onSearchQueryChange: (value: string) => void
   onTogglePanel: () => Promise<void>
@@ -41,6 +43,7 @@ export function IntelligencePanel({
   askCollectionId,
   askCurrentPageOnly,
   askIncludeCurrentPage,
+  askPanelOpen,
   canUseCurrentPage,
   collections,
   dashboardOpen,
@@ -49,6 +52,7 @@ export function IntelligencePanel({
   panelCollapsed,
   status,
   onAsk,
+  onAskPanelOpenChange,
   onTogglePanel,
   onChatPromptChange,
   onAskCollectionChange,
@@ -59,9 +63,7 @@ export function IntelligencePanel({
 }: IntelligencePanelProps): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const showTooltips = dashboardOpen
-  const askCollections = collections.filter(
-    (collection) => collection.captureCount > 0 && collection.chunkCount > 0
-  )
+  const askCollections = collections.filter((collection) => collection.captureCount > 0)
   const hasKnowledgeHubs = askCollections.length > 0
   const hasAskContext = !hasKnowledgeHubs
     ? canUseCurrentPage
@@ -130,49 +132,78 @@ export function IntelligencePanel({
           </div>
         </header>
 
-        <section className="panel-section mode-section chat-section">
-          <div className="section-heading">
+        <section
+          className={`panel-section mode-section chat-section ${askPanelOpen ? 'open' : 'collapsed'}`}
+        >
+          <button
+            className="section-heading accordion-heading"
+            aria-expanded={askPanelOpen}
+            onClick={() => onAskPanelOpenChange(!askPanelOpen)}
+            type="button"
+          >
             <h2>Ask</h2>
             <span>{status?.chatModel ?? 'No model'}</span>
-          </div>
-          <AskContextControls
-            askCollectionId={askCollectionId}
-            askCurrentPageOnly={askCurrentPageOnly}
-            askIncludeCurrentPage={askIncludeCurrentPage}
-            canUseCurrentPage={canUseCurrentPage}
-            collections={askCollections}
-            onAskCollectionChange={onAskCollectionChange}
-            onAskCurrentPageOnlyChange={onAskCurrentPageOnlyChange}
-            onAskIncludeCurrentPageChange={onAskIncludeCurrentPageChange}
-          />
-          <form className="chat-form" onSubmit={onAsk}>
-            <textarea
-              value={chatPrompt}
-              onChange={(event) => onChatPromptChange(event.target.value)}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+            <ChevronRightIcon />
+          </button>
+
+          {askPanelOpen && (
+            <div className="ask-panel-body">
+              <AskContextControls
+                askCollectionId={askCollectionId}
+                askCurrentPageOnly={askCurrentPageOnly}
+                askIncludeCurrentPage={askIncludeCurrentPage}
+                canUseCurrentPage={canUseCurrentPage}
+                collections={askCollections}
+                onAskCollectionChange={onAskCollectionChange}
+                onAskCurrentPageOnlyChange={onAskCurrentPageOnlyChange}
+                onAskIncludeCurrentPageChange={onAskIncludeCurrentPageChange}
+              />
+              <form
+                className="chat-form"
+                onSubmit={async (event) => {
                   event.preventDefault()
-                  event.currentTarget.setSelectionRange(0, event.currentTarget.value.length)
-                  return
-                }
-                if (event.key !== 'Enter' || event.shiftKey || !chatPrompt.trim()) return
-                event.preventDefault()
-                event.currentTarget.form?.requestSubmit()
-              }}
-              placeholder="Ask this collection and current page"
-            />
-            <button
-              type="submit"
-              disabled={Boolean(busy) || !chatPrompt.trim() || !hasAskContext || chatBlocked}
-            >
-              Ask AiON
-            </button>
-          </form>
-          {busy === 'Asking Æther' && <AnswerLoading />}
-          {chatResult && busy !== 'Asking Æther' && (
-            <AnswerCard result={chatResult} onOpenCitation={onOpenCitation} />
+
+                  onAskPanelOpenChange(false)
+                  await onAsk(event)
+                }}
+              >
+                <textarea
+                  value={chatPrompt}
+                  onChange={(event) => onChatPromptChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a') {
+                      event.preventDefault()
+                      event.currentTarget.setSelectionRange(0, event.currentTarget.value.length)
+                      return
+                    }
+                    if (event.key !== 'Enter' || event.shiftKey || !chatPrompt.trim()) return
+                    event.preventDefault()
+                    event.currentTarget.form?.requestSubmit()
+                  }}
+                  placeholder="Ask this collection and current page"
+                />
+                <button
+                  type="submit"
+                  disabled={Boolean(busy) || !chatPrompt.trim() || !hasAskContext || chatBlocked}
+                >
+                  Ask AiON
+                </button>
+              </form>
+            </div>
           )}
         </section>
+
+        {busy === 'Asking Æther' && <AnswerLoading />}
+
+        {chatResult && busy !== 'Asking Æther' && (
+          <section className="panel-section mode-section answer-section">
+            <div className="section-heading">
+              <h2>Answer</h2>
+              <span>{chatResult.model}</span>
+            </div>
+            <AnswerCard result={chatResult} onOpenCitation={onOpenCitation} />
+          </section>
+        )}
 
         <footer className="panel-footer">
           <span>{busy ?? notice ?? ''}</span>
@@ -192,6 +223,23 @@ export function IntelligencePanel({
         )}
       </div>
     </aside>
+  )
+}
+
+function AnswerLoading(): React.JSX.Element {
+  return (
+    <div className="answer-loading" role="status" aria-live="polite">
+      <div className="answer-loading-haze" aria-hidden="true" />
+      <div className="answer-loading-ring" aria-hidden="true">
+        {Array.from({ length: 14 }).map((_, index) => (
+          <span key={index} style={{ '--particle-index': index } as CSSProperties} />
+        ))}
+      </div>
+      <div className="answer-loading-copy">
+        <strong>Composing answer</strong>
+        <span>Gathering local context</span>
+      </div>
+    </div>
   )
 }
 
@@ -272,23 +320,6 @@ function AskContextControls({
         </div>
       )}
     </section>
-  )
-}
-
-function AnswerLoading(): React.JSX.Element {
-  return (
-    <div className="answer-loading" role="status" aria-live="polite">
-      <div className="answer-loading-haze" aria-hidden="true" />
-      <div className="answer-loading-ring" aria-hidden="true">
-        {Array.from({ length: 14 }).map((_, index) => (
-          <span key={index} style={{ '--particle-index': index } as CSSProperties} />
-        ))}
-      </div>
-      <div className="answer-loading-copy">
-        <strong>Composing answer</strong>
-        <span>Gathering local context</span>
-      </div>
-    </div>
   )
 }
 

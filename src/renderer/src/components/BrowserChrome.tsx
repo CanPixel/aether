@@ -10,6 +10,8 @@ import {
   SpinnerIcon
 } from './icons'
 
+const CREATE_COLLECTION_VALUE = '__create_collection__'
+
 type BrowserChromeProps = {
   activeTab?: BrowserTabSummary
   addressDraft: string
@@ -67,7 +69,7 @@ export function BrowserChrome({
   onCloseTab,
   onCreateTab,
   onCapture,
-  /* onCreateCollection, */
+  onCreateCollection,
   onForward,
   onNavigate,
   onQuickAction,
@@ -189,7 +191,13 @@ export function BrowserChrome({
             <select
               aria-label="Capture collection"
               value={selectedCollectionId}
-              onChange={(event) => onSelectCollection(event.target.value)}
+              onChange={(event) => {
+                if (event.target.value === CREATE_COLLECTION_VALUE) {
+                  onCreateCollection()
+                  return
+                }
+                onSelectCollection(event.target.value)
+              }}
             >
               <option value="" disabled>
                 Collection
@@ -199,6 +207,7 @@ export function BrowserChrome({
                   {collection.name}
                 </option>
               ))}
+              <option value={CREATE_COLLECTION_VALUE}>+ Create/Add New</option>
             </select>
             <button
               className="capture-page-button"

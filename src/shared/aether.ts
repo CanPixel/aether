@@ -157,6 +157,14 @@ export interface AetherState {
   panelCollapsed: boolean
 }
 
+export type StatusToastTone = 'info' | 'success' | 'error'
+
+export interface StatusToastInput {
+  message: string
+  tone: StatusToastTone
+  durationMs?: number
+}
+
 export interface AetherApi {
   apps: {
     list(): Promise<AppSummary[]>
@@ -232,6 +240,7 @@ export interface AetherApi {
   layout: {
     setIntelligencePanelCollapsed(collapsed: boolean): Promise<void>
     setModalOverlayOpen(open: boolean): Promise<void>
+    showStatusToast(input: StatusToastInput): Promise<void>
   }
   events: {
     onState(listener: (state: AetherState) => void): () => void
