@@ -63,7 +63,8 @@ const api: AetherApi = {
   layout: {
     setIntelligencePanelCollapsed: (collapsed) =>
       ipcRenderer.invoke('aether:layout:set-panel-collapsed', collapsed),
-    setModalOverlayOpen: (open) => ipcRenderer.invoke('aether:layout:set-modal-overlay-open', open)
+    setModalOverlayOpen: (open) => ipcRenderer.invoke('aether:layout:set-modal-overlay-open', open),
+    showStatusToast: (input) => ipcRenderer.invoke('aether:layout:show-status-toast', input)
   },
   events: {
     onState: (listener: (state: AetherState) => void) => {

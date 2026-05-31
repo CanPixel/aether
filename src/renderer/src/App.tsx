@@ -16,6 +16,7 @@ import {
   SaveIcebergInput,
   SavedIceberg,
   SavedIcebergSummary,
+  StatusToastInput,
   SystemStatus
 } from '../../shared/aether'
 import { BrowserChrome } from './components/BrowserChrome'
@@ -27,6 +28,66 @@ import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
 import { getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
 import { SearchIcon } from 'lucide-react'
+
+const TEXT_INPUT_TYPES = new Set([
+  '',
+  'email',
+  'number',
+  'password',
+  'search',
+  'tel',
+  'text',
+  'url'
+])
+
+function getEditableShortcutTarget(
+  target: EventTarget | null
+): HTMLInputElement | HTMLTextAreaElement | HTMLElement | null {
+  if (!(target instanceof HTMLElement)) return null
+
+  const editable = target.closest(
+    'input, textarea, [contenteditable="true"], [contenteditable="plaintext-only"]'
+  )
+  if (!editable) return null
+  if (editable instanceof HTMLInputElement) {
+    return TEXT_INPUT_TYPES.has(editable.type) && !editable.readOnly && !editable.disabled
+      ? editable
+      : null
+  }
+  if (editable instanceof HTMLTextAreaElement) {
+    return !editable.readOnly && !editable.disabled ? editable : null
+  }
+  return editable instanceof HTMLElement && editable.isContentEditable ? editable : null
+}
+
+function selectEditableContent(
+  element: HTMLInputElement | HTMLTextAreaElement | HTMLElement
+): void {
+  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+    element.select()
+    return
+  }
+
+  const selection = window.getSelection()
+  const range = document.createRange()
+  range.selectNodeContents(element)
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+}
+
+function getNoticeTone(message: string): StatusToastInput['tone'] {
+  const errorPattern =
+    /\b(failed|could not|unexpected|error|select|open a page|create a collection|already captured|already in)\b/i
+  return errorPattern.test(message) ? 'error' : 'success'
+}
+
+function getErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return 'Æther hit an unexpected error.'
+
+  return error.message
+    .replace(/^Error invoking remote method '[^']+':\s*/i, '')
+    .replace(/^Error:\s*/i, '')
+}
 
 function App(): React.JSX.Element {
   const [apps, setApps] = useState<AppSummary[]>([])
@@ -53,11 +114,12 @@ function App(): React.JSX.Element {
   const [askCollectionId, setAskCollectionId] = useState('')
   const [askIncludeCurrentPage, setAskIncludeCurrentPage] = useState(true)
   const [askCurrentPageOnly, setAskCurrentPageOnly] = useState(false)
+  const [askPanelOpen, setAskPanelOpen] = useState(true)
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [chatResult, setChatResult] = useState<ChatResult | null>(null)
   const [lastCapture, setLastCapture] = useState<CaptureResult | null>(null)
   const [panelCollapsed, setPanelCollapsed] = useState(true)
-  const [busy, setBusy] = useState<string | null>('Starting Æther')
+  const [busy, setBusy] = useState<string | null>('')
   const [notice, setNotice] = useState<string | null>(null)
   const [collectionDialog, setCollectionDialog] = useState<CollectionDialogState>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -170,7 +232,6 @@ function App(): React.JSX.Element {
 
   const createTab = useCallback(
     async (input?: { url?: string }): Promise<void> => {
-      setBusy('Opening tab')
       setNotice(null)
 
       try {
@@ -180,9 +241,7 @@ function App(): React.JSX.Element {
         setWorkspaceMode('dashboard')
         await refreshShell()
       } catch (error) {
-        setNotice(error instanceof Error ? error.message : 'Æther hit an unexpected error.')
-      } finally {
-        setBusy(null)
+        setNotice(getErrorMessage(error))
       }
     },
     [refreshShell]
@@ -210,6 +269,16 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const handler = (event: KeyboardEvent): void => {
       const key = event.key.toLowerCase()
+      const editableTarget = getEditableShortcutTarget(event.target)
+      if (editableTarget) {
+        if ((event.metaKey || event.ctrlKey) && key === 'a') {
+          event.preventDefault()
+          event.stopPropagation()
+          selectEditableContent(editableTarget)
+        }
+        return
+      }
+
       if ((event.metaKey || event.ctrlKey) && key === 'l') {
         event.preventDefault()
         if (!dashboardOpen) addressInputRef.current?.select()
@@ -223,6 +292,18 @@ function App(): React.JSX.Element {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [createTab, dashboardOpen])
+
+  useEffect(() => {
+    const message = busy ?? notice
+    if (!message || /^starting\s+æ?ther$/i.test(message)) return
+
+    const toast: StatusToastInput = {
+      message,
+      tone: busy ? 'info' : getNoticeTone(message),
+      durationMs: busy ? 2600 : undefined
+    }
+    window.aether.layout.showStatusToast(toast).catch(() => undefined)
+  }, [busy, notice])
 
   async function openDashboard(): Promise<void> {
     await window.aether.dashboard.open()
@@ -254,10 +335,12 @@ function App(): React.JSX.Element {
   }
 
   async function closeTab(tabId: string): Promise<void> {
-    await runTask('Closing tab', async () => {
+    try {
       await window.aether.tabs.close(tabId)
       await refreshShell()
-    })
+    } catch (error) {
+      setNotice(getErrorMessage(error))
+    }
   }
 
   async function navigate(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -308,7 +391,7 @@ function App(): React.JSX.Element {
                 description: input.description,
                 icon: input.icon
               })
-        setCollectionDialog(null)
+        await closeCollectionDialog()
         await refreshCollections(collection.id)
         setNotice(`${collection.name} is ready.`)
       }
@@ -320,7 +403,7 @@ function App(): React.JSX.Element {
 
     await runTask('Deleting collection', async () => {
       await window.aether.collections.delete(collectionDialog.collection.id)
-      setCollectionDialog(null)
+      await closeCollectionDialog()
       setSearchResults([])
       setChatResult(null)
       await refreshCollections()
@@ -338,7 +421,7 @@ function App(): React.JSX.Element {
 
   async function capturePage(): Promise<void> {
     if (!selectedCollection) {
-      setCollectionDialog({ mode: 'create' })
+      await openCollectionDialog({ mode: 'create' })
       setNotice('Create a collection before capturing.')
       return
     }
@@ -433,6 +516,7 @@ function App(): React.JSX.Element {
       })
 
       setChatResult(result)
+      setAskPanelOpen(false)
       setNotice(`Answered with ${result.model}.`)
     })
   }
@@ -498,7 +582,7 @@ function App(): React.JSX.Element {
       setNotice(`Mapped ${result.items.length} fragments with ${result.model}.`)
       return result
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Crystallization failed.'
+      const message = error instanceof Error ? getErrorMessage(error) : 'Crystallization failed.'
       setNotice(message)
       throw error
     } finally {
@@ -517,7 +601,7 @@ function App(): React.JSX.Element {
       setNotice(`Saved ${saved.title}.`)
       return saved
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Saving iceberg failed.'
+      const message = error instanceof Error ? getErrorMessage(error) : 'Saving iceberg failed.'
       setNotice(message)
       throw error
     } finally {
@@ -538,7 +622,8 @@ function App(): React.JSX.Element {
       setNotice(`Opened ${saved.title}.`)
       return saved
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not open saved iceberg.'
+      const message =
+        error instanceof Error ? getErrorMessage(error) : 'Could not open saved iceberg.'
       setNotice(message)
       throw error
     } finally {
@@ -558,7 +643,8 @@ function App(): React.JSX.Element {
       await refreshSavedIcebergs()
       setNotice('Saved iceberg deleted.')
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not delete saved iceberg.'
+      const message =
+        error instanceof Error ? getErrorMessage(error) : 'Could not delete saved iceberg.'
       setNotice(message)
       throw error
     } finally {
@@ -593,6 +679,16 @@ function App(): React.JSX.Element {
   async function reorderSavedIcebergs(ids: string[]): Promise<void> {
     const nextIcebergs = await window.aether.crystallizer.reorderSaved(ids)
     setSavedIcebergs(nextIcebergs)
+  }
+
+  async function openCollectionDialog(state: NonNullable<CollectionDialogState>): Promise<void> {
+    setCollectionDialog(state)
+    await window.aether.layout.setModalOverlayOpen(true)
+  }
+
+  async function closeCollectionDialog(): Promise<void> {
+    setCollectionDialog(null)
+    await window.aether.layout.setModalOverlayOpen(false)
   }
 
   async function openSettings(): Promise<void> {
@@ -639,7 +735,7 @@ function App(): React.JSX.Element {
     try {
       await task()
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Æther hit an unexpected error.')
+      setNotice(getErrorMessage(error))
     } finally {
       setBusy(null)
     }
@@ -739,7 +835,9 @@ function App(): React.JSX.Element {
           onCloseTab={closeTab}
           onCreateTab={() => createTab()}
           onCapture={capturePage}
-          onCreateCollection={() => setCollectionDialog({ mode: 'create' })}
+          onCreateCollection={() => {
+            void openCollectionDialog({ mode: 'create' })
+          }}
           onForward={goForward}
           onNavigate={navigate}
           onQuickAction={handleQuickAction}
@@ -772,7 +870,9 @@ function App(): React.JSX.Element {
             openCapture={openCapture}
             openSavedIceberg={openSavedIceberg}
             openShortcut={openShortcut}
-            openCollectionDialog={setCollectionDialog}
+            openCollectionDialog={(state) => {
+              void openCollectionDialog(state)
+            }}
             reorderCollections={reorderCollections}
             reorderSavedIcebergs={reorderSavedIcebergs}
             reorderShortcuts={reorderShortcuts}
@@ -793,6 +893,7 @@ function App(): React.JSX.Element {
         askCollectionId={askCollectionId}
         askCurrentPageOnly={askCurrentPageOnly}
         askIncludeCurrentPage={askIncludeCurrentPage}
+        askPanelOpen={askPanelOpen}
         canUseCurrentPage={canUseCurrentPage}
         collections={collections}
         dashboardOpen={dashboardOpen}
@@ -805,6 +906,7 @@ function App(): React.JSX.Element {
         selectedCollection={selectedCollection}
         status={status}
         onAsk={ask}
+        onAskPanelOpenChange={setAskPanelOpen}
         onSearch={search}
         onSearchQueryChange={setSearchQuery}
         onTogglePanel={togglePanel}
@@ -820,7 +922,9 @@ function App(): React.JSX.Element {
         <CollectionDialog
           busy={busy}
           state={collectionDialog}
-          onClose={() => setCollectionDialog(null)}
+          onClose={() => {
+            void closeCollectionDialog()
+          }}
           onDelete={confirmDeleteCollection}
           onSave={saveCollectionDialog}
         />
