@@ -30,6 +30,8 @@ const EMBEDDING_MODEL: &str = "nomic-embed-text";
 const PREFERRED_CHAT_MODELS: [&str; 3] = ["llama3.1:8b", "gemma3:latest", "gemma3"];
 const MIN_CAPTURE_TEXT_LENGTH: usize = 120;
 const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
+const DESKTOP_BROWSER_USER_AGENT: &str =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
 const ICEBERG_LEVEL_LANES: [f64; 5] = [13.0, 87.0, 28.0, 72.0, 42.0];
 
 type Cmd<T> = Result<T, String>;
@@ -132,6 +134,10 @@ struct HubShortcutSummary {
     url: String,
     host: String,
     created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    favicon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    theme_color: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -285,9 +291,19 @@ struct CreateTabInput {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CreateShortcutInput {
     title: String,
     url: String,
+    favicon: Option<String>,
+    theme_color: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageMetadataSnapshot {
+    theme_color: Option<String>,
+    favicon: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -727,13 +743,14 @@ fn create_native_webview(
     let url = Url::parse(&tab.url).map_err(|error| error.to_string())?;
 
     let builder = WebviewBuilder::new(label, WebviewUrl::External(url))
+        .user_agent(DESKTOP_BROWSER_USER_AGENT)
         .on_navigation(move |url| {
             let state = app_for_navigation.state::<Backend>();
             update_tab_navigation_state(&state, &tab_id_for_navigation, url.as_str(), true);
             let _ = emit_state(&app_for_navigation, &state);
             true
         })
-        .on_page_load(move |_webview, payload| {
+        .on_page_load(move |webview, payload| {
             let state = app_for_load.state::<Backend>();
             let is_loading = payload.event() == PageLoadEvent::Started;
             update_tab_navigation_state(
@@ -743,6 +760,13 @@ fn create_native_webview(
                 is_loading,
             );
             let _ = emit_state(&app_for_load, &state);
+            if payload.event() == PageLoadEvent::Finished {
+                read_native_webview_metadata(
+                    &webview,
+                    app_for_load.clone(),
+                    tab_id_for_load.clone(),
+                );
+            }
         })
         .on_document_title_changed(move |_webview, title| {
             let state = app_for_title.state::<Backend>();
@@ -906,13 +930,64 @@ fn native_webview_label(tab_id: &str) -> String {
     format!("aether-browser-tab-{tab_id}")
 }
 
+#[cfg(desktop)]
+fn read_native_webview_metadata(webview: &Webview, app: AppHandle, tab_id: String) {
+    let script = r#"(() => {
+      const theme = document.querySelector('meta[name="theme-color"], meta[name="msapplication-TileColor"]');
+      const icons = Array.from(document.querySelectorAll('link[rel]'))
+        .map((link) => {
+          const rel = link.getAttribute('rel') || '';
+          if (!/\b(icon|apple-touch-icon|shortcut icon)\b/i.test(rel)) return null;
+          const href = link.href || '';
+          const sizes = link.getAttribute('sizes') || '';
+          const size = sizes
+            .split(/\s+/)
+            .map((item) => Number.parseInt(item, 10) || 0)
+            .reduce((largest, value) => Math.max(largest, value), 0);
+          return { href, rel, size };
+        })
+        .filter(Boolean)
+        .sort((left, right) => {
+          if (right.size !== left.size) return right.size - left.size;
+          return Number(/apple-touch-icon/i.test(right.rel)) - Number(/apple-touch-icon/i.test(left.rel));
+        });
+      return {
+        themeColor: theme?.getAttribute('content') || '',
+        favicon: icons[0]?.href || ''
+      };
+    })()"#;
+
+    let _ = webview.eval_with_callback(script, move |payload| {
+        let metadata = match parse_json_payload::<PageMetadataSnapshot>(&payload) {
+            Ok(metadata) => metadata,
+            Err(_) => return,
+        };
+        let favicon = metadata
+            .favicon
+            .map(|favicon| favicon.trim().to_string())
+            .filter(|favicon| !favicon.is_empty());
+        let theme_color = metadata
+            .theme_color
+            .as_deref()
+            .and_then(normalize_theme_color);
+        let state = app.state::<Backend>();
+        if update_tab_metadata(&state, &tab_id, theme_color, favicon) {
+            let _ = emit_state(&app, &state);
+        }
+    });
+}
+
 fn update_tab_navigation_state(state: &State<Backend>, tab_id: &str, url: &str, is_loading: bool) {
     if let Ok(mut tabs) = lock_tabs(state) {
         if let Some(tab) = tabs.tabs.iter_mut().find(|tab| tab.id == tab_id) {
             let url = url.to_string();
+            let url_changed = tab.url != url;
             tab.url = url.clone();
             tab.is_loading = is_loading;
             tab.favicon = favicon_for_url(&url);
+            if url_changed {
+                tab.theme_color = None;
+            }
             if tab.title == "New tab" || tab.title.is_empty() || tab.title == get_tab_host(&tab.url)
             {
                 tab.title = title_from_url(&url);
@@ -924,6 +999,26 @@ fn update_tab_navigation_state(state: &State<Backend>, tab_id: &str, url: &str, 
             }
         }
     }
+}
+
+fn update_tab_metadata(
+    state: &State<Backend>,
+    tab_id: &str,
+    theme_color: Option<String>,
+    favicon: Option<String>,
+) -> bool {
+    if let Ok(mut tabs) = lock_tabs(state) {
+        if let Some(tab) = tabs.tabs.iter_mut().find(|tab| tab.id == tab_id) {
+            let favicon = favicon.or_else(|| tab.favicon.clone());
+            if tab.theme_color == theme_color && tab.favicon == favicon {
+                return false;
+            }
+            tab.theme_color = theme_color;
+            tab.favicon = favicon;
+            return true;
+        }
+    }
+    false
 }
 
 fn update_tab_title(state: &State<Backend>, tab_id: &str, title: &str) {
@@ -1234,8 +1329,32 @@ async fn aether_hub_create(
     }
     let url = normalize_url(&input.url, "google");
     let mut data = load_library(&state.paths.library_path).await?;
-    if let Some(existing) = data.shortcuts.iter().find(|shortcut| shortcut.url == url) {
-        return Ok(existing.clone());
+    let favicon = input
+        .favicon
+        .as_deref()
+        .map(str::trim)
+        .filter(|favicon| !favicon.is_empty())
+        .map(str::to_string);
+    let theme_color = input.theme_color.as_deref().and_then(normalize_theme_color);
+    if let Some(existing) = data
+        .shortcuts
+        .iter_mut()
+        .find(|shortcut| shortcut.url == url)
+    {
+        let mut changed = false;
+        if existing.favicon.is_none() && favicon.is_some() {
+            existing.favicon = favicon;
+            changed = true;
+        }
+        if existing.theme_color.is_none() && theme_color.is_some() {
+            existing.theme_color = theme_color;
+            changed = true;
+        }
+        let shortcut = existing.clone();
+        if changed {
+            save_json(&state.paths.library_path, &data).await?;
+        }
+        return Ok(shortcut);
     }
     let shortcut = HubShortcutSummary {
         id: uuid(),
@@ -1243,6 +1362,8 @@ async fn aether_hub_create(
         host: get_tab_host(&url),
         url,
         created_at: now(),
+        favicon,
+        theme_color,
     };
     data.shortcuts.insert(0, shortcut.clone());
     save_json(&state.paths.library_path, &data).await?;
@@ -2152,12 +2273,16 @@ async fn extract_readable_page_from_webview(
 }
 
 fn parse_page_snapshot(payload: &str) -> Cmd<BrowserPageSnapshot> {
+    parse_json_payload::<BrowserPageSnapshot>(payload)
+}
+
+fn parse_json_payload<T: DeserializeOwned>(payload: &str) -> Cmd<T> {
     let value =
         serde_json::from_str::<serde_json::Value>(payload).map_err(|error| error.to_string())?;
     if let Some(inner) = value.as_str() {
-        serde_json::from_str::<BrowserPageSnapshot>(inner).map_err(|error| error.to_string())
+        serde_json::from_str::<T>(inner).map_err(|error| error.to_string())
     } else {
-        serde_json::from_value::<BrowserPageSnapshot>(value).map_err(|error| error.to_string())
+        serde_json::from_value::<T>(value).map_err(|error| error.to_string())
     }
 }
 
@@ -2266,41 +2391,43 @@ fn select_body_text(document: &Html) -> String {
 fn pick_embedding_model(models: &[String], settings: &OllamaSettings) -> String {
     if let Some(model) = settings
         .embedding_model
-        .as_ref()
-        .filter(|model| models.contains(model))
+        .as_deref()
+        .and_then(|model| pick_model(models, &[model]))
     {
-        return model.clone();
+        return model;
     }
-    if models.iter().any(|model| model == EMBEDDING_MODEL) {
-        EMBEDDING_MODEL.to_string()
-    } else {
-        EMBEDDING_MODEL.to_string()
-    }
+    pick_model(models, &[EMBEDDING_MODEL]).unwrap_or_else(|| EMBEDDING_MODEL.to_string())
 }
 
 fn pick_chat_model(models: &[String], settings: &OllamaSettings) -> Option<String> {
     if let Some(model) = settings
         .chat_model
-        .as_ref()
-        .filter(|model| models.contains(model))
+        .as_deref()
+        .and_then(|model| pick_model(models, &[model]))
     {
-        return Some(model.clone());
+        return Some(model);
     }
-    for candidate in PREFERRED_CHAT_MODELS {
-        if let Some(model) = models.iter().find(|model| model.as_str() == candidate) {
+    pick_model(models, &PREFERRED_CHAT_MODELS).or_else(|| models.first().cloned())
+}
+
+fn pick_model(models: &[String], preferred: &[&str]) -> Option<String> {
+    for candidate in preferred {
+        if let Some(model) = models.iter().find(|model| model.as_str() == *candidate) {
             return Some(model.clone());
         }
+
         let latest = format!("{candidate}:latest");
         if let Some(model) = models.iter().find(|model| **model == latest) {
             return Some(model.clone());
         }
+
         if let Some(stripped) = candidate.strip_suffix(":latest") {
             if let Some(model) = models.iter().find(|model| model.as_str() == stripped) {
                 return Some(model.clone());
             }
         }
     }
-    models.first().cloned()
+    None
 }
 
 fn build_iceberg_prompt(keyword: &str) -> String {
@@ -2622,6 +2749,32 @@ fn normalize_iceberg_icon(value: Option<String>) -> Option<String> {
     value
         .map(|icon| icon.trim().to_lowercase())
         .filter(|icon| allowed.contains(&icon.as_str()))
+}
+
+fn normalize_theme_color(color: &str) -> Option<String> {
+    let value = color.trim().chars().take(64).collect::<String>();
+    if value.is_empty() {
+        return None;
+    }
+
+    if let Some(hex) = value.strip_prefix('#') {
+        if (3..=8).contains(&hex.len())
+            && hex.chars().all(|character| character.is_ascii_hexdigit())
+        {
+            return Some(value);
+        }
+    }
+
+    let lower = value.to_ascii_lowercase();
+    let supported_function = lower.starts_with("rgb(")
+        || lower.starts_with("rgba(")
+        || lower.starts_with("hsl(")
+        || lower.starts_with("hsla(");
+    if supported_function && value.ends_with(')') {
+        return Some(value);
+    }
+
+    None
 }
 
 fn title_from_url(url: &str) -> String {

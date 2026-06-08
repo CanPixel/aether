@@ -146,8 +146,6 @@ function App(): React.JSX.Element {
     [collections]
   )
   const canUseCurrentPage = Boolean(activeTab?.url)
-  const ollamaBlocked = status ? !status.ollamaReachable : false
-  const hasEmbeddingModel = status ? status.availableModels.includes(status.embeddingModel) : true
   const chatBlocked = status ? !status.ollamaReachable || !status.chatModel : false
   const quickActions = useMemo<QuickAction[]>(() => getQuickActions(activeTab), [activeTab])
   const activeTabUrl = activeTab?.url ?? ''
@@ -158,11 +156,17 @@ function App(): React.JSX.Element {
         ? 'ice://crystallizer'
         : 'æther://dashboard'
       : activeTabUrl
-  const activeTabSavedToHub = useMemo(() => {
-    if (!activeTabUrl) return false
+  const activeTabHubShortcut = useMemo(() => {
+    if (!activeTabUrl) return undefined
     const activeUrl = normalizeComparableUrl(activeTabUrl)
-    return shortcuts.some((shortcut) => normalizeComparableUrl(shortcut.url) === activeUrl)
+    return shortcuts.find((shortcut) => normalizeComparableUrl(shortcut.url) === activeUrl)
   }, [activeTabUrl, shortcuts])
+  const activeTabSavedToHub = Boolean(activeTabHubShortcut)
+  const activeTabHubNeedsMetadata = Boolean(
+    activeTabHubShortcut &&
+    ((!activeTabHubShortcut.themeColor && activeTab?.themeColor) ||
+      (!activeTabHubShortcut.favicon && activeTab?.favicon))
+  )
 
   const refreshCollections = useCallback(
     async (preferredCollectionId?: string): Promise<void> => {
@@ -543,18 +547,21 @@ function App(): React.JSX.Element {
       setNotice('Open a page before saving it to the Hub.')
       return
     }
-    if (activeTabSavedToHub) {
+    if (activeTabSavedToHub && !activeTabHubNeedsMetadata) {
       setNotice('This page is already saved as a portal.')
       return
     }
 
+    const updatingPortal = activeTabSavedToHub
     await runTask('Saving to Hub', async () => {
       await window.aether.hub.create({
         title: activeTab.title || activeTab.host || activeTab.url,
-        url: activeTab.url
+        url: activeTab.url,
+        favicon: activeTab.favicon,
+        themeColor: activeTab.themeColor
       })
       await refreshShortcuts()
-      setNotice('Saved to Hub.')
+      setNotice(updatingPortal ? 'Updated portal appearance.' : 'Saved to Hub.')
     })
   }
 
@@ -653,7 +660,7 @@ function App(): React.JSX.Element {
   }
 
   async function openCrystallizedTopic(keyword: string, item: IcebergItem): Promise<void> {
-    const url = `https://www.google.com/search?q=${encodeURIComponent(`${keyword} ${item.name}`)}`
+    const url = `https://www.google.com/search?q=${encodeURIComponent(`${item.name}`)}`
     await createTab({ url })
     setWorkspaceMode('dashboard')
     setDashboardOpen(false)
@@ -809,17 +816,21 @@ function App(): React.JSX.Element {
           addressDraft={addressValue}
           addressInputRef={addressInputRef}
           busy={busy}
-          capturesBlocked={
-            dashboardOpen || !selectedCollection || ollamaBlocked || !hasEmbeddingModel
-          }
+          capturesBlocked={dashboardOpen}
           collections={collections}
           dashboardOpen={dashboardOpen}
           dashboardSubtitle={crystallizerOpen ? 'Info Crystallizer Engine' : 'Knowledge Hub'}
           dashboardTitle={crystallizerOpen ? 'iCE' : 'ÆTHER'}
           lastCapture={lastCapture}
-          portalSaveBlocked={dashboardOpen || !activeTab?.url || activeTabSavedToHub}
+          portalSaveBlocked={
+            dashboardOpen || !activeTab?.url || (activeTabSavedToHub && !activeTabHubNeedsMetadata)
+          }
           portalSaveTitle={
-            activeTabSavedToHub ? 'Already saved as a portal' : 'Save current page as portal'
+            activeTabSavedToHub
+              ? activeTabHubNeedsMetadata
+                ? 'Refresh portal appearance'
+                : 'Already saved as a portal'
+              : 'Save current page as portal'
           }
           quickActions={dashboardOpen ? [] : quickActions}
           selectedCollection={selectedCollection}
