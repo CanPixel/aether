@@ -1,6 +1,8 @@
 node_modules
 dist
 out
+src-tauri/gen
+src-tauri/target
 .DS_Store
 .eslintcache
 *.log*
