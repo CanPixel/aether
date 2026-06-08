@@ -93,7 +93,7 @@ export function IntelligencePanel({
             fontWeight: '800',
             color: 'var(--text-secondary)',
             letterSpacing: '0.08em',
-            marginTop: '6px'
+            marginTop: '-3px'
           }}
           className="custom-font"
         >

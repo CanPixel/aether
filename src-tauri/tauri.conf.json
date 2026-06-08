@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Æther",
+  "version": "1.0.0",
+  "identifier": "com.canur.aether",
+  "build": {
+    "beforeDevCommand": "bun run dev:vite",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "bun run build:vite",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Æther",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 1080,
+        "minHeight": 680
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "icon": ["../resources/icon.png", "../build/icon.icns"]
+  }
+}

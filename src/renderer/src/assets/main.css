@@ -2,9 +2,9 @@
 
 :root {
   --rail-width: 76px;
-  --titlebar-height: 34px;
-  --nav-height: 108px;
-  --top-bar-height: 138px;
+  --titlebar-height: 24px;
+  --nav-height: 116px;
+  --top-bar-height: 150px;
   --panel-width: 404px;
   --panel-collapsed-width: 58px;
   --ink: #17243a;
@@ -2113,9 +2113,9 @@ button {
   top: var(--titlebar-height);
   right: 0;
   left: 0;
-  z-index: 4;
+  z-index: 12;
   display: grid;
-  grid-template-rows: 42px 32px 34px;
+  grid-template-rows: 42px 32px 42px;
   height: var(--nav-height);
   border-bottom: 1px solid rgba(143, 165, 196, 0.22);
   background: rgba(255, 255, 255, 0.58);
@@ -2308,16 +2308,25 @@ button {
 
 .quick-action-row {
   position: relative;
+  z-index: 13;
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 38px;
   min-width: 0;
   border-top: 1px solid rgba(130, 158, 196, 0.12);
   padding: 4px 14px 8px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   background:
-    linear-gradient(180deg, rgba(248, 252, 255, 0.34), rgba(255, 255, 255, 0.18)),
-    rgba(255, 255, 255, 0.08);
+    linear-gradient(180deg, rgba(248, 252, 255, 0.92), rgba(255, 255, 255, 0.78)),
+    rgba(255, 255, 255, 0.86);
+  box-shadow: 0 10px 24px rgba(71, 104, 146, 0.08);
+  scrollbar-width: none;
+}
+
+.quick-action-row::-webkit-scrollbar {
+  display: none;
 }
 
 .browser-capture-dock {
