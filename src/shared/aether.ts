@@ -31,6 +31,8 @@ export interface HubShortcutSummary {
   url: string
   host: string
   createdAt: string
+  favicon?: string
+  themeColor?: string
 }
 
 export type SearchEngineId = 'google' | 'bing' | 'yahoo' | 'ecosia' | 'duckduckgo'
@@ -187,7 +189,12 @@ export interface AetherApi {
   }
   hub: {
     list(): Promise<HubShortcutSummary[]>
-    create(input: { title: string; url: string }): Promise<HubShortcutSummary>
+    create(input: {
+      title: string
+      url: string
+      favicon?: string
+      themeColor?: string
+    }): Promise<HubShortcutSummary>
     reorder(ids: string[]): Promise<HubShortcutSummary[]>
     delete(id: string): Promise<void>
   }
