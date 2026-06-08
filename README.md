@@ -97,6 +97,115 @@ Build compiled app bundles:
 bun run build
 ```
 
+## Android Build
+
+Æther now has Tauri Android scripts, but the local Android SDK/NDK must be installed before Tauri can initialize or build the Android project.
+
+Install Android Studio, then install these SDK pieces through Android Studio's SDK Manager:
+
+- Android SDK Platform
+- Android SDK Build-Tools
+- Android SDK Platform-Tools
+- Android NDK
+- Android Emulator, if you want emulator testing
+
+Set the Android environment variables in your shell profile:
+
+```bash
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+export NDK_HOME="$ANDROID_HOME/ndk/$(ls "$ANDROID_HOME/ndk" | sort -V | tail -n 1)"
+export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+```
+
+Install Rust Android targets:
+
+```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+```
+
+Accept the Android SDK licenses after installing or updating SDK packages:
+
+```bash
+yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
+```
+
+Initialize the Android project once:
+
+```bash
+bun run android:init
+```
+
+Run on a connected device or emulator:
+
+```bash
+bun run android:dev
+```
+
+If this reports `No available Android Emulator detected`, start an emulator from Android Studio's Device Manager or connect a physical device with USB debugging enabled, then confirm it is visible:
+
+```bash
+adb devices
+```
+
+Build Android release artifacts:
+
+```bash
+bun run android:build
+```
+
+Build an APK:
+
+```bash
+bun run android:build:apk
+```
+
+Build an AAB for Play Store distribution:
+
+```bash
+bun run android:build:aab
+```
+
+Android outputs are generated under:
+
+```text
+src-tauri/gen/android/app/build/outputs/
+```
+
+Current mobile limitation: the React shell can be packaged for Android, but Æther's current live browser tab surface uses Tauri desktop child webviews. That desktop-only browser surface must be replaced with an Android-compatible browser path before the Android app behaves like the macOS Tauri app.
+
+## Ubuntu Arm64 Build
+
+Use the Docker-based Linux export script to build an Ubuntu arm64 package from macOS or another non-Linux host:
+
+```bash
+bun run linux:arm64:build
+```
+
+This runs an `ubuntu:24.04` arm64 container, installs the Linux Tauri build dependencies, installs Bun and Rust inside Docker volumes, and builds a `.deb` package for `aarch64-unknown-linux-gnu`.
+
+The default export is a Debian package for Ubuntu:
+
+```bash
+bun run linux:arm64:deb
+```
+
+Artifacts are generated under:
+
+```text
+src-tauri/target-linux-arm64/aarch64-unknown-linux-gnu/release/bundle/
+```
+
+The script keeps Linux-specific dependencies out of the host project by mounting Docker volumes for `/work/node_modules`, `/root/.cargo`, `/root/.rustup`, and `/root/.bun`.
+
+Optional overrides:
+
+```bash
+LINUX_ARM64_IMAGE=ubuntu:24.04 bun run linux:arm64:build
+LINUX_BUNDLES=deb,appimage bun run linux:arm64:build
+LINUX_TARGET=aarch64-unknown-linux-gnu bun run linux:arm64:build
+```
+
 Create a local unpacked desktop app:
 
 ```bash
@@ -123,6 +232,8 @@ open dist/mac-arm64/Æther.app
 | `bun run build:mac`    | Build bundles and create macOS artifacts in `dist/`. This script currently skips `bun run typecheck`, so run checks manually before release. |
 | `bun run build:win`    | Build bundles and create Windows artifacts in `dist/`.                                                                                       |
 | `bun run build:linux`  | Build bundles and create Linux artifacts in `dist/`.                                                                                         |
+| `bun run linux:arm64:build` | Build an Ubuntu arm64 Tauri package in Docker.                                                                                          |
+| `bun run linux:arm64:deb` | Build an Ubuntu arm64 `.deb` package in Docker.                                                                                             |
 
 ## Build Outputs
 
