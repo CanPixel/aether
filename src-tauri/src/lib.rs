@@ -980,10 +980,15 @@ fn read_native_webview_metadata(webview: &Webview, app: AppHandle, tab_id: Strin
 fn update_tab_navigation_state(state: &State<Backend>, tab_id: &str, url: &str, is_loading: bool) {
     if let Ok(mut tabs) = lock_tabs(state) {
         if let Some(tab) = tabs.tabs.iter_mut().find(|tab| tab.id == tab_id) {
+            tab.is_loading = is_loading;
+            let url = url.trim();
+            if !should_accept_webview_url(&tab.url, url) {
+                return;
+            }
+
             let url = url.to_string();
             let url_changed = tab.url != url;
             tab.url = url.clone();
-            tab.is_loading = is_loading;
             tab.favicon = favicon_for_url(&url);
             if url_changed {
                 tab.theme_color = None;
@@ -999,6 +1004,23 @@ fn update_tab_navigation_state(state: &State<Backend>, tab_id: &str, url: &str, 
             }
         }
     }
+}
+
+fn should_accept_webview_url(current_url: &str, next_url: &str) -> bool {
+    if next_url.is_empty() {
+        return false;
+    }
+    if is_transient_webview_url(next_url) && !is_transient_webview_url(current_url) {
+        return false;
+    }
+    true
+}
+
+fn is_transient_webview_url(url: &str) -> bool {
+    let normalized = url.trim().to_ascii_lowercase();
+    normalized == "about:blank"
+        || normalized.starts_with("about:blank#")
+        || normalized == "about:srcdoc"
 }
 
 fn update_tab_metadata(
