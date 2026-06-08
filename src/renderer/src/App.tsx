@@ -146,7 +146,7 @@ function App(): React.JSX.Element {
     [collections]
   )
   const canUseCurrentPage = Boolean(activeTab?.url)
-  const chatBlocked = status ? !status.ollamaReachable || !status.chatModel : false
+  const chatBlocked = status ? !status.runtimeReady || !status.chatModel : false
   const quickActions = useMemo<QuickAction[]>(() => getQuickActions(activeTab), [activeTab])
   const activeTabUrl = activeTab?.url ?? ''
   const addressValue = addressFocused
@@ -718,14 +718,14 @@ function App(): React.JSX.Element {
     })
   }
 
-  async function updateOllamaModels(input: {
+  async function updateLocalModels(input: {
     embeddingModel?: string
     chatModel?: string
   }): Promise<void> {
-    await runTask('Updating Ollama models', async () => {
+    await runTask('Updating local models', async () => {
       const nextStatus = await window.aether.system.updateModels(input)
       setStatus(nextStatus)
-      setNotice('Ollama model selection updated.')
+      setNotice('Local model selection updated.')
     })
   }
 
@@ -925,7 +925,7 @@ function App(): React.JSX.Element {
         onAskCollectionChange={setAskCollectionId}
         onAskCurrentPageOnlyChange={setAskCurrentPageOnly}
         onAskIncludeCurrentPageChange={setAskIncludeCurrentPage}
-        onUpdateModels={updateOllamaModels}
+        onUpdateModels={updateLocalModels}
         onOpenCitation={openCitation}
       />
 

@@ -140,10 +140,12 @@ export interface SaveIcebergInput {
 }
 
 export interface SystemStatus {
-  ollamaReachable: boolean
-  embeddingModel: string
+  runtimeReady: boolean
+  runtimeName: string
+  embeddingModel: string | null
   chatModel: string | null
   availableModels: string[]
+  modelDir: string
   dbPath: string
   libraryPath: string
   collections: CollectionSummary[]

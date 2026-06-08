@@ -1,11 +1,20 @@
 use chrono::Utc;
+use encoding_rs::UTF_8;
+use llama_cpp_2::{
+    context::params::{LlamaContextParams, LlamaPoolingType},
+    llama_backend::LlamaBackend,
+    llama_batch::LlamaBatch,
+    model::{params::LlamaModelParams, AddBos, LlamaModel},
+    sampling::LlamaSampler,
+};
 use reqwest::Client;
 use scraper::{Html, Selector};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::json;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
+    env, fs,
+    num::NonZeroU32,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
     time::Duration,
@@ -19,6 +28,7 @@ use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Position, Rect, Size, State,
     WindowEvent,
 };
+use tokio::task;
 use url::Url;
 
 const CHUNKS_TABLE: &str = "chunks";
@@ -26,10 +36,26 @@ const SIDEBAR_WIDTH: f64 = 76.0;
 const BROWSER_VIEW_TOP: f64 = 166.0;
 const PANEL_WIDTH: f64 = 404.0;
 const PANEL_COLLAPSED_WIDTH: f64 = 58.0;
-const EMBEDDING_MODEL: &str = "nomic-embed-text";
-const PREFERRED_CHAT_MODELS: [&str; 3] = ["llama3.1:8b", "gemma3:latest", "gemma3"];
+const LOCAL_RUNTIME_NAME: &str = "llama.cpp";
+const AETHER_MODEL_DIR_ENV: &str = "AETHER_MODEL_DIR";
+const AETHER_CHAT_MODEL_ENV: &str = "AETHER_CHAT_MODEL";
+const AETHER_EMBEDDING_MODEL_ENV: &str = "AETHER_EMBEDDING_MODEL";
+const AETHER_LLM_CONTEXT_ENV: &str = "AETHER_LLM_CTX";
+const DEFAULT_CHAT_CONTEXT_TOKENS: u32 = 8192;
+const DEFAULT_EMBEDDING_CONTEXT_TOKENS: u32 = 2048;
+const DEFAULT_GENERATION_TOKENS: usize = 900;
+const DEFAULT_ICEBERG_GENERATION_TOKENS: usize = 2800;
+const PREFERRED_EMBEDDING_MODEL_HINTS: [&str; 5] = [
+    "embeddinggemma",
+    "embedding-gemma",
+    "nomic-embed-text",
+    "embedding",
+    "embed",
+];
+const PREFERRED_CHAT_MODEL_HINTS: [&str; 8] = [
+    "gemma4", "gemma-4", "gemma3", "gemma-3", "gemma-2b", "2b", "gemma", "qwen",
+];
 const MIN_CAPTURE_TEXT_LENGTH: usize = 120;
-const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
 const DESKTOP_BROWSER_USER_AGENT: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
 const ICEBERG_LEVEL_LANES: [f64; 5] = [13.0, 87.0, 28.0, 72.0, 42.0];
@@ -42,12 +68,43 @@ struct Backend {
     #[cfg(desktop)]
     webviews: Mutex<NativeBrowserViews>,
     client: Client,
+    native_runtime: Arc<Mutex<NativeModelRuntime>>,
 }
 
 #[cfg(desktop)]
 #[derive(Default)]
 struct NativeBrowserViews {
     views: HashMap<String, Webview>,
+}
+
+#[derive(Default)]
+struct NativeModelRuntime {
+    backend: Option<LlamaBackend>,
+    chat: Option<LoadedNativeModel>,
+    embedding: Option<LoadedNativeModel>,
+}
+
+struct LoadedNativeModel {
+    path: PathBuf,
+    model: LlamaModel,
+}
+
+#[derive(Clone, Copy)]
+enum NativeModelKind {
+    Chat,
+    Embedding,
+}
+
+enum WebviewHistoryDirection {
+    Back,
+    Forward,
+}
+
+struct ModelCatalog {
+    models: Vec<PathBuf>,
+    chat_model: Option<PathBuf>,
+    embedding_model: Option<PathBuf>,
+    error: Option<String>,
 }
 
 #[derive(Clone)]
@@ -57,6 +114,7 @@ struct DataPaths {
     settings_path: PathBuf,
     icebergs_path: PathBuf,
     chunks_path: PathBuf,
+    models_path: PathBuf,
 }
 
 #[derive(Clone)]
@@ -273,10 +331,12 @@ struct SavedIceberg {
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SystemStatus {
-    ollama_reachable: bool,
-    embedding_model: String,
+    runtime_ready: bool,
+    runtime_name: String,
+    embedding_model: Option<String>,
     chat_model: Option<String>,
     available_models: Vec<String>,
+    model_dir: String,
     db_path: String,
     library_path: String,
     collections: Vec<CollectionSummary>,
@@ -416,28 +476,41 @@ impl Default for LibraryData {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct UserSettings {
+    #[serde(default = "default_settings_version")]
     version: u8,
+    #[serde(default)]
     browser: BrowserSettings,
-    ollama: OllamaSettings,
+    #[serde(default, alias = "ollama")]
+    local_model: LocalModelSettings,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
-struct OllamaSettings {
+struct LocalModelSettings {
     embedding_model: Option<String>,
     chat_model: Option<String>,
+}
+
+impl Default for BrowserSettings {
+    fn default() -> Self {
+        Self {
+            default_search_engine: "google".to_string(),
+        }
+    }
 }
 
 impl Default for UserSettings {
     fn default() -> Self {
         Self {
-            version: 1,
-            browser: BrowserSettings {
-                default_search_engine: "google".to_string(),
-            },
-            ollama: OllamaSettings::default(),
+            version: default_settings_version(),
+            browser: BrowserSettings::default(),
+            local_model: LocalModelSettings::default(),
         }
     }
+}
+
+fn default_settings_version() -> u8 {
+    1
 }
 
 #[derive(Serialize, Deserialize)]
@@ -485,38 +558,6 @@ impl Default for VectorStoreData {
     }
 }
 
-#[derive(Deserialize)]
-struct OllamaTagsResponse {
-    models: Vec<OllamaModel>,
-}
-
-#[derive(Deserialize)]
-struct OllamaModel {
-    name: String,
-}
-
-#[derive(Deserialize)]
-struct OllamaEmbedResponse {
-    embeddings: Vec<Vec<f32>>,
-}
-
-#[derive(Deserialize)]
-struct OllamaChatResponse {
-    model: String,
-    message: OllamaMessage,
-}
-
-#[derive(Deserialize)]
-struct OllamaMessage {
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct OllamaGenerateResponse {
-    model: String,
-    response: String,
-}
-
 struct CapturedPage {
     title: String,
     url: String,
@@ -543,6 +584,7 @@ impl Backend {
                 library_path: app_data_dir.join("aether-library").join("library.json"),
                 settings_path: app_data_dir.join("aether-settings").join("settings.json"),
                 icebergs_path: app_data_dir.join("aether-icebergs").join("icebergs.json"),
+                models_path: project_models_path(),
             },
             tabs: Mutex::new(TabState::new()),
             #[cfg(desktop)]
@@ -551,6 +593,7 @@ impl Backend {
                 .user_agent("Aether/1.0 Tauri")
                 .build()
                 .expect("reqwest client"),
+            native_runtime: Arc::new(Mutex::new(NativeModelRuntime::default())),
         }
     }
 }
@@ -646,6 +689,7 @@ impl ManagedTab {
         self.history_index = self.history.len().saturating_sub(1);
     }
 
+    #[cfg(not(desktop))]
     fn go_back(&mut self) {
         if self.can_go_back() {
             self.history_index -= 1;
@@ -654,12 +698,34 @@ impl ManagedTab {
         }
     }
 
+    #[cfg(not(desktop))]
     fn go_forward(&mut self) {
         if self.can_go_forward() {
             self.history_index += 1;
             self.url = self.history[self.history_index].clone();
             self.title = title_from_url(&self.url);
         }
+    }
+
+    fn commit_history_url(&mut self, url: String) {
+        if self.history.get(self.history_index) == Some(&url) {
+            return;
+        }
+
+        if let Some(existing_index) = self
+            .history
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, item)| (item == &url).then_some(index))
+        {
+            self.history_index = existing_index;
+            return;
+        }
+
+        self.history.truncate(self.history_index + 1);
+        self.history.push(url);
+        self.history_index = self.history.len().saturating_sub(1);
     }
 
     fn can_go_back(&self) -> bool {
@@ -833,6 +899,36 @@ fn navigate_native_webview(
 }
 
 #[cfg(desktop)]
+fn navigate_native_webview_history(
+    state: &State<Backend>,
+    tab_id: &str,
+    direction: WebviewHistoryDirection,
+) -> Cmd<()> {
+    let webview = state
+        .webviews
+        .lock()
+        .map_err(|_| "Æther webviews are unavailable.".to_string())?
+        .views
+        .get(tab_id)
+        .cloned()
+        .ok_or_else(|| format!("Native webview not found for tab: {tab_id}"))?;
+    let script = match direction {
+        WebviewHistoryDirection::Back => "history.back();",
+        WebviewHistoryDirection::Forward => "history.forward();",
+    };
+    webview.eval(script).map_err(|error| error.to_string())
+}
+
+#[cfg(not(desktop))]
+fn navigate_native_webview_history(
+    _state: &State<Backend>,
+    _tab_id: &str,
+    _direction: WebviewHistoryDirection,
+) -> Cmd<()> {
+    Ok(())
+}
+
+#[cfg(desktop)]
 fn close_native_webview(state: &State<Backend>, tab_id: &str) -> Cmd<()> {
     if let Some(webview) = state
         .webviews
@@ -997,10 +1093,8 @@ fn update_tab_navigation_state(state: &State<Backend>, tab_id: &str, url: &str, 
             {
                 tab.title = title_from_url(&url);
             }
-            if tab.history.get(tab.history_index) != Some(&url) {
-                tab.history.truncate(tab.history_index + 1);
-                tab.history.push(url);
-                tab.history_index = tab.history.len().saturating_sub(1);
+            if !is_loading {
+                tab.commit_history_url(url);
             }
         }
     }
@@ -1287,7 +1381,7 @@ async fn aether_tabs_navigate(
 
 #[tauri::command(rename_all = "camelCase")]
 fn aether_tabs_go_back(app: AppHandle, state: State<Backend>, tab_id: String) -> Cmd<()> {
-    let (target_tab_id, target_url) = {
+    let target_tab_id = {
         let mut tabs = lock_tabs(&state)?;
         let tab = if tab_id.is_empty() {
             tabs.active_tab_mut()
@@ -1298,16 +1392,18 @@ fn aether_tabs_go_back(app: AppHandle, state: State<Backend>, tab_id: String) ->
                 .find(|tab| tab.id == tab_id)
                 .ok_or_else(|| format!("Unknown tab: {tab_id}"))?
         };
+        let target_tab_id = tab.id.clone();
+        #[cfg(not(desktop))]
         tab.go_back();
-        (tab.id.clone(), tab.url.clone())
+        target_tab_id
     };
-    navigate_native_webview(&app, &state, &target_tab_id, &target_url)?;
+    navigate_native_webview_history(&state, &target_tab_id, WebviewHistoryDirection::Back)?;
     emit_state(&app, &state)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 fn aether_tabs_go_forward(app: AppHandle, state: State<Backend>, tab_id: String) -> Cmd<()> {
-    let (target_tab_id, target_url) = {
+    let target_tab_id = {
         let mut tabs = lock_tabs(&state)?;
         let tab = if tab_id.is_empty() {
             tabs.active_tab_mut()
@@ -1318,10 +1414,12 @@ fn aether_tabs_go_forward(app: AppHandle, state: State<Backend>, tab_id: String)
                 .find(|tab| tab.id == tab_id)
                 .ok_or_else(|| format!("Unknown tab: {tab_id}"))?
         };
+        let target_tab_id = tab.id.clone();
+        #[cfg(not(desktop))]
         tab.go_forward();
-        (tab.id.clone(), tab.url.clone())
+        target_tab_id
     };
-    navigate_native_webview(&app, &state, &target_tab_id, &target_url)?;
+    navigate_native_webview_history(&state, &target_tab_id, WebviewHistoryDirection::Forward)?;
     emit_state(&app, &state)
 }
 
@@ -1548,9 +1646,11 @@ async fn aether_capture_current_page(
     if chunks.is_empty() {
         return Err("No readable text found on the current page.".to_string());
     }
-    let embeddings = ollama_embed(&state.client, &settings, chunks.clone()).await?;
+    let embeddings = local_embed(&state, &settings, chunks.clone()).await?;
     if embeddings.len() != chunks.len() {
-        return Err("Ollama returned an unexpected number of embeddings.".to_string());
+        return Err(
+            "Local embedding model returned an unexpected number of embeddings.".to_string(),
+        );
     }
 
     let capture_id = uuid();
@@ -1764,7 +1864,7 @@ async fn aether_chat_ask(state: State<'_, Backend>, input: AskChatInput) -> Cmd<
         .into_iter()
         .take(8)
         .collect::<Vec<_>>();
-    ollama_chat(&state.client, &settings, &prompt, citations).await
+    local_chat(&state, &settings, &prompt, citations).await
 }
 
 #[tauri::command]
@@ -1777,7 +1877,7 @@ async fn aether_crystallizer_generate(
         return Err("Enter a topic before crystallizing.".to_string());
     }
     let settings = load_settings(&state.paths.settings_path).await?;
-    ollama_generate_iceberg(&state.client, &settings, &topic).await
+    local_generate_iceberg(&state, &settings, &topic).await
 }
 
 #[tauri::command]
@@ -1904,11 +2004,12 @@ async fn aether_system_update_models(
 ) -> Cmd<SystemStatus> {
     let mut settings = load_settings(&state.paths.settings_path).await?;
     if let Some(model) = input.embedding_model {
-        settings.ollama.embedding_model =
+        settings.local_model.embedding_model =
             Some(model.trim().to_string()).filter(|item| !item.is_empty());
     }
     if let Some(model) = input.chat_model {
-        settings.ollama.chat_model = Some(model.trim().to_string()).filter(|item| !item.is_empty());
+        settings.local_model.chat_model =
+            Some(model.trim().to_string()).filter(|item| !item.is_empty());
     }
     save_json(&state.paths.settings_path, &settings).await?;
     system_status(&state).await
@@ -1974,11 +2075,11 @@ async fn search_collection(
     get_collection(&state.paths.library_path, &input.collection_id).await?;
     let settings = load_settings(&state.paths.settings_path).await?;
     let vectors = load_vectors(&state.paths.chunks_path).await?;
-    let query_vector = ollama_embed(&state.client, &settings, vec![query])
+    let query_vector = local_embed(state, &settings, vec![query])
         .await?
         .into_iter()
         .next()
-        .ok_or_else(|| "Ollama returned no embedding.".to_string())?;
+        .ok_or_else(|| "Local embedding model returned no embedding.".to_string())?;
     let mut results = vectors
         .chunks
         .into_iter()
@@ -2008,28 +2109,19 @@ async fn search_collection(
 async fn system_status(state: &State<'_, Backend>) -> Cmd<SystemStatus> {
     let settings = load_settings(&state.paths.settings_path).await?;
     let library = load_library(&state.paths.library_path).await?;
-    match ollama_models(&state.client).await {
-        Ok(models) => Ok(SystemStatus {
-            ollama_reachable: true,
-            embedding_model: pick_embedding_model(&models, &settings.ollama),
-            chat_model: pick_chat_model(&models, &settings.ollama),
-            available_models: models,
-            db_path: state.paths.db_path.display().to_string(),
-            library_path: state.paths.library_path.display().to_string(),
-            collections: library.collections,
-            error: None,
-        }),
-        Err(error) => Ok(SystemStatus {
-            ollama_reachable: false,
-            embedding_model: EMBEDDING_MODEL.to_string(),
-            chat_model: None,
-            available_models: Vec::new(),
-            db_path: state.paths.db_path.display().to_string(),
-            library_path: state.paths.library_path.display().to_string(),
-            collections: library.collections,
-            error: Some(error),
-        }),
-    }
+    let catalog = model_catalog(&state.paths, &settings.local_model);
+    Ok(SystemStatus {
+        runtime_ready: catalog.chat_model.is_some() || catalog.embedding_model.is_some(),
+        runtime_name: LOCAL_RUNTIME_NAME.to_string(),
+        embedding_model: catalog.embedding_model.as_ref().map(path_to_model_value),
+        chat_model: catalog.chat_model.as_ref().map(path_to_model_value),
+        available_models: catalog.models.iter().map(path_to_model_value).collect(),
+        model_dir: state.paths.models_path.display().to_string(),
+        db_path: state.paths.db_path.display().to_string(),
+        library_path: state.paths.library_path.display().to_string(),
+        collections: library.collections,
+        error: catalog.error,
+    })
 }
 
 async fn load_library(path: &Path) -> Cmd<LibraryData> {
@@ -2083,66 +2175,550 @@ async fn get_collection(path: &Path, collection_id: &str) -> Cmd<CollectionSumma
         .ok_or_else(|| "Collection not found.".to_string())
 }
 
-async fn ollama_models(client: &Client) -> Cmd<Vec<String>> {
-    let response = client
-        .get(format!("{OLLAMA_BASE_URL}/api/tags"))
-        .timeout(Duration::from_secs(4))
-        .send()
-        .await
-        .map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("Ollama /api/tags failed: {}", response.status()));
-    }
-    let tags = response
-        .json::<OllamaTagsResponse>()
-        .await
-        .map_err(|error| error.to_string())?;
-    Ok(tags.models.into_iter().map(|model| model.name).collect())
-}
-
-async fn ollama_embed(
-    client: &Client,
+async fn local_embed(
+    state: &State<'_, Backend>,
     settings: &UserSettings,
     inputs: Vec<String>,
 ) -> Cmd<Vec<Vec<f32>>> {
-    let models = ollama_models(client).await?;
-    let model = pick_embedding_model(&models, &settings.ollama);
-    if !models.contains(&model) {
-        return Err(format!(
-            "Ollama embedding model \"{model}\" is not installed."
-        ));
-    }
-    let mut embeddings = Vec::new();
-    for batch in inputs.chunks(8) {
-        let response = client
-            .post(format!("{OLLAMA_BASE_URL}/api/embed"))
-            .json(&json!({ "model": model, "input": batch }))
-            .timeout(Duration::from_secs(120))
-            .send()
-            .await
-            .map_err(|error| error.to_string())?;
-        if !response.status().is_success() {
-            return Err(format!("Ollama /api/embed failed: {}", response.status()));
-        }
-        let embed = response
-            .json::<OllamaEmbedResponse>()
-            .await
-            .map_err(|error| error.to_string())?;
-        embeddings.extend(embed.embeddings);
-    }
-    Ok(embeddings)
+    let catalog = model_catalog(&state.paths, &settings.local_model);
+    let model_path = catalog.embedding_model.ok_or_else(|| {
+        format!(
+            "No local embedding GGUF model found. Add an embedding model to {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
+            state.paths.models_path.display()
+        )
+    })?;
+    let runtime = Arc::clone(&state.native_runtime);
+    task::spawn_blocking(move || {
+        let mut runtime = runtime
+            .lock()
+            .map_err(|_| "Local model runtime is unavailable.".to_string())?;
+        runtime.embed(&model_path, inputs)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
-async fn ollama_chat(
-    client: &Client,
+async fn local_chat(
+    state: &State<'_, Backend>,
     settings: &UserSettings,
     prompt: &str,
     citations: Vec<SearchResult>,
 ) -> Cmd<ChatResult> {
-    let models = ollama_models(client).await?;
-    let model = pick_chat_model(&models, &settings.ollama).ok_or_else(|| {
-        "No local chat model found in Ollama. Install llama3.1:8b or gemma3.".to_string()
+    let catalog = model_catalog(&state.paths, &settings.local_model);
+    let model_path = catalog.chat_model.ok_or_else(|| {
+        format!(
+            "No local chat GGUF model found. Add Gemma or another chat model to {} or set {AETHER_CHAT_MODEL_ENV}.",
+            state.paths.models_path.display()
+        )
     })?;
+    let completion_prompt = build_chat_prompt(prompt, &citations);
+    let runtime = Arc::clone(&state.native_runtime);
+    let model_label = model_label(&model_path);
+    let answer = task::spawn_blocking(move || {
+        let mut runtime = runtime
+            .lock()
+            .map_err(|_| "Local model runtime is unavailable.".to_string())?;
+        runtime.complete(
+            &model_path,
+            &completion_prompt,
+            DEFAULT_GENERATION_TOKENS,
+            0.2,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    Ok(ChatResult {
+        answer: clean_model_output(&answer),
+        model: model_label,
+        citations,
+    })
+}
+
+async fn local_generate_iceberg(
+    state: &State<'_, Backend>,
+    settings: &UserSettings,
+    topic: &str,
+) -> Cmd<IcebergResult> {
+    let catalog = model_catalog(&state.paths, &settings.local_model);
+    let model_path = catalog.chat_model.ok_or_else(|| {
+        format!(
+            "No local generative GGUF model found. Add Gemma or another chat model to {} or set {AETHER_CHAT_MODEL_ENV}.",
+            state.paths.models_path.display()
+        )
+    })?;
+    let completion_prompt = build_instruction_prompt(&build_iceberg_prompt(topic));
+    let runtime = Arc::clone(&state.native_runtime);
+    let model_label = model_label(&model_path);
+    let generated = task::spawn_blocking(move || {
+        let mut runtime = runtime
+            .lock()
+            .map_err(|_| "Local model runtime is unavailable.".to_string())?;
+        runtime.complete(
+            &model_path,
+            &completion_prompt,
+            DEFAULT_ICEBERG_GENERATION_TOKENS,
+            0.35,
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    let generated = clean_model_output(&generated);
+    Ok(IcebergResult {
+        keyword: topic.to_string(),
+        model: model_label,
+        items: normalize_iceberg_items(&generated)?,
+        generated_at: now(),
+    })
+}
+
+impl NativeModelRuntime {
+    fn ensure_backend(&mut self) -> Cmd<()> {
+        if self.backend.is_some() {
+            return Ok(());
+        }
+
+        let mut backend = LlamaBackend::init().map_err(|error| error.to_string())?;
+        backend.void_logs();
+        self.backend = Some(backend);
+        Ok(())
+    }
+
+    fn ensure_model(&mut self, kind: NativeModelKind, path: &Path) -> Cmd<()> {
+        let path = canonical_model_path(path);
+        let current_path = match kind {
+            NativeModelKind::Chat => self.chat.as_ref().map(|loaded| loaded.path.as_path()),
+            NativeModelKind::Embedding => {
+                self.embedding.as_ref().map(|loaded| loaded.path.as_path())
+            }
+        };
+        if current_path == Some(path.as_path()) {
+            return Ok(());
+        }
+
+        self.ensure_backend()?;
+        let backend = self
+            .backend
+            .as_ref()
+            .ok_or_else(|| "Local model backend is not initialized.".to_string())?;
+        let mut params = LlamaModelParams::default().with_use_mmap(backend.supports_mmap());
+        if backend.supports_gpu_offload() {
+            params = params.with_n_gpu_layers(999);
+        }
+        let model = LlamaModel::load_from_file(backend, &path, &params).map_err(|error| {
+            format!("Failed to load local model {}: {error}", model_label(&path))
+        })?;
+        let loaded = LoadedNativeModel { path, model };
+        match kind {
+            NativeModelKind::Chat => self.chat = Some(loaded),
+            NativeModelKind::Embedding => self.embedding = Some(loaded),
+        }
+        Ok(())
+    }
+
+    fn embed(&mut self, model_path: &Path, inputs: Vec<String>) -> Cmd<Vec<Vec<f32>>> {
+        if inputs.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.ensure_model(NativeModelKind::Embedding, model_path)?;
+        let backend = self
+            .backend
+            .as_ref()
+            .ok_or_else(|| "Local model backend is not initialized.".to_string())?;
+        let model = &self
+            .embedding
+            .as_ref()
+            .ok_or_else(|| "Local embedding model is not loaded.".to_string())?
+            .model;
+        let threads = auto_thread_count();
+        let mut embeddings = Vec::with_capacity(inputs.len());
+
+        for input in inputs {
+            let tokens = model
+                .str_to_token(&input, AddBos::Never)
+                .map_err(|error| error.to_string())?;
+            if tokens.is_empty() {
+                return Err("Local embedding input produced no tokens.".to_string());
+            }
+            let n_ctx = embedding_context_tokens(tokens.len());
+            if tokens.len() as u32 > n_ctx {
+                return Err(format!(
+                    "Local embedding input is too long for the embedding context: {} tokens exceeds {}.",
+                    tokens.len(),
+                    n_ctx
+                ));
+            }
+            let n_batch = n_ctx.max(tokens.len() as u32).max(512);
+            let ctx_params = LlamaContextParams::default()
+                .with_n_ctx(NonZeroU32::new(n_ctx))
+                .with_n_batch(n_batch)
+                .with_n_ubatch(n_batch)
+                .with_n_threads(threads)
+                .with_n_threads_batch(threads)
+                .with_embeddings(true)
+                .with_pooling_type(LlamaPoolingType::Mean);
+            let mut ctx = model
+                .new_context(backend, ctx_params)
+                .map_err(|error| error.to_string())?;
+            let mut batch = LlamaBatch::new(tokens.len(), 1);
+            for (index, token) in tokens.iter().enumerate() {
+                batch
+                    .add(*token, index as i32, &[0], false)
+                    .map_err(|error| error.to_string())?;
+            }
+            ctx.encode(&mut batch).map_err(|error| error.to_string())?;
+            let embedding = ctx
+                .embeddings_seq_ith(0)
+                .map_err(|error| error.to_string())?;
+            embeddings.push(normalize_embedding(embedding));
+        }
+
+        Ok(embeddings)
+    }
+
+    fn complete(
+        &mut self,
+        model_path: &Path,
+        prompt: &str,
+        max_tokens: usize,
+        temperature: f32,
+    ) -> Cmd<String> {
+        self.ensure_model(NativeModelKind::Chat, model_path)?;
+        let backend = self
+            .backend
+            .as_ref()
+            .ok_or_else(|| "Local model backend is not initialized.".to_string())?;
+        let model = &self
+            .chat
+            .as_ref()
+            .ok_or_else(|| "Local chat model is not loaded.".to_string())?
+            .model;
+        let mut tokens = model
+            .str_to_token(prompt, AddBos::Always)
+            .map_err(|error| error.to_string())?;
+        if tokens.is_empty() {
+            return Err("Local chat prompt produced no tokens.".to_string());
+        }
+
+        let n_ctx = chat_context_tokens();
+        let max_prompt_tokens =
+            n_ctx.saturating_sub((max_tokens as u32).min(1024)).max(512) as usize;
+        if tokens.len() > max_prompt_tokens {
+            tokens = tokens[tokens.len() - max_prompt_tokens..].to_vec();
+        }
+        let n_batch = (tokens.len() as u32).saturating_add(1).max(512).min(n_ctx);
+        let threads = auto_thread_count();
+        let ctx_params = LlamaContextParams::default()
+            .with_n_ctx(NonZeroU32::new(n_ctx))
+            .with_n_batch(n_batch)
+            .with_n_threads(threads)
+            .with_n_threads_batch(threads)
+            .with_offload_kqv(true);
+        let mut ctx = model
+            .new_context(backend, ctx_params)
+            .map_err(|error| error.to_string())?;
+        let mut batch = LlamaBatch::new(n_batch as usize, 1);
+        let last_prompt_index = tokens.len().saturating_sub(1);
+        for (index, token) in tokens.iter().enumerate() {
+            batch
+                .add(*token, index as i32, &[0], index == last_prompt_index)
+                .map_err(|error| error.to_string())?;
+        }
+        ctx.decode(&mut batch).map_err(|error| error.to_string())?;
+
+        let mut sampler = LlamaSampler::chain_simple([
+            LlamaSampler::top_k(40),
+            LlamaSampler::top_p(0.95, 1),
+            LlamaSampler::temp(temperature),
+            LlamaSampler::dist(0xA371_2026),
+        ]);
+        let mut decoder = UTF_8.new_decoder();
+        let mut output = String::new();
+        let mut position = batch.n_tokens();
+
+        for _ in 0..max_tokens {
+            let token = sampler.sample(&ctx, batch.n_tokens() - 1);
+            if model.is_eog_token(token) {
+                break;
+            }
+            let piece = model
+                .token_to_piece(token, &mut decoder, true, None)
+                .map_err(|error| error.to_string())?;
+            output.push_str(&piece);
+            if contains_stop_marker(&output) {
+                break;
+            }
+
+            batch.clear();
+            batch
+                .add(token, position, &[0], true)
+                .map_err(|error| error.to_string())?;
+            ctx.decode(&mut batch).map_err(|error| error.to_string())?;
+            position += 1;
+        }
+
+        Ok(output)
+    }
+}
+
+fn model_catalog(paths: &DataPaths, settings: &LocalModelSettings) -> ModelCatalog {
+    let mut errors = Vec::new();
+    let model_dirs = [
+        paths.models_path.clone(),
+        paths.models_path.join("chat"),
+        paths.models_path.join("embeddings"),
+    ];
+    for dir in &model_dirs {
+        if let Err(error) = fs::create_dir_all(dir) {
+            errors.push(format!(
+                "Could not create model directory {}: {error}",
+                dir.display()
+            ));
+        }
+    }
+
+    let mut models = Vec::new();
+    collect_gguf_models(&paths.models_path, &mut models);
+    if let Ok(dir) = env::var(AETHER_MODEL_DIR_ENV) {
+        collect_gguf_models(Path::new(&dir), &mut models);
+    }
+    for var in [AETHER_CHAT_MODEL_ENV, AETHER_EMBEDDING_MODEL_ENV] {
+        match env_model_path(var) {
+            Ok(Some(path)) => models.push(path),
+            Ok(None) => {}
+            Err(error) => errors.push(error),
+        }
+    }
+
+    models = dedupe_model_paths(models);
+    let embedding_model = pick_embedding_model(&models, settings);
+    let chat_model = pick_chat_model(&models, settings);
+    if models.is_empty() {
+        errors.push(format!(
+            "No GGUF models found. Add models to {} or set {AETHER_MODEL_DIR_ENV}.",
+            paths.models_path.display()
+        ));
+    } else {
+        if embedding_model.is_none() {
+            errors.push(format!(
+                "No embedding GGUF selected. Put embeddinggemma or nomic-embed-text in {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
+                paths.models_path.join("embeddings").display()
+            ));
+        }
+        if chat_model.is_none() {
+            errors.push(format!(
+                "No chat GGUF selected. Put a Gemma chat model in {} or set {AETHER_CHAT_MODEL_ENV}.",
+                paths.models_path.join("chat").display()
+            ));
+        }
+    }
+
+    ModelCatalog {
+        models,
+        chat_model,
+        embedding_model,
+        error: if errors.is_empty() {
+            None
+        } else {
+            Some(errors.join(" "))
+        },
+    }
+}
+
+fn collect_gguf_models(root: &Path, models: &mut Vec<PathBuf>) {
+    let mut stack = vec![(root.to_path_buf(), 0usize)];
+    while let Some((dir, depth)) = stack.pop() {
+        if depth > 4 {
+            continue;
+        }
+        let Ok(entries) = fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push((path, depth + 1));
+            } else if is_gguf_model(&path) {
+                models.push(path);
+            }
+        }
+    }
+}
+
+fn project_models_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|path| path.join("aether-models"))
+        .unwrap_or_else(|| PathBuf::from("aether-models"))
+}
+
+fn dedupe_model_paths(models: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut seen = HashSet::new();
+    let mut deduped = Vec::new();
+    for path in models {
+        let path = canonical_model_path(&path);
+        let key = path.display().to_string();
+        if seen.insert(key) {
+            deduped.push(path);
+        }
+    }
+    deduped.sort_by_key(|path| model_label(path).to_lowercase());
+    deduped
+}
+
+fn env_model_path(var: &str) -> Cmd<Option<PathBuf>> {
+    let Ok(value) = env::var(var) else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(value.trim());
+    if is_gguf_model(&path) {
+        Ok(Some(path))
+    } else {
+        Err(format!(
+            "{var} does not point to an existing GGUF model: {}",
+            path.display()
+        ))
+    }
+}
+
+fn pick_embedding_model(models: &[PathBuf], settings: &LocalModelSettings) -> Option<PathBuf> {
+    if let Ok(Some(path)) = env_model_path(AETHER_EMBEDDING_MODEL_ENV) {
+        return Some(canonical_model_path(&path));
+    }
+    if let Some(model) = settings
+        .embedding_model
+        .as_deref()
+        .and_then(|value| pick_selected_model(models, value))
+    {
+        return Some(model);
+    }
+    pick_model_by_hints(models, &PREFERRED_EMBEDDING_MODEL_HINTS, true)
+}
+
+fn pick_chat_model(models: &[PathBuf], settings: &LocalModelSettings) -> Option<PathBuf> {
+    if let Ok(Some(path)) = env_model_path(AETHER_CHAT_MODEL_ENV) {
+        return Some(canonical_model_path(&path));
+    }
+    if let Some(model) = settings
+        .chat_model
+        .as_deref()
+        .and_then(|value| pick_selected_model(models, value))
+    {
+        return Some(model);
+    }
+    pick_model_by_hints(models, &PREFERRED_CHAT_MODEL_HINTS, false).or_else(|| {
+        models
+            .iter()
+            .find(|path| !is_embedding_model_name(path))
+            .cloned()
+    })
+}
+
+fn pick_selected_model(models: &[PathBuf], value: &str) -> Option<PathBuf> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let direct = PathBuf::from(value);
+    if is_gguf_model(&direct) {
+        return Some(canonical_model_path(&direct));
+    }
+    let normalized = value.to_lowercase();
+    models
+        .iter()
+        .find(|path| {
+            let label = model_label(path);
+            path_to_model_value(path) == value
+                || label == value
+                || strip_gguf_extension(&label) == value
+                || label.to_lowercase().contains(&normalized)
+        })
+        .cloned()
+}
+
+fn pick_model_by_hints(models: &[PathBuf], hints: &[&str], embedding: bool) -> Option<PathBuf> {
+    for hint in hints {
+        let hint = hint.to_lowercase();
+        if let Some(model) = models.iter().find(|path| {
+            let label = model_label(path).to_lowercase();
+            label.contains(&hint) && (embedding || !is_embedding_model_name(path))
+        }) {
+            return Some(model.clone());
+        }
+    }
+    None
+}
+
+fn is_gguf_model(path: &Path) -> bool {
+    path.is_file()
+        && path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
+}
+
+fn is_embedding_model_name(path: &Path) -> bool {
+    let label = model_label(path).to_lowercase();
+    label.contains("embed") || label.contains("embedding") || label.contains("nomic")
+}
+
+fn canonical_model_path(path: &Path) -> PathBuf {
+    fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn path_to_model_value(path: &PathBuf) -> String {
+    path.display().to_string()
+}
+
+fn model_label(path: &Path) -> String {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .map(strip_gguf_extension)
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+fn strip_gguf_extension(value: &str) -> String {
+    value
+        .strip_suffix(".gguf")
+        .or_else(|| value.strip_suffix(".GGUF"))
+        .unwrap_or(value)
+        .to_string()
+}
+
+fn chat_context_tokens() -> u32 {
+    env::var(AETHER_LLM_CONTEXT_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(DEFAULT_CHAT_CONTEXT_TOKENS)
+        .clamp(1024, 65_536)
+}
+
+fn embedding_context_tokens(input_tokens: usize) -> u32 {
+    let needed = input_tokens.saturating_add(16).min(u32::MAX as usize) as u32;
+    DEFAULT_EMBEDDING_CONTEXT_TOKENS.max(needed).min(8192)
+}
+
+fn auto_thread_count() -> i32 {
+    std::thread::available_parallelism()
+        .map(|threads| threads.get().saturating_sub(2).clamp(2, 12) as i32)
+        .unwrap_or(6)
+}
+
+fn normalize_embedding(values: &[f32]) -> Vec<f32> {
+    let norm = values
+        .iter()
+        .map(|value| (*value as f64) * (*value as f64))
+        .sum::<f64>()
+        .sqrt();
+    if norm <= f64::EPSILON {
+        return values.to_vec();
+    }
+    values
+        .iter()
+        .map(|value| (*value as f64 / norm) as f32)
+        .collect()
+}
+
+fn build_chat_prompt(prompt: &str, citations: &[SearchResult]) -> String {
     let context_block = citations
         .iter()
         .enumerate()
@@ -2158,79 +2734,40 @@ async fn ollama_chat(
         })
         .collect::<Vec<_>>()
         .join("\n\n");
-    let response = client
-        .post(format!("{OLLAMA_BASE_URL}/api/chat"))
-        .json(&json!({
-            "model": model,
-            "stream": false,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You are Æther, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources with bracket numbers."
-                },
-                {
-                    "role": "user",
-                    "content": format!("Local collection context:\n{}\n\nQuestion: {}", if context_block.is_empty() { "No stored context was retrieved." } else { &context_block }, prompt)
-                }
-            ],
-            "options": { "temperature": 0.2 }
-        }))
-        .timeout(Duration::from_secs(180))
-        .send()
-        .await
-        .map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!("Ollama /api/chat failed: {}", response.status()));
-    }
-    let answer = response
-        .json::<OllamaChatResponse>()
-        .await
-        .map_err(|error| error.to_string())?;
-    Ok(ChatResult {
-        answer: answer.message.content,
-        model: answer.model,
-        citations,
-    })
+    let context = if context_block.is_empty() {
+        "No stored context was retrieved."
+    } else {
+        &context_block
+    };
+    build_instruction_prompt(&format!(
+        "You are Æther, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources with bracket numbers.\n\nLocal collection context:\n{context}\n\nQuestion: {prompt}"
+    ))
 }
 
-async fn ollama_generate_iceberg(
-    client: &Client,
-    settings: &UserSettings,
-    topic: &str,
-) -> Cmd<IcebergResult> {
-    let models = ollama_models(client).await?;
-    let model = pick_chat_model(&models, &settings.ollama).ok_or_else(|| {
-        "No local generative model found in Ollama. Install llama3.1:8b or gemma3.".to_string()
-    })?;
-    let response = client
-        .post(format!("{OLLAMA_BASE_URL}/api/generate"))
-        .json(&json!({
-            "model": model,
-            "prompt": build_iceberg_prompt(topic),
-            "stream": false,
-            "format": "json",
-            "options": { "temperature": 0.35, "num_predict": 5000 }
-        }))
-        .timeout(Duration::from_secs(180))
-        .send()
-        .await
-        .map_err(|error| error.to_string())?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "Ollama /api/generate failed: {}",
-            response.status()
-        ));
+fn build_instruction_prompt(instruction: &str) -> String {
+    format!("<start_of_turn>user\n{instruction}<end_of_turn>\n<start_of_turn>model\n")
+}
+
+fn contains_stop_marker(output: &str) -> bool {
+    output.contains("<end_of_turn>")
+        || output.contains("<start_of_turn>")
+        || output.contains("<|eot_id|>")
+        || output.contains("<|end|>")
+}
+
+fn clean_model_output(output: &str) -> String {
+    let mut cleaned = output.to_string();
+    for marker in [
+        "<end_of_turn>",
+        "<start_of_turn>model",
+        "<start_of_turn>assistant",
+        "<start_of_turn>",
+        "<|eot_id|>",
+        "<|end|>",
+    ] {
+        cleaned = cleaned.replace(marker, "");
     }
-    let generated = response
-        .json::<OllamaGenerateResponse>()
-        .await
-        .map_err(|error| error.to_string())?;
-    Ok(IcebergResult {
-        keyword: topic.to_string(),
-        model: generated.model,
-        items: normalize_iceberg_items(&generated.response)?,
-        generated_at: now(),
-    })
+    cleaned.trim().to_string()
 }
 
 async fn extract_readable_active_page(
@@ -2410,48 +2947,6 @@ fn select_body_text(document: &Html) -> String {
         .join(" ")
 }
 
-fn pick_embedding_model(models: &[String], settings: &OllamaSettings) -> String {
-    if let Some(model) = settings
-        .embedding_model
-        .as_deref()
-        .and_then(|model| pick_model(models, &[model]))
-    {
-        return model;
-    }
-    pick_model(models, &[EMBEDDING_MODEL]).unwrap_or_else(|| EMBEDDING_MODEL.to_string())
-}
-
-fn pick_chat_model(models: &[String], settings: &OllamaSettings) -> Option<String> {
-    if let Some(model) = settings
-        .chat_model
-        .as_deref()
-        .and_then(|model| pick_model(models, &[model]))
-    {
-        return Some(model);
-    }
-    pick_model(models, &PREFERRED_CHAT_MODELS).or_else(|| models.first().cloned())
-}
-
-fn pick_model(models: &[String], preferred: &[&str]) -> Option<String> {
-    for candidate in preferred {
-        if let Some(model) = models.iter().find(|model| model.as_str() == *candidate) {
-            return Some(model.clone());
-        }
-
-        let latest = format!("{candidate}:latest");
-        if let Some(model) = models.iter().find(|model| **model == latest) {
-            return Some(model.clone());
-        }
-
-        if let Some(stripped) = candidate.strip_suffix(":latest") {
-            if let Some(model) = models.iter().find(|model| model.as_str() == stripped) {
-                return Some(model.clone());
-            }
-        }
-    }
-    None
-}
-
 fn build_iceberg_prompt(keyword: &str) -> String {
     format!(
         r#"Create an iceberg chart for the topic "{keyword}".
@@ -2488,18 +2983,18 @@ fn normalize_iceberg_items(response: &str) -> Cmd<Vec<IcebergItem>> {
         Err(_) => {
             let start = json_text
                 .find('[')
-                .ok_or_else(|| "Ollama did not return valid iceberg JSON.".to_string())?;
+                .ok_or_else(|| "Local model did not return valid iceberg JSON.".to_string())?;
             let end = json_text
                 .rfind(']')
-                .ok_or_else(|| "Ollama did not return valid iceberg JSON.".to_string())?;
+                .ok_or_else(|| "Local model did not return valid iceberg JSON.".to_string())?;
             serde_json::from_str(&json_text[start..=end])
-                .map_err(|_| "Ollama did not return valid iceberg JSON.".to_string())?
+                .map_err(|_| "Local model did not return valid iceberg JSON.".to_string())?
         }
     };
     let items_value = parsed.get("items").cloned().unwrap_or(parsed);
     let raw_items = items_value
         .as_array()
-        .ok_or_else(|| "Ollama did not return valid iceberg JSON.".to_string())?;
+        .ok_or_else(|| "Local model did not return valid iceberg JSON.".to_string())?;
     let mut by_level: HashMap<u8, Vec<IcebergItem>> = HashMap::new();
     for raw in raw_items {
         let name = raw
@@ -2538,7 +3033,7 @@ fn normalize_iceberg_items(response: &str) -> Cmd<Vec<IcebergItem>> {
         .flat_map(|level| by_level.remove(&level).unwrap_or_default())
         .collect::<Vec<_>>();
     if normalized.is_empty() {
-        Err("Ollama did not return any usable iceberg items.".to_string())
+        Err("Local model did not return any usable iceberg items.".to_string())
     } else {
         Ok(normalized)
     }

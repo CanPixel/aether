@@ -142,7 +142,7 @@ export function IntelligencePanel({
             type="button"
           >
             <h2>Ask</h2>
-            <span>{status?.chatModel ?? 'No model'}</span>
+            <span>{formatModelName(status?.chatModel) ?? 'No model'}</span>
             <ChevronRightIcon />
           </button>
 
@@ -217,11 +217,11 @@ export function IntelligencePanel({
             title="Model settings"
             type="button"
           >
-            {status?.chatModel ? `Model ${status.chatModel}` : 'Model settings'}
+            {status?.chatModel ? `Model ${formatModelName(status.chatModel)}` : 'Model settings'}
           </button>
         </footer>
         {settingsOpen && (
-          <OllamaSettings busy={busy} status={status} onUpdateModels={onUpdateModels} />
+          <LocalModelSettings busy={busy} status={status} onUpdateModels={onUpdateModels} />
         )}
       </div>
     </aside>
@@ -325,7 +325,7 @@ function AskContextControls({
   )
 }
 
-function OllamaSettings({
+function LocalModelSettings({
   busy,
   status,
   onUpdateModels
@@ -335,21 +335,21 @@ function OllamaSettings({
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
 }): React.JSX.Element {
   const models = status?.availableModels ?? []
-  const modelLabel = status?.chatModel ?? 'No chat model'
+  const modelLabel = formatModelName(status?.chatModel) ?? 'No chat model'
 
   return (
-    <section className="ollama-island" aria-label="Ollama settings">
-      <div className="ollama-heading">
+    <section className="model-island" aria-label="Local model settings">
+      <div className="model-heading">
         <div>
-          <h2>Ollama</h2>
-          <p>{status?.ollamaReachable ? `${models.length} loaded models` : 'Offline'}</p>
+          <h2>Local models</h2>
+          <p>{status?.runtimeReady ? `${models.length} GGUF models` : 'No GGUF model'}</p>
         </div>
         <span>{modelLabel}</span>
       </div>
       <label>
         Chat model
         <select
-          disabled={Boolean(busy) || !status?.ollamaReachable || models.length === 0}
+          disabled={Boolean(busy) || models.length === 0}
           value={status?.chatModel ?? ''}
           onChange={(event) => onUpdateModels({ chatModel: event.target.value })}
         >
@@ -358,7 +358,7 @@ function OllamaSettings({
           </option>
           {models.map((model) => (
             <option key={model} value={model}>
-              {model}
+              {formatModelName(model) ?? model}
             </option>
           ))}
         </select>
@@ -366,7 +366,7 @@ function OllamaSettings({
       <label>
         Embeddings
         <select
-          disabled={Boolean(busy) || !status?.ollamaReachable || models.length === 0}
+          disabled={Boolean(busy) || models.length === 0}
           value={status?.embeddingModel ?? ''}
           onChange={(event) => onUpdateModels({ embeddingModel: event.target.value })}
         >
@@ -375,7 +375,7 @@ function OllamaSettings({
           </option>
           {models.map((model) => (
             <option key={model} value={model}>
-              {model}
+              {formatModelName(model) ?? model}
             </option>
           ))}
         </select>
@@ -529,8 +529,15 @@ function StatusPill({ status }: { status: SystemStatus | null }): React.JSX.Elem
   }
 
   return (
-    <span className={`status-pill ${status.ollamaReachable ? 'online' : 'offline'}`}>
-      {status.ollamaReachable ? 'Ollama' : 'Offline'}
+    <span className={`status-pill ${status.runtimeReady ? 'online' : 'offline'}`}>
+      {status.runtimeReady ? status.runtimeName : 'No model'}
     </span>
   )
+}
+
+function formatModelName(model?: string | null): string | null {
+  if (!model) return null
+
+  const filename = model.split(/[\\/]/).pop() ?? model
+  return filename.replace(/\.gguf$/i, '')
 }

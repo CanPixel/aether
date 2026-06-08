@@ -4758,7 +4758,7 @@ button {
   background: rgba(255, 255, 255, 0.46);
 }
 
-.ollama-island {
+.model-island {
   display: grid;
   position: absolute;
   right: 14px;
@@ -4803,28 +4803,28 @@ button {
   color: var(--ink);
 }
 
-.ollama-heading {
+.model-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
 }
 
-.ollama-heading h2 {
+.model-heading h2 {
   color: var(--ink);
   font-size: 13px;
   font-weight: 840;
 }
 
-.ollama-heading p,
-.ollama-heading span,
-.ollama-island label {
+.model-heading p,
+.model-heading span,
+.model-island label {
   color: var(--muted);
   font-size: 11px;
   font-weight: 720;
 }
 
-.ollama-heading span {
+.model-heading span {
   max-width: 156px;
   overflow: hidden;
   border: 1px solid rgba(105, 139, 190, 0.16);
@@ -4835,12 +4835,12 @@ button {
   white-space: nowrap;
 }
 
-.ollama-island label {
+.model-island label {
   display: grid;
   gap: 6px;
 }
 
-.ollama-island select {
+.model-island select {
   height: 32px;
   border-radius: 9px;
   padding: 0 10px;
