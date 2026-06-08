@@ -659,7 +659,7 @@ function App(): React.JSX.Element {
     }
   }
 
-  async function openCrystallizedTopic(keyword: string, item: IcebergItem): Promise<void> {
+  async function openCrystallizedTopic(_keyword: string, item: IcebergItem): Promise<void> {
     const url = `https://www.google.com/search?q=${encodeURIComponent(`${item.name}`)}`
     await createTab({ url })
     setWorkspaceMode('dashboard')
