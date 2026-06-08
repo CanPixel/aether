@@ -21,7 +21,7 @@ Current major capabilities:
 - AI answers render as selectable markdown with copy support and clickable citations.
 - iCE, the Information Complexity Explorer, generates iceberg-style complexity maps for a topic using the local chat model.
 - Settings modal currently supports default search engine selection.
-- Ollama model menu supports local model status and model selection.
+- Local GGUF model menu supports runtime status and model selection.
 
 ## Privacy Boundary
 
@@ -35,9 +35,9 @@ Local-only pieces:
 - Embeddings
 - Local vector chunk storage
 - Retrieval queries
-- RAG prompts sent to Ollama
-- AiON answers generated through local Ollama models
-- iCE topic maps generated through local Ollama models
+- RAG prompts evaluated inside the app process
+- AiON answers generated through in-process local models
+- iCE topic maps generated through in-process local models
 
 Normal browsing is still normal browsing. Websites loaded in the browser can make their own network requests, track sessions, run JavaScript, and communicate with their own servers. The privacy boundary applies to Æther's indexing and intelligence pipeline, not to websites themselves.
 
@@ -47,29 +47,28 @@ Required:
 
 - Bun for dependency management and scripts.
 - Rust and the Tauri platform prerequisites for your target OS.
+- CMake, required for building the bundled llama.cpp Rust binding.
 - macOS, Windows, or Linux for desktop development.
 - Android Studio, Android SDK/NDK, and Rust Android targets for Android builds.
-- Ollama running locally at `http://127.0.0.1:11434` for embeddings, AiON, and iCE.
+- GGUF model files for local embeddings and chat generation.
 
-Recommended Ollama models:
+Recommended first-stage model setup:
 
-```bash
-ollama pull nomic-embed-text
-ollama pull llama3.1:8b
-ollama pull gemma3
-ollama pull gemma4
-```
+- Embeddings: `embeddinggemma` GGUF, or `nomic-embed-text` GGUF.
+- Chat/iCE: a Gemma chat GGUF, with Gemma 4 preferred when available and a 2B-class Gemma variant as a lower-end-device option later.
 
-Check that Ollama is reachable:
+Model discovery:
 
-```bash
-curl http://127.0.0.1:11434/api/tags
-```
+- Put chat models in `./aether-models/chat/`.
+- Put embedding models in `./aether-models/embeddings/`.
+- Or set `AETHER_CHAT_MODEL=/absolute/path/to/chat.gguf`.
+- Or set `AETHER_EMBEDDING_MODEL=/absolute/path/to/embedding.gguf`.
+- Or set `AETHER_MODEL_DIR=/absolute/path/to/a/model/folder`.
 
 Default model behavior:
 
-- Embeddings default to `nomic-embed-text`.
-- Chat model preference is `llama3.1:8b`, then `gemma3:latest`, then `gemma3`, then the first available local model.
+- Embeddings prefer filenames containing `embeddinggemma`, `embedding-gemma`, `nomic-embed-text`, `embedding`, or `embed`.
+- Chat model preference is filenames containing `gemma4`, `gemma-4`, `gemma3`, `gemma-3`, `gemma-2b`, `2b`, `gemma`, or `qwen`, then the first non-embedding GGUF.
 - The model menu can update the selected embedding and chat models.
 
 ## Quick Start
@@ -366,7 +365,7 @@ It generates five depth layers:
 The iCE canvas includes:
 
 - Topic search input.
-- Local Ollama generation.
+- In-process local model generation.
 - Manual saving and reopening of generated atlases.
 - Zoom in/out/reset controls.
 - Smooth view reset and zoom transitions.
@@ -388,6 +387,7 @@ Current storage paths:
 <appData>/aether-realms/chunks.json
 <appData>/aether-settings/settings.json
 <appData>/aether-icebergs/icebergs.json
+./aether-models/
 ```
 
 `library.json` stores:
@@ -430,7 +430,7 @@ When the current browser page is captured:
 4. It collects page URL, title, description, body text, and metadata.
 5. Rust parsing normalizes readable text and rejects pages below the minimum readable text threshold.
 6. The backend creates overlapping chunks.
-7. Chunks are embedded through Ollama's local REST API.
+7. Chunks are embedded through the in-process llama.cpp runtime.
 8. Chunk rows are stored on disk.
 9. Capture metadata is persisted to `library.json`.
 10. Renderer refreshes collection and capture summaries.
@@ -490,8 +490,8 @@ Rust Tauri Backend
   |-- Capture pipeline
   |     active page snapshot or fetch -> readable text -> chunks
   |
-  |-- Ollama REST client
-  |     /api/tags, /api/embed, /api/chat
+  |-- Local model runtime
+  |     llama.cpp GGUF loading, Metal offload, embeddings, chat, and iCE generation
   |
   |-- Local chunk store
   |     vector search and chunk metadata
@@ -505,7 +505,7 @@ Rust backend responsibilities:
 - Owns browser views and tabs.
 - Owns file-system writes.
 - Owns local chunk storage and vector search.
-- Owns Ollama REST calls.
+- Owns in-process local model loading and inference.
 - Owns capture extraction from the active page.
 - Exposes typed Tauri command results to the renderer.
 
@@ -596,7 +596,6 @@ src/
         Crystallizer.tsx          iCE Information Complexity Explorer
         Dashboard.tsx             Portals, knowledge hubs, recent captures
         IntelligencePanel.tsx     AiON search/ask sidepanel and model controls
-        OllamaStatusMenu.tsx      Ollama status/model popover
         SourceTray.tsx            Search/citation source display
         icons.tsx                 Local icon components
       utils/
@@ -643,7 +642,7 @@ Prefer:
 - Rust backend ownership for privileged APIs, database work, file writes, and web contents access.
 - Typed renderer API contracts through `src/shared/aether.ts` and `src/renderer/src/tauri-aether.ts`.
 - Renderer-only components for presentation and interaction logic.
-- Local Ollama REST calls rather than cloud model SDKs for app intelligence.
+- In-process local model inference rather than cloud model SDKs or local REST sidecars for app intelligence.
 
 Avoid:
 
@@ -655,33 +654,22 @@ Avoid:
 
 ## Troubleshooting
 
-### Ollama is not reachable
+### No local model is available
 
-Start Ollama and verify the local API:
+Add GGUF models to the project-local model directory shown in the AiON model settings, or point the app at explicit files:
 
 ```bash
-ollama serve
-curl http://127.0.0.1:11434/api/tags
+export AETHER_CHAT_MODEL=/absolute/path/to/chat.gguf
+export AETHER_EMBEDDING_MODEL=/absolute/path/to/embedding.gguf
 ```
 
 ### Missing embedding model
 
-Install the default embedding model:
-
-```bash
-ollama pull nomic-embed-text
-```
+Add an embedding GGUF, preferably `embeddinggemma` or `nomic-embed-text`, to `./aether-models/embeddings/` or select it from the AiON model menu.
 
 ### Chat model unavailable
 
-Install a preferred chat model:
-
-```bash
-ollama pull llama3.1:8b
-ollama pull gemma3
-```
-
-Or select an installed model from the AiON model menu.
+Add a chat GGUF, preferably Gemma-family for the current prompt template, to `./aether-models/chat/` or select it from the AiON model menu.
 
 ### Capture says the page has too little readable text
 
@@ -729,7 +717,6 @@ iCE depends on the local chat model returning parseable JSON. Try:
 
 - Use a stronger chat model.
 - Regenerate with a simpler topic.
-- Confirm Ollama is reachable.
 - Check the model menu for the active chat model.
 
 ## Current Limitations
@@ -752,7 +739,7 @@ Likely next improvements:
 - Better authenticated-app compatibility coverage.
 - Capture selected text or a selected DOM region.
 - More precise token-aware chunking.
-- Local embedding fallback beyond Ollama.
+- Built-in model download/import flow for recommended GGUFs.
 - Richer iCE export/share behavior.
 - More complete settings surface.
 
