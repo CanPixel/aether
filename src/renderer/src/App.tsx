@@ -1,8 +1,9 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AetherState,
   AppSettings,
   AppSummary,
+  CaptureProgress,
   BrowserTabSummary,
   CaptureResult,
   CaptureSummary,
@@ -26,7 +27,7 @@ import { Dashboard } from './components/Dashboard'
 import { GlobeIcon, CloudIcon, GearIcon, SnowflakeIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
-import { getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
+import { formatLocalModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
 import { SearchIcon } from 'lucide-react'
 
 const TEXT_INPUT_TYPES = new Set([
@@ -75,6 +76,40 @@ function selectEditableContent(
   selection?.addRange(range)
 }
 
+function buildCitationTargetUrl(citation: SearchResult): string {
+  let url: URL
+  try {
+    url = new URL(citation.url)
+  } catch {
+    return citation.url
+  }
+
+  if (url.hash || !citation.text.trim()) return url.toString()
+
+  const fragmentText = citation.text
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 14)
+    .join(' ')
+
+  if (!fragmentText) return url.toString()
+
+  url.hash = `:~:text=${encodeURIComponent(fragmentText)}`
+  return url.toString()
+}
+
+function scheduleCitationSourceScroll(tabId: string, sourceText: string): void {
+  const text = sourceText.trim()
+  if (!tabId || !text) return
+
+  for (const delay of [650, 1600, 3000]) {
+    window.setTimeout(() => {
+      void window.aether.tabs.scrollToText(tabId, text).catch(() => undefined)
+    }, delay)
+  }
+}
+
 function getNoticeTone(message: string): StatusToastInput['tone'] {
   const errorPattern =
     /\b(failed|could not|unexpected|error|select|open a page|create a collection|already captured|already in)\b/i
@@ -82,6 +117,7 @@ function getNoticeTone(message: string): StatusToastInput['tone'] {
 }
 
 function getErrorMessage(error: unknown): string {
+  if (typeof error === 'string') return error
   if (!(error instanceof Error)) return 'Æther hit an unexpected error.'
 
   return error.message
@@ -121,10 +157,15 @@ function App(): React.JSX.Element {
   const [panelCollapsed, setPanelCollapsed] = useState(true)
   const [busy, setBusy] = useState<string | null>('')
   const [notice, setNotice] = useState<string | null>(null)
+  const [toast, setToast] = useState<(StatusToastInput & { id: number }) | null>(null)
+  const [findOpen, setFindOpen] = useState(false)
+  const [findQuery, setFindQuery] = useState('')
   const [collectionDialog, setCollectionDialog] = useState<CollectionDialogState>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const addressInputRef = useRef<HTMLInputElement>(null)
+  const findInputRef = useRef<HTMLInputElement>(null)
+  const toastIdRef = useRef(0)
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? tabs.find((tab) => tab.isActive) ?? tabs[0],
@@ -167,6 +208,14 @@ function App(): React.JSX.Element {
     ((!activeTabHubShortcut.themeColor && activeTab?.themeColor) ||
       (!activeTabHubShortcut.favicon && activeTab?.favicon))
   )
+
+  const openFindBar = useCallback((): void => {
+    if (dashboardOpen || !activeTab?.id) {
+      setNotice('Open a web page before using find.')
+      return
+    }
+    setFindOpen(true)
+  }, [activeTab?.id, dashboardOpen])
 
   const refreshCollections = useCallback(
     async (preferredCollectionId?: string): Promise<void> => {
@@ -235,7 +284,7 @@ function App(): React.JSX.Element {
   }, [refreshCollections, refreshSavedIcebergs, refreshShell, refreshShortcuts])
 
   const createTab = useCallback(
-    async (input?: { url?: string }): Promise<void> => {
+    async (input?: { url?: string }): Promise<BrowserTabSummary | null> => {
       setNotice(null)
 
       try {
@@ -244,8 +293,10 @@ function App(): React.JSX.Element {
         setDashboardOpen(false)
         setWorkspaceMode('dashboard')
         await refreshShell()
+        return tab
       } catch (error) {
         setNotice(getErrorMessage(error))
+        return null
       }
     },
     [refreshShell]
@@ -270,9 +321,27 @@ function App(): React.JSX.Element {
     }
   }, [refreshAll])
 
+  useEffect(() => window.aether.events.onFindRequested(openFindBar), [openFindBar])
+
+  useEffect(() => {
+    if (!findOpen) return
+    const timer = window.setTimeout(() => {
+      findInputRef.current?.focus()
+      findInputRef.current?.select()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [findOpen])
+
   useEffect(() => {
     const handler = (event: KeyboardEvent): void => {
       const key = event.key.toLowerCase()
+      if ((event.metaKey || event.ctrlKey) && key === 'f') {
+        event.preventDefault()
+        event.stopPropagation()
+        openFindBar()
+        return
+      }
+
       const editableTarget = getEditableShortcutTarget(event.target)
       if (editableTarget) {
         if ((event.metaKey || event.ctrlKey) && key === 'a') {
@@ -295,19 +364,59 @@ function App(): React.JSX.Element {
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [createTab, dashboardOpen])
+  }, [createTab, dashboardOpen, openFindBar])
+
+  const showToast = useCallback((input: StatusToastInput): void => {
+    if (!input.message || /^starting\s+æ?ther$/i.test(input.message)) return
+
+    const id = toastIdRef.current + 1
+    toastIdRef.current = id
+    setToast({ ...input, id })
+    if (input.durationMs !== 0) {
+      window.setTimeout(() => {
+        setToast((current) => (current?.id === id ? null : current))
+      }, input.durationMs ?? 3600)
+    }
+    window.aether.layout.showStatusToast(input).catch(() => undefined)
+  }, [])
 
   useEffect(() => {
-    const message = busy ?? notice
-    if (!message || /^starting\s+æ?ther$/i.test(message)) return
+    if (!notice) return
+    showToast({
+      message: notice,
+      tone: getNoticeTone(notice)
+    })
+  }, [notice, showToast])
 
-    const toast: StatusToastInput = {
-      message,
-      tone: busy ? 'info' : getNoticeTone(message),
-      durationMs: busy ? 2600 : undefined
+  useEffect(() => {
+    const unsubscribe = window.aether.events.onCaptureProgress((progress: CaptureProgress) => {
+      const suffix =
+        progress.total && progress.current !== undefined
+          ? ` (${progress.current}/${progress.total})`
+          : ''
+      const message = `${progress.message}${suffix}`
+      setBusy(message)
+      showToast({
+        message,
+        tone: 'info',
+        durationMs: 0
+      })
+    })
+
+    return unsubscribe
+  }, [showToast])
+
+  async function findInActivePage(query: string): Promise<void> {
+    const nextQuery = query.trim()
+    if (!nextQuery || !activeTab?.id) return
+
+    try {
+      await window.aether.tabs.find(activeTab.id, nextQuery)
+      setFindQuery(nextQuery)
+    } catch (error) {
+      setNotice(getErrorMessage(error))
     }
-    window.aether.layout.showStatusToast(toast).catch(() => undefined)
-  }, [busy, notice])
+  }
 
   async function openDashboard(): Promise<void> {
     await window.aether.dashboard.open()
@@ -521,7 +630,7 @@ function App(): React.JSX.Element {
 
       setChatResult(result)
       setAskPanelOpen(false)
-      setNotice(`Answered with ${result.model}.`)
+      setNotice(`Answered with ${formatLocalModelName(result.model) ?? result.model}.`)
     })
   }
 
@@ -576,7 +685,20 @@ function App(): React.JSX.Element {
   }
 
   async function openCitation(citation: SearchResult): Promise<void> {
-    await createTab({ url: citation.url })
+    const targetUrl = buildCitationTargetUrl(citation)
+    const activeComparableUrl = activeTab?.url ? normalizeComparableUrl(activeTab.url) : ''
+    const citationComparableUrl = normalizeComparableUrl(citation.url)
+
+    if (activeTab?.id && activeComparableUrl === citationComparableUrl) {
+      await window.aether.tabs.navigate(activeTab.id, targetUrl)
+      setDashboardOpen(false)
+      setWorkspaceMode('dashboard')
+      scheduleCitationSourceScroll(activeTab.id, citation.text)
+      return
+    }
+
+    const tab = await createTab({ url: targetUrl })
+    if (tab) scheduleCitationSourceScroll(tab.id, citation.text)
     setDashboardOpen(false)
   }
 
@@ -586,7 +708,11 @@ function App(): React.JSX.Element {
 
     try {
       const result = await window.aether.crystallizer.generate({ keyword })
-      setNotice(`Mapped ${result.items.length} fragments with ${result.model}.`)
+      setNotice(
+        `Mapped ${result.items.length} fragments with ${
+          formatLocalModelName(result.model) ?? result.model
+        }.`
+      )
       return result
     } catch (error) {
       const message = error instanceof Error ? getErrorMessage(error) : 'Crystallization failed.'
@@ -738,6 +864,11 @@ function App(): React.JSX.Element {
   async function runTask(label: string, task: () => Promise<void>): Promise<void> {
     setBusy(label)
     setNotice(null)
+    showToast({
+      message: label,
+      tone: 'info',
+      durationMs: label === 'Capturing page' ? 0 : 2600
+    })
 
     try {
       await task()
@@ -754,6 +885,16 @@ function App(): React.JSX.Element {
 
   return (
     <main className={`aether-shell ${panelCollapsed ? 'panel-collapsed' : ''}`}>
+      {toast && <StatusToast toast={toast} />}
+      {findOpen && !dashboardOpen && activeTab?.id && (
+        <FindBar
+          inputRef={findInputRef}
+          query={findQuery}
+          onChange={setFindQuery}
+          onClose={() => setFindOpen(false)}
+          onFind={findInActivePage}
+        />
+      )}
       <div className="window-titlebar" aria-hidden="true">
         <strong>ÆTHER</strong>
       </div>
@@ -950,6 +1091,70 @@ function App(): React.JSX.Element {
         />
       )}
     </main>
+  )
+}
+
+function StatusToast({
+  toast
+}: {
+  toast: StatusToastInput & { id: number }
+}): React.JSX.Element {
+  return (
+    <div className={`status-toast ${toast.tone}`} role="status" aria-live="polite">
+      <span aria-hidden="true" />
+      <strong>{toast.message}</strong>
+    </div>
+  )
+}
+
+function FindBar({
+  inputRef,
+  query,
+  onChange,
+  onClose,
+  onFind
+}: {
+  inputRef: RefObject<HTMLInputElement | null>
+  query: string
+  onChange: (query: string) => void
+  onClose: () => void
+  onFind: (query: string) => Promise<void>
+}): React.JSX.Element {
+  return (
+    <form
+      className="find-bar"
+      onSubmit={(event) => {
+        event.preventDefault()
+        void onFind(query)
+      }}
+    >
+      <SearchIcon aria-hidden="true" />
+      <input
+        aria-label="Find in page"
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            onClose()
+          }
+        }}
+        placeholder="Find in page"
+        ref={inputRef}
+        type="search"
+        value={query}
+      />
+      <button className="responsive-button" disabled={!query.trim()} type="submit">
+        Find
+      </button>
+      <button
+        aria-label="Close find"
+        className="find-close-button"
+        onClick={onClose}
+        type="button"
+      >
+        ×
+      </button>
+    </form>
   )
 }
 

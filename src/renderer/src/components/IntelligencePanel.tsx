@@ -1,7 +1,7 @@
 import { CSSProperties, FormEvent, useState } from 'react'
 import { ChatResult, CollectionSummary, SearchResult, SystemStatus } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
-import { getCaptureHost } from '../utils/aether-ui'
+import { formatLocalModelName, getCaptureHost } from '../utils/aether-ui'
 import { AetherSigilIcon, ChevronRightIcon } from './icons'
 
 type IntelligencePanelProps = {
@@ -142,7 +142,7 @@ export function IntelligencePanel({
             type="button"
           >
             <h2>Ask</h2>
-            <span>{formatModelName(status?.chatModel) ?? 'No model'}</span>
+            <span>{formatLocalModelName(status?.chatModel) ?? 'No model'}</span>
             <ChevronRightIcon />
           </button>
 
@@ -201,7 +201,7 @@ export function IntelligencePanel({
           <section className="panel-section mode-section answer-section">
             <div className="section-heading">
               <h2>Answer</h2>
-              <span>{chatResult.model}</span>
+              <span>{formatLocalModelName(chatResult.model) ?? chatResult.model}</span>
             </div>
             <AnswerCard result={chatResult} onOpenCitation={onOpenCitation} />
           </section>
@@ -217,7 +217,9 @@ export function IntelligencePanel({
             title="Model settings"
             type="button"
           >
-            {status?.chatModel ? `Model ${formatModelName(status.chatModel)}` : 'Model settings'}
+            {status?.chatModel
+              ? `Model ${formatLocalModelName(status.chatModel)}`
+              : 'Model settings'}
           </button>
         </footer>
         {settingsOpen && (
@@ -335,30 +337,32 @@ function LocalModelSettings({
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
 }): React.JSX.Element {
   const models = status?.availableModels ?? []
-  const modelLabel = formatModelName(status?.chatModel) ?? 'No chat model'
+  const chatModels = status?.chatModels ?? []
+  const embeddingModels = status?.embeddingModels ?? []
+  const modelLabel = formatLocalModelName(status?.chatModel) ?? 'No chat model'
 
   return (
     <section className="model-island" aria-label="Local model settings">
       <div className="model-heading">
         <div>
           <h2>Local models</h2>
-          <p>{status?.runtimeReady ? `${models.length} GGUF models` : 'No GGUF model'}</p>
+          <p>{status?.runtimeReady ? `${models.length} local models` : 'No local model'}</p>
         </div>
         <span>{modelLabel}</span>
       </div>
       <label>
         Chat model
         <select
-          disabled={Boolean(busy) || models.length === 0}
+          disabled={Boolean(busy) || chatModels.length === 0}
           value={status?.chatModel ?? ''}
           onChange={(event) => onUpdateModels({ chatModel: event.target.value })}
         >
           <option value="" disabled>
             No model
           </option>
-          {models.map((model) => (
+          {chatModels.map((model) => (
             <option key={model} value={model}>
-              {formatModelName(model) ?? model}
+              {formatLocalModelName(model) ?? model}
             </option>
           ))}
         </select>
@@ -366,16 +370,16 @@ function LocalModelSettings({
       <label>
         Embeddings
         <select
-          disabled={Boolean(busy) || models.length === 0}
+          disabled={Boolean(busy) || embeddingModels.length === 0}
           value={status?.embeddingModel ?? ''}
           onChange={(event) => onUpdateModels({ embeddingModel: event.target.value })}
         >
           <option value="" disabled>
             No model
           </option>
-          {models.map((model) => (
+          {embeddingModels.map((model) => (
             <option key={model} value={model}>
-              {formatModelName(model) ?? model}
+              {formatLocalModelName(model) ?? model}
             </option>
           ))}
         </select>
@@ -401,9 +405,11 @@ function AnswerCard({
 
   return (
     <article className="answer-card">
-      <div className="answer-markdown">{renderAnswerMarkdown(result.answer)}</div>
+      <div className="answer-markdown">
+        {renderAnswerMarkdown(result.answer, result.citations, onOpenCitation)}
+      </div>
       <div className="citation-list">
-        {result.citations.slice(0, 5).map((citation, index) => (
+        {result.citations.map((citation, index) => (
           <button key={citation.id} onClick={() => onOpenCitation(citation)} type="button">
             [{index + 1}] {citation.title} - {getCaptureHost(citation.url)}
           </button>
@@ -419,7 +425,11 @@ function AnswerCard({
   )
 }
 
-function renderAnswerMarkdown(markdown: string): React.ReactNode[] {
+function renderAnswerMarkdown(
+  markdown: string,
+  citations: SearchResult[],
+  onOpenCitation: (citation: SearchResult) => Promise<void>
+): React.ReactNode[] {
   const blocks: React.ReactNode[] = []
   const lines = markdown.split(/\r?\n/)
   let listItems: React.ReactNode[] = []
@@ -448,7 +458,7 @@ function renderAnswerMarkdown(markdown: string): React.ReactNode[] {
       flushLists()
       blocks.push(
         <h3 key={`h-${index}`} className={`answer-heading level-${heading[1].length}`}>
-          {renderInlineMarkdown(heading[2])}
+          {renderInlineMarkdown(heading[2], citations, onOpenCitation)}
         </h3>
       )
       return
@@ -457,28 +467,38 @@ function renderAnswerMarkdown(markdown: string): React.ReactNode[] {
     const bullet = /^[-*]\s+(.+)$/.exec(trimmed)
     if (bullet) {
       orderedItems = []
-      listItems.push(<li key={`li-${index}`}>{renderInlineMarkdown(bullet[1])}</li>)
+      listItems.push(
+        <li key={`li-${index}`}>{renderInlineMarkdown(bullet[1], citations, onOpenCitation)}</li>
+      )
       return
     }
 
     const numbered = /^\d+\.\s+(.+)$/.exec(trimmed)
     if (numbered) {
       listItems = []
-      orderedItems.push(<li key={`oli-${index}`}>{renderInlineMarkdown(numbered[1])}</li>)
+      orderedItems.push(
+        <li key={`oli-${index}`}>
+          {renderInlineMarkdown(numbered[1], citations, onOpenCitation)}
+        </li>
+      )
       return
     }
 
     flushLists()
-    blocks.push(<p key={`p-${index}`}>{renderInlineMarkdown(trimmed)}</p>)
+    blocks.push(<p key={`p-${index}`}>{renderInlineMarkdown(trimmed, citations, onOpenCitation)}</p>)
   })
 
   flushLists()
   return blocks
 }
 
-function renderInlineMarkdown(text: string): React.ReactNode[] {
+function renderInlineMarkdown(
+  text: string,
+  citations: SearchResult[],
+  onOpenCitation: (citation: SearchResult) => Promise<void>
+): React.ReactNode[] {
   const nodes: React.ReactNode[] = []
-  const pattern = /(\*\*[^*]+\*\*|\$[^$]+\$|\\\([^)]*\\\))/g
+  const pattern = /(\*\*[^*]+\*\*|\$[^$]+\$|\\\([^)]*\\\)|\[(?:\d+\s*,\s*)*\d+\])/g
   let cursor = 0
   let match: RegExpExecArray | null
 
@@ -489,7 +509,14 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
 
     const token = match[0]
     if (token.startsWith('**') && token.endsWith('**')) {
-      nodes.push(<strong key={nodes.length}>{renderInlineMarkdown(token.slice(2, -2))}</strong>)
+      nodes.push(
+        <strong key={nodes.length}>
+          {renderInlineMarkdown(token.slice(2, -2), citations, onOpenCitation)}
+        </strong>
+      )
+    } else if (/^\[(?:\d+\s*,\s*)*\d+\]$/.test(token)) {
+      const citationNodes = renderCitationToken(token, citations, onOpenCitation, nodes.length)
+      nodes.push(...citationNodes)
     } else {
       nodes.push(
         <span className="answer-inline-math" key={nodes.length}>
@@ -504,6 +531,46 @@ function renderInlineMarkdown(text: string): React.ReactNode[] {
   if (cursor < text.length) {
     nodes.push(text.slice(cursor))
   }
+
+  return nodes
+}
+
+function renderCitationToken(
+  token: string,
+  citations: SearchResult[],
+  onOpenCitation: (citation: SearchResult) => Promise<void>,
+  keyOffset: number
+): React.ReactNode[] {
+  const indexes = token
+    .slice(1, -1)
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value > 0)
+
+  if (indexes.length === 0) return [token]
+
+  const nodes: React.ReactNode[] = []
+  indexes.forEach((citationNumber, index) => {
+    const citation = citations[citationNumber - 1]
+    if (!citation) {
+      return
+    }
+
+    if (index > 0) nodes.push(' ')
+    nodes.push(
+      <button
+        className="answer-citation-link"
+        key={`citation-${keyOffset}-${citationNumber}-${index}`}
+        onClick={() => {
+          void onOpenCitation(citation)
+        }}
+        title={`${citation.title} - ${getCaptureHost(citation.url)}`}
+        type="button"
+      >
+        [{citationNumber}]
+      </button>
+    )
+  })
 
   return nodes
 }
@@ -533,11 +600,4 @@ function StatusPill({ status }: { status: SystemStatus | null }): React.JSX.Elem
       {status.runtimeReady ? status.runtimeName : 'No model'}
     </span>
   )
-}
-
-function formatModelName(model?: string | null): string | null {
-  if (!model) return null
-
-  const filename = model.split(/[\\/]/).pop() ?? model
-  return filename.replace(/\.gguf$/i, '')
 }

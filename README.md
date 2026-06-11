@@ -21,7 +21,7 @@ Current major capabilities:
 - AI answers render as selectable markdown with copy support and clickable citations.
 - iCE, the Information Complexity Explorer, generates iceberg-style complexity maps for a topic using the local chat model.
 - Settings modal currently supports default search engine selection.
-- Local GGUF model menu supports runtime status and model selection.
+- Local model menu supports runtime status and model selection for GGUF chat models plus GGUF or official safetensors embedding models.
 
 ## Privacy Boundary
 
@@ -50,19 +50,40 @@ Required:
 - CMake, required for building the bundled llama.cpp Rust binding.
 - macOS, Windows, or Linux for desktop development.
 - Android Studio, Android SDK/NDK, and Rust Android targets for Android builds.
-- GGUF model files for local embeddings and chat generation.
+- GGUF model files for local chat generation and either GGUF or official safetensors files for local embeddings.
 
 Recommended first-stage model setup:
 
-- Embeddings: `embeddinggemma` GGUF, or `nomic-embed-text` GGUF.
-- Chat/iCE: a Gemma chat GGUF, with Gemma 4 preferred when available and a 2B-class Gemma variant as a lower-end-device option later.
+- Embeddings: official `google/embeddinggemma-300m` safetensors, `embeddinggemma` GGUF, or `nomic-embed-text` GGUF.
+- Chat/iCE: a Gemma chat GGUF. Official Google Gemma 4 QAT GGUF releases are available for the Gemma 4 family; use an instruction-tuned file such as `gemma-4-E4B-it-qat-q4_0-gguf` or a larger variant if the machine has enough memory.
+
+Chosen models:
+
+Mobile / Z Fold 7:
+  Gemma 4 E2B official GGUF
+  Optional: E4B only if user chooses a “large mobile model” download
+
+Raspberry Pi 5 16GB:
+  E4B official GGUF as the upper practical default
+  E2B as fallback / fast mode
+
+Desktop MacBook Pro M5:
+  Gemma 4 12B official QAT GGUF
+
+- desktop default: 12B or E4B
+- desktop light: E4B
+- Pi: E4B
+- mobile: E2B default, E4B optional download/import
+
 
 Model discovery:
 
 - Put chat models in `./aether-models/chat/`.
-- Put embedding models in `./aether-models/embeddings/`.
+- Put embedding GGUF files in `./aether-models/embeddings/`.
+- Put official `google/embeddinggemma-300m` safetensors in `./aether-models/embeddings/embeddinggemma-300m/`.
 - Or set `AETHER_CHAT_MODEL=/absolute/path/to/chat.gguf`.
 - Or set `AETHER_EMBEDDING_MODEL=/absolute/path/to/embedding.gguf`.
+- Or set `AETHER_EMBEDDING_MODEL=/absolute/path/to/embeddinggemma-300m`.
 - Or set `AETHER_MODEL_DIR=/absolute/path/to/a/model/folder`.
 
 Default model behavior:
@@ -70,6 +91,17 @@ Default model behavior:
 - Embeddings prefer filenames containing `embeddinggemma`, `embedding-gemma`, `nomic-embed-text`, `embedding`, or `embed`.
 - Chat model preference is filenames containing `gemma4`, `gemma-4`, `gemma3`, `gemma-3`, `gemma-2b`, `2b`, `gemma`, or `qwen`, then the first non-embedding GGUF.
 - The model menu can update the selected embedding and chat models.
+- Chat generation uses the GGUF's embedded chat template when present, preserving Gemma 4 system/user message formatting instead of flattening everything into one prompt. Sampling keeps the Electron app's conservative temperatures while aligning top-k/top-p with the Gemma 4 Ollama defaults.
+
+Download the official EmbeddingGemma safetensors after accepting the Google model terms on Hugging Face:
+
+```bash
+cd /Users/canur/Projects/Can/Rust-Aether/aether
+mkdir -p aether-models/embeddings/embeddinggemma-300m
+hf auth login
+hf download google/embeddinggemma-300m \
+  --local-dir aether-models/embeddings/embeddinggemma-300m
+```
 
 ## Quick Start
 
@@ -491,7 +523,7 @@ Rust Tauri Backend
   |     active page snapshot or fetch -> readable text -> chunks
   |
   |-- Local model runtime
-  |     llama.cpp GGUF loading, Metal offload, embeddings, chat, and iCE generation
+  |     llama.cpp GGUF loading, Metal offload, safetensors embeddings, chat, and iCE generation
   |
   |-- Local chunk store
   |     vector search and chunk metadata
@@ -656,16 +688,18 @@ Avoid:
 
 ### No local model is available
 
-Add GGUF models to the project-local model directory shown in the AiON model settings, or point the app at explicit files:
+Add local models to the project-local model directory shown in the AiON model settings, or point the app at explicit files:
 
 ```bash
 export AETHER_CHAT_MODEL=/absolute/path/to/chat.gguf
 export AETHER_EMBEDDING_MODEL=/absolute/path/to/embedding.gguf
+# or:
+export AETHER_EMBEDDING_MODEL=/absolute/path/to/embeddinggemma-300m
 ```
 
 ### Missing embedding model
 
-Add an embedding GGUF, preferably `embeddinggemma` or `nomic-embed-text`, to `./aether-models/embeddings/` or select it from the AiON model menu.
+Add the official `google/embeddinggemma-300m` safetensors folder to `./aether-models/embeddings/embeddinggemma-300m/`, or add an embedding GGUF such as `embeddinggemma` or `nomic-embed-text` to `./aether-models/embeddings/`.
 
 ### Chat model unavailable
 
