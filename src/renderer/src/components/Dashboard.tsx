@@ -28,7 +28,12 @@ import {
   SavedIcebergSummary
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
-import { formatDate, getCaptureHost, inferIcebergIcon } from '../utils/aether-ui'
+import {
+  formatDate,
+  formatLocalModelName,
+  getCaptureHost,
+  inferIcebergIcon
+} from '../utils/aether-ui'
 import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, SnowflakeIcon } from './icons'
 import { Trash2 as TrashIcon } from 'lucide-react'
 
@@ -350,7 +355,8 @@ export function Dashboard({
                   <span>{iceberg.itemCount} frozen fragments</span>
                   <strong>{iceberg.title}</strong>
                   <small>
-                    {formatDate(iceberg.savedAt)} {iceberg.model}
+                    {formatDate(iceberg.savedAt)}{' '}
+                    {formatLocalModelName(iceberg.model) ?? iceberg.model}
                   </small>
                 </button>
                 <button

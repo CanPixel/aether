@@ -1,10 +1,12 @@
+mod embeddinggemma;
+
 use chrono::Utc;
 use encoding_rs::UTF_8;
 use llama_cpp_2::{
     context::params::{LlamaContextParams, LlamaPoolingType},
     llama_backend::LlamaBackend,
     llama_batch::LlamaBatch,
-    model::{params::LlamaModelParams, AddBos, LlamaModel},
+    model::{params::LlamaModelParams, AddBos, LlamaChatMessage, LlamaModel},
     sampling::LlamaSampler,
 };
 use reqwest::Client;
@@ -21,6 +23,7 @@ use std::{
 };
 #[cfg(desktop)]
 use tauri::{
+    menu::{Menu, MenuItem, Submenu},
     webview::{NewWindowResponse, PageLoadEvent},
     Webview, WebviewBuilder, WebviewUrl, Window,
 };
@@ -37,21 +40,30 @@ const BROWSER_VIEW_TOP: f64 = 166.0;
 const PANEL_WIDTH: f64 = 404.0;
 const PANEL_COLLAPSED_WIDTH: f64 = 58.0;
 const LOCAL_RUNTIME_NAME: &str = "llama.cpp";
+const AETHER_FIND_MENU_ID: &str = "aether-find-in-page";
+const AETHER_FIND_REQUESTED_EVENT: &str = "aether:find-requested";
 const AETHER_MODEL_DIR_ENV: &str = "AETHER_MODEL_DIR";
 const AETHER_CHAT_MODEL_ENV: &str = "AETHER_CHAT_MODEL";
 const AETHER_EMBEDDING_MODEL_ENV: &str = "AETHER_EMBEDDING_MODEL";
 const AETHER_LLM_CONTEXT_ENV: &str = "AETHER_LLM_CTX";
-const DEFAULT_CHAT_CONTEXT_TOKENS: u32 = 8192;
+const AETHER_LLM_BATCH_TOKENS_ENV: &str = "AETHER_LLM_BATCH_TOKENS";
+const AETHER_LLM_GPU_ENV: &str = "AETHER_LLM_GPU";
+const AETHER_EMBED_GPU_ENV: &str = "AETHER_EMBED_GPU";
+const AETHER_EMBED_BATCH_ENV: &str = "AETHER_EMBED_BATCH";
+const AETHER_EMBED_BATCH_TOKENS_ENV: &str = "AETHER_EMBED_BATCH_TOKENS";
+const DEFAULT_CHAT_CONTEXT_TOKENS: u32 = 6144;
+const DEFAULT_CHAT_BATCH_TOKENS: usize = 2048;
 const DEFAULT_EMBEDDING_CONTEXT_TOKENS: u32 = 2048;
+const DEFAULT_EMBEDDING_BATCH_SIZE: usize = 8;
+const DEFAULT_EMBEDDING_BATCH_TOKENS: usize = 2048;
+const DEFAULT_CAPTURE_CHUNK_SIZE: usize = 2200;
+const DEFAULT_CAPTURE_CHUNK_OVERLAP: usize = 240;
+const SAFETENSORS_CAPTURE_CHUNK_SIZE: usize = DEFAULT_CAPTURE_CHUNK_SIZE;
+const SAFETENSORS_CAPTURE_CHUNK_OVERLAP: usize = DEFAULT_CAPTURE_CHUNK_OVERLAP;
 const DEFAULT_GENERATION_TOKENS: usize = 900;
 const DEFAULT_ICEBERG_GENERATION_TOKENS: usize = 2800;
-const PREFERRED_EMBEDDING_MODEL_HINTS: [&str; 5] = [
-    "embeddinggemma",
-    "embedding-gemma",
-    "nomic-embed-text",
-    "embedding",
-    "embed",
-];
+const DEFAULT_TOP_K: i32 = 64;
+const DEFAULT_TOP_P: f32 = 0.95;
 const PREFERRED_CHAT_MODEL_HINTS: [&str; 8] = [
     "gemma4", "gemma-4", "gemma3", "gemma-3", "gemma-2b", "2b", "gemma", "qwen",
 ];
@@ -82,11 +94,43 @@ struct NativeModelRuntime {
     backend: Option<LlamaBackend>,
     chat: Option<LoadedNativeModel>,
     embedding: Option<LoadedNativeModel>,
+    safetensors_embedding: Option<LoadedSafetensorsEmbeddingModel>,
 }
 
 struct LoadedNativeModel {
     path: PathBuf,
     model: LlamaModel,
+}
+
+struct LoadedSafetensorsEmbeddingModel {
+    path: PathBuf,
+    model: embeddinggemma::EmbeddingGemma,
+}
+
+#[derive(Clone)]
+struct EmbeddingProgress {
+    app: AppHandle,
+    message: String,
+}
+
+impl EmbeddingProgress {
+    fn emit(&self, current: usize, total: usize) {
+        emit_capture_progress(&self.app, &self.message, Some(current), Some(total));
+    }
+
+    fn emit_message(&self, message: impl Into<String>, current: usize, total: usize) {
+        emit_capture_progress(&self.app, message, Some(current), Some(total));
+    }
+}
+
+struct ChatPromptMessage {
+    role: &'static str,
+    content: String,
+}
+
+struct RenderedChatPrompt {
+    prompt: String,
+    add_bos: AddBos,
 }
 
 #[derive(Clone, Copy)]
@@ -257,6 +301,16 @@ struct CaptureResult {
     collection_name: String,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CaptureProgress {
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    current: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total: Option<usize>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SearchResult {
@@ -336,6 +390,8 @@ struct SystemStatus {
     embedding_model: Option<String>,
     chat_model: Option<String>,
     available_models: Vec<String>,
+    chat_models: Vec<String>,
+    embedding_models: Vec<String>,
     model_dir: String,
     db_path: String,
     library_path: String,
@@ -929,6 +985,57 @@ fn navigate_native_webview_history(
 }
 
 #[cfg(desktop)]
+fn scroll_native_webview_to_text(state: &State<Backend>, tab_id: &str, text: &str) -> Cmd<()> {
+    let source_text = text.trim();
+    if source_text.is_empty() {
+        return Ok(());
+    }
+    let webview = state
+        .webviews
+        .lock()
+        .map_err(|_| "Æther webviews are unavailable.".to_string())?
+        .views
+        .get(tab_id)
+        .cloned()
+        .ok_or_else(|| format!("Native webview not found for tab: {tab_id}"))?;
+    let text_json = serde_json::to_string(source_text).map_err(|error| error.to_string())?;
+    let script = scroll_to_text_script().replace("__AETHER_SOURCE_TEXT__", &text_json);
+    webview.eval(script).map_err(|error| error.to_string())
+}
+
+#[cfg(not(desktop))]
+fn scroll_native_webview_to_text(_state: &State<Backend>, _tab_id: &str, _text: &str) -> Cmd<()> {
+    Ok(())
+}
+
+#[cfg(desktop)]
+fn find_native_webview_text(state: &State<Backend>, tab_id: &str, query: Option<&str>) -> Cmd<()> {
+    let webview = state
+        .webviews
+        .lock()
+        .map_err(|_| "Æther webviews are unavailable.".to_string())?
+        .views
+        .get(tab_id)
+        .cloned()
+        .ok_or_else(|| format!("Native webview not found for tab: {tab_id}"))?;
+    let query_json = match query.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => serde_json::to_string(value).map_err(|error| error.to_string())?,
+        None => "null".to_string(),
+    };
+    let script = find_in_page_script().replace("__AETHER_FIND_QUERY__", &query_json);
+    webview.eval(script).map_err(|error| error.to_string())
+}
+
+#[cfg(not(desktop))]
+fn find_native_webview_text(
+    _state: &State<Backend>,
+    _tab_id: &str,
+    _query: Option<&str>,
+) -> Cmd<()> {
+    Ok(())
+}
+
+#[cfg(desktop)]
 fn close_native_webview(state: &State<Backend>, tab_id: &str) -> Cmd<()> {
     if let Some(webview) = state
         .webviews
@@ -945,6 +1052,149 @@ fn close_native_webview(state: &State<Backend>, tab_id: &str) -> Cmd<()> {
 #[cfg(not(desktop))]
 fn close_native_webview(_state: &State<Backend>, _tab_id: &str) -> Cmd<()> {
     Ok(())
+}
+
+fn find_in_page_script() -> &'static str {
+    r#"
+(() => {
+  const providedQuery = __AETHER_FIND_QUERY__;
+  const normalizeQuery = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+  const selectedText = () => {
+    try {
+      return normalizeQuery(window.getSelection && window.getSelection().toString());
+    } catch {
+      return '';
+    }
+  };
+  const runFind = (rawQuery) => {
+    const query = normalizeQuery(rawQuery);
+    if (!query || typeof window.find !== 'function') return;
+    window.__aetherFindQuery = query;
+    let found = window.find(query, false, false, true, false, true, false);
+    if (!found) {
+      try {
+        window.getSelection()?.removeAllRanges();
+      } catch {}
+      found = window.find(query, false, false, true, false, true, false);
+    }
+    return found;
+  };
+
+  if (providedQuery !== null && providedQuery !== undefined) {
+    runFind(providedQuery);
+    return;
+  }
+
+  const previous = normalizeQuery(window.__aetherFindQuery) || selectedText();
+  const query = window.prompt('Find in page', previous);
+  if (query === null) return;
+  runFind(query);
+})();
+"#
+}
+
+fn scroll_to_text_script() -> &'static str {
+    r#"
+(() => {
+  const sourceText = __AETHER_SOURCE_TEXT__;
+  const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const source = normalize(sourceText);
+  if (!source) return;
+
+  const words = source.split(' ').filter(Boolean).slice(0, 180);
+  const snippets = [];
+  const seen = new Set();
+  const addSnippet = (start, length) => {
+    const snippet = words.slice(start, start + length).join(' ');
+    if (snippet.length >= 32 && !seen.has(snippet)) {
+      seen.add(snippet);
+      snippets.push(snippet);
+    }
+  };
+
+  for (const length of [28, 22, 16, 12, 9, 7]) {
+    const step = Math.max(3, Math.floor(length / 2));
+    for (let start = 0; start < words.length; start += step) {
+      addSnippet(start, length);
+    }
+  }
+  snippets.sort((left, right) => right.length - left.length);
+
+  const restorePreviousHighlights = () => {
+    document.querySelectorAll('[data-aether-source-highlight="true"]').forEach((element) => {
+      element.style.outline = element.dataset.aetherPreviousOutline || '';
+      element.style.boxShadow = element.dataset.aetherPreviousBoxShadow || '';
+      element.style.backgroundColor = element.dataset.aetherPreviousBackgroundColor || '';
+      element.removeAttribute('data-aether-source-highlight');
+      element.removeAttribute('data-aether-previous-outline');
+      element.removeAttribute('data-aether-previous-box-shadow');
+      element.removeAttribute('data-aether-previous-background-color');
+    });
+  };
+
+  const isVisible = (element) => {
+    const style = window.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+  };
+
+  const scoreElement = (element) => {
+    const tag = element.tagName.toLowerCase();
+    if (['p', 'li', 'blockquote', 'td', 'th', 'figcaption', 'dd', 'dt'].includes(tag)) return 0;
+    if (['article', 'section', 'main'].includes(tag)) return 2;
+    return 1;
+  };
+
+  const highlight = (element) => {
+    restorePreviousHighlights();
+    element.dataset.aetherSourceHighlight = 'true';
+    element.dataset.aetherPreviousOutline = element.style.outline || '';
+    element.dataset.aetherPreviousBoxShadow = element.style.boxShadow || '';
+    element.dataset.aetherPreviousBackgroundColor = element.style.backgroundColor || '';
+    element.style.outline = '3px solid rgba(66, 153, 225, 0.72)';
+    element.style.boxShadow = '0 0 0 8px rgba(66, 153, 225, 0.16)';
+    element.style.backgroundColor = 'rgba(255, 246, 189, 0.42)';
+    element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+    window.setTimeout(() => {
+      if (element.dataset.aetherSourceHighlight === 'true') restorePreviousHighlights();
+    }, 12000);
+  };
+
+  const findMatch = () => {
+    const elements = Array.from(
+      document.querySelectorAll('p, li, blockquote, td, th, figcaption, dd, dt, article, section, main, div')
+    )
+      .filter(isVisible)
+      .map((element) => ({ element, text: normalize(element.textContent) }))
+      .filter((item) => item.text.length >= 32)
+      .sort((left, right) => {
+        const tagScore = scoreElement(left.element) - scoreElement(right.element);
+        if (tagScore !== 0) return tagScore;
+        return left.text.length - right.text.length;
+      });
+
+    for (const snippet of snippets) {
+      const match = elements.find((item) => item.text.includes(snippet));
+      if (match) return match.element;
+    }
+
+    return null;
+  };
+
+  let attempts = 0;
+  const retry = () => {
+    attempts += 1;
+    const match = findMatch();
+    if (match) {
+      highlight(match);
+      return;
+    }
+    if (attempts < 28) window.setTimeout(retry, 250);
+  };
+
+  retry();
+})();
+"#
 }
 
 #[cfg(desktop)]
@@ -1151,7 +1401,29 @@ fn update_tab_title(state: &State<Backend>, tab_id: &str, title: &str) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder
+        .menu(|app| {
+            let menu = Menu::default(app)?;
+            let find_item = MenuItem::with_id(
+                app,
+                AETHER_FIND_MENU_ID,
+                "Find in Page",
+                true,
+                Some("CmdOrCtrl+F"),
+            )?;
+            let find_menu = Submenu::with_items(app, "Find", true, &[&find_item])?;
+            menu.append(&find_menu)?;
+            Ok(menu)
+        })
+        .on_menu_event(|app, event| {
+            if event.id() == AETHER_FIND_MENU_ID {
+                let _ = app.emit(AETHER_FIND_REQUESTED_EVENT, ());
+            }
+        });
+
+    builder
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir().expect("app data dir");
@@ -1178,6 +1450,7 @@ pub fn run() {
                         eprintln!("Æther browser webview prewarm failed: {error}");
                     }
                 }
+                prewarm_local_chat_model(&app_handle);
             }
             Ok(())
         })
@@ -1193,6 +1466,8 @@ pub fn run() {
             aether_tabs_activate,
             aether_tabs_close,
             aether_tabs_navigate,
+            aether_tabs_scroll_to_text,
+            aether_tabs_find,
             aether_tabs_go_back,
             aether_tabs_go_forward,
             aether_dashboard_open,
@@ -1227,6 +1502,40 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running Æther");
+}
+
+#[cfg(desktop)]
+fn prewarm_local_chat_model(app: &AppHandle) {
+    let state = app.state::<Backend>();
+    let paths = state.paths.clone();
+    let runtime = Arc::clone(&state.native_runtime);
+
+    tauri::async_runtime::spawn(async move {
+        let Ok(settings) = load_settings(&paths.settings_path).await else {
+            return;
+        };
+        let Some(model_path) = model_catalog(&paths, &settings.local_model).chat_model else {
+            return;
+        };
+        let model_name = model_label(&model_path);
+        let result = task::spawn_blocking(move || {
+            let mut runtime = runtime
+                .lock()
+                .map_err(|_| "Local model runtime is unavailable.".to_string())?;
+            runtime.ensure_model(NativeModelKind::Chat, &model_path)
+        })
+        .await;
+
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                eprintln!("Æther chat model prewarm failed for {model_name}: {error}")
+            }
+            Err(error) => {
+                eprintln!("Æther chat model prewarm task failed for {model_name}: {error}")
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -1377,6 +1686,32 @@ async fn aether_tabs_navigate(
     };
     navigate_native_webview(&app, &state, &tab_id, &target_url)?;
     emit_state(&app, &state)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn aether_tabs_scroll_to_text(state: State<Backend>, tab_id: String, text: String) -> Cmd<()> {
+    {
+        let tabs = lock_tabs(&state)?;
+        if !tabs.tabs.iter().any(|tab| tab.id == tab_id) {
+            return Err(format!("Unknown tab: {tab_id}"));
+        }
+    }
+    scroll_native_webview_to_text(&state, &tab_id, &text)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn aether_tabs_find(state: State<Backend>, tab_id: String, query: Option<String>) -> Cmd<()> {
+    let target_tab_id = {
+        let tabs = lock_tabs(&state)?;
+        if tab_id.is_empty() {
+            tabs.active_tab_id.clone()
+        } else if tabs.tabs.iter().any(|tab| tab.id == tab_id) {
+            tab_id
+        } else {
+            return Err(format!("Unknown tab: {tab_id}"));
+        }
+    };
+    find_native_webview_text(&state, &target_tab_id, query.as_deref())
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -1618,11 +1953,13 @@ async fn aether_collections_captures(
 
 #[tauri::command]
 async fn aether_capture_current_page(
+    app: AppHandle,
     state: State<'_, Backend>,
     input: CaptureCurrentPageInput,
 ) -> Cmd<CaptureResult> {
     let settings = load_settings(&state.paths.settings_path).await?;
     let collection = get_collection(&state.paths.library_path, &input.collection_id).await?;
+    emit_capture_progress(&app, "Reading current page", None, None);
     let active_tab = {
         let tabs = lock_tabs(&state)?;
         if tabs.dashboard_open {
@@ -1633,6 +1970,7 @@ async fn aether_capture_current_page(
             .ok_or_else(|| "No active browser tab.".to_string())?
     };
     let captured = extract_readable_active_page(&state, &active_tab).await?;
+    emit_capture_progress(&app, "Chunking readable text", None, None);
     let captured_key = normalize_capture_url_key(&captured.url);
     let mut library = load_library(&state.paths.library_path).await?;
     if library.captures.iter().any(|capture| {
@@ -1642,16 +1980,38 @@ async fn aether_capture_current_page(
         return Err(format!("Page is already in {}.", collection.name));
     }
 
-    let chunks = split_text(&captured.text, 2200, 240);
+    let (chunk_size, chunk_overlap) = capture_chunk_settings(&state.paths, &settings);
+    let chunks = split_text(&captured.text, chunk_size, chunk_overlap);
     if chunks.is_empty() {
         return Err("No readable text found on the current page.".to_string());
     }
-    let embeddings = local_embed(&state, &settings, chunks.clone()).await?;
+    emit_capture_progress(
+        &app,
+        &format!("Embedding {} chunks", chunks.len()),
+        Some(0),
+        Some(chunks.len()),
+    );
+    let embeddings = local_embed_with_progress(
+        &state,
+        &settings,
+        chunks.clone(),
+        Some(EmbeddingProgress {
+            app: app.clone(),
+            message: "Embedding chunks".to_string(),
+        }),
+    )
+    .await?;
     if embeddings.len() != chunks.len() {
         return Err(
             "Local embedding model returned an unexpected number of embeddings.".to_string(),
         );
     }
+    emit_capture_progress(
+        &app,
+        "Saving capture",
+        Some(chunks.len()),
+        Some(chunks.len()),
+    );
 
     let capture_id = uuid();
     let captured_at = now();
@@ -1821,41 +2181,13 @@ async fn aether_chat_ask(state: State<'_, Backend>, input: AskChatInput) -> Cmd<
                 if let Ok(captured) = extract_readable_active_page(&state, &active_tab).await {
                     citations.insert(
                         0,
-                        SearchResult {
-                            id: format!("current-{}", uuid()),
-                            collection_id: input
-                                .collection_id
-                                .clone()
-                                .unwrap_or_else(|| "current-page".to_string()),
-                            capture_id: "current-page".to_string(),
-                            app_id: "browser".to_string(),
-                            title: captured.title,
-                            url: captured.url,
-                            captured_at: now(),
-                            chunk_index: 0,
-                            text: captured.text.chars().take(5000).collect(),
-                            score: 0.0,
-                        },
+                        current_page_citation(captured, &prompt, input.collection_id.as_deref()),
                     );
                 }
             } else if let Ok(captured) = extract_readable_page(&state.client, &active_url).await {
                 citations.insert(
                     0,
-                    SearchResult {
-                        id: format!("current-{}", uuid()),
-                        collection_id: input
-                            .collection_id
-                            .clone()
-                            .unwrap_or_else(|| "current-page".to_string()),
-                        capture_id: "current-page".to_string(),
-                        app_id: "browser".to_string(),
-                        title: captured.title,
-                        url: captured.url,
-                        captured_at: now(),
-                        chunk_index: 0,
-                        text: captured.text.chars().take(5000).collect(),
-                        score: 0.0,
-                    },
+                    current_page_citation(captured, &prompt, input.collection_id.as_deref()),
                 );
             }
         }
@@ -2048,6 +2380,22 @@ fn aether_layout_show_status_toast(input: StatusToastInput) -> Cmd<()> {
     Ok(())
 }
 
+fn emit_capture_progress(
+    app: &AppHandle,
+    message: impl Into<String>,
+    current: Option<usize>,
+    total: Option<usize>,
+) {
+    let _ = app.emit(
+        "aether:capture-progress",
+        CaptureProgress {
+            message: message.into(),
+            current,
+            total,
+        },
+    );
+}
+
 async fn navigate_active_tab(app: &AppHandle, state: &State<'_, Backend>, url: &str) -> Cmd<()> {
     let settings = load_settings(&state.paths.settings_path).await?;
     let (tab_id, target_url) = {
@@ -2106,6 +2454,100 @@ async fn search_collection(
     Ok(results)
 }
 
+fn capture_chunk_settings(paths: &DataPaths, settings: &UserSettings) -> (usize, usize) {
+    let catalog = model_catalog(paths, &settings.local_model);
+    if catalog
+        .embedding_model
+        .as_deref()
+        .is_some_and(is_safetensors_embedding_model)
+    {
+        (
+            SAFETENSORS_CAPTURE_CHUNK_SIZE,
+            SAFETENSORS_CAPTURE_CHUNK_OVERLAP,
+        )
+    } else {
+        (DEFAULT_CAPTURE_CHUNK_SIZE, DEFAULT_CAPTURE_CHUNK_OVERLAP)
+    }
+}
+
+fn current_page_citation(
+    captured: CapturedPage,
+    prompt: &str,
+    collection_id: Option<&str>,
+) -> SearchResult {
+    let chunks = split_text(&captured.text, 1600, 180);
+    let (chunk_index, text) = chunks
+        .iter()
+        .enumerate()
+        .max_by(|(_, left), (_, right)| {
+            lexical_relevance_score(left, prompt)
+                .partial_cmp(&lexical_relevance_score(right, prompt))
+                .unwrap_or(Ordering::Equal)
+        })
+        .map(|(index, text)| (index, text.clone()))
+        .unwrap_or_else(|| (0, captured.text.chars().take(1800).collect()));
+
+    SearchResult {
+        id: format!("current-{}", uuid()),
+        collection_id: collection_id
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "current-page".to_string()),
+        capture_id: "current-page".to_string(),
+        app_id: "browser".to_string(),
+        title: captured.title,
+        url: captured.url,
+        captured_at: now(),
+        chunk_index,
+        text,
+        score: 0.0,
+    }
+}
+
+fn lexical_relevance_score(text: &str, query: &str) -> f64 {
+    let terms = query_terms(query);
+    if terms.is_empty() {
+        return 0.0;
+    }
+    let haystack = text.to_lowercase();
+    terms
+        .iter()
+        .map(|term| lexical_term_score(&haystack, term))
+        .sum()
+}
+
+fn lexical_term_score(haystack: &str, term: &str) -> f64 {
+    if haystack.contains(term) {
+        return 2.0 + (term.len() as f64 / 10.0);
+    }
+    let stem_len = term.len().min(6);
+    if stem_len >= 5 && haystack.contains(&term[..stem_len]) {
+        return 1.25 + (stem_len as f64 / 12.0);
+    }
+    if let Some(singular) = term.strip_suffix('s') {
+        if singular.len() >= 5 && haystack.contains(singular) {
+            return 1.5 + (singular.len() as f64 / 12.0);
+        }
+    }
+    0.0
+}
+
+fn query_terms(query: &str) -> Vec<String> {
+    let stopwords = [
+        "a", "an", "and", "are", "as", "at", "be", "by", "can", "do", "does", "for", "from", "how",
+        "i", "in", "is", "it", "me", "most", "of", "on", "or", "should", "the", "this", "to",
+        "was", "were", "what", "when", "where", "which", "who", "why", "with",
+    ];
+    let stopwords = stopwords.into_iter().collect::<HashSet<_>>();
+    let mut seen = HashSet::new();
+    query
+        .split(|character: char| !character.is_alphanumeric())
+        .map(str::trim)
+        .map(str::to_lowercase)
+        .filter(|term| term.len() > 2 && !stopwords.contains(term.as_str()))
+        .filter(|term| seen.insert(term.clone()))
+        .collect()
+}
+
 async fn system_status(state: &State<'_, Backend>) -> Cmd<SystemStatus> {
     let settings = load_settings(&state.paths.settings_path).await?;
     let library = load_library(&state.paths.library_path).await?;
@@ -2116,6 +2558,18 @@ async fn system_status(state: &State<'_, Backend>) -> Cmd<SystemStatus> {
         embedding_model: catalog.embedding_model.as_ref().map(path_to_model_value),
         chat_model: catalog.chat_model.as_ref().map(path_to_model_value),
         available_models: catalog.models.iter().map(path_to_model_value).collect(),
+        chat_models: catalog
+            .models
+            .iter()
+            .filter(|path| is_chat_model(path))
+            .map(path_to_model_value)
+            .collect(),
+        embedding_models: catalog
+            .models
+            .iter()
+            .filter(|path| is_embedding_model(path))
+            .map(path_to_model_value)
+            .collect(),
         model_dir: state.paths.models_path.display().to_string(),
         db_path: state.paths.db_path.display().to_string(),
         library_path: state.paths.library_path.display().to_string(),
@@ -2180,10 +2634,19 @@ async fn local_embed(
     settings: &UserSettings,
     inputs: Vec<String>,
 ) -> Cmd<Vec<Vec<f32>>> {
+    local_embed_with_progress(state, settings, inputs, None).await
+}
+
+async fn local_embed_with_progress(
+    state: &State<'_, Backend>,
+    settings: &UserSettings,
+    inputs: Vec<String>,
+    progress: Option<EmbeddingProgress>,
+) -> Cmd<Vec<Vec<f32>>> {
     let catalog = model_catalog(&state.paths, &settings.local_model);
     let model_path = catalog.embedding_model.ok_or_else(|| {
         format!(
-            "No local embedding GGUF model found. Add an embedding model to {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
+            "No local embedding model found. Add an embedding GGUF or official EmbeddingGemma safetensors folder to {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
             state.paths.models_path.display()
         )
     })?;
@@ -2192,7 +2655,10 @@ async fn local_embed(
         let mut runtime = runtime
             .lock()
             .map_err(|_| "Local model runtime is unavailable.".to_string())?;
-        runtime.embed(&model_path, inputs)
+        match progress {
+            Some(progress) => runtime.embed_with_progress(&model_path, inputs, Some(progress)),
+            None => runtime.embed(&model_path, inputs),
+        }
     })
     .await
     .map_err(|error| error.to_string())?
@@ -2211,24 +2677,20 @@ async fn local_chat(
             state.paths.models_path.display()
         )
     })?;
-    let completion_prompt = build_chat_prompt(prompt, &citations);
+    let messages = build_chat_messages(prompt, &citations);
     let runtime = Arc::clone(&state.native_runtime);
     let model_label = model_label(&model_path);
     let answer = task::spawn_blocking(move || {
         let mut runtime = runtime
             .lock()
             .map_err(|_| "Local model runtime is unavailable.".to_string())?;
-        runtime.complete(
-            &model_path,
-            &completion_prompt,
-            DEFAULT_GENERATION_TOKENS,
-            0.2,
-        )
+        runtime.complete_chat(&model_path, messages, DEFAULT_GENERATION_TOKENS, 0.2)
     })
     .await
     .map_err(|error| error.to_string())??;
+    let answer = normalize_answer_citations(&clean_model_output(&answer), citations.len());
     Ok(ChatResult {
-        answer: clean_model_output(&answer),
+        answer,
         model: model_label,
         citations,
     })
@@ -2246,16 +2708,19 @@ async fn local_generate_iceberg(
             state.paths.models_path.display()
         )
     })?;
-    let completion_prompt = build_instruction_prompt(&build_iceberg_prompt(topic));
+    let messages = vec![ChatPromptMessage {
+        role: "user",
+        content: build_iceberg_prompt(topic),
+    }];
     let runtime = Arc::clone(&state.native_runtime);
     let model_label = model_label(&model_path);
     let generated = task::spawn_blocking(move || {
         let mut runtime = runtime
             .lock()
             .map_err(|_| "Local model runtime is unavailable.".to_string())?;
-        runtime.complete(
+        runtime.complete_chat(
             &model_path,
-            &completion_prompt,
+            messages,
             DEFAULT_ICEBERG_GENERATION_TOKENS,
             0.35,
         )
@@ -2301,8 +2766,17 @@ impl NativeModelRuntime {
             .as_ref()
             .ok_or_else(|| "Local model backend is not initialized.".to_string())?;
         let mut params = LlamaModelParams::default().with_use_mmap(backend.supports_mmap());
-        if backend.supports_gpu_offload() {
+        let use_gpu = match kind {
+            NativeModelKind::Chat => local_gpu_enabled(),
+            NativeModelKind::Embedding => embedding_gpu_enabled(),
+        };
+        if use_gpu && backend.supports_gpu_offload() {
             params = params.with_n_gpu_layers(999);
+        } else {
+            params = params
+                .with_n_gpu_layers(0)
+                .with_devices(&[])
+                .map_err(|error| format!("Failed to select CPU model backend: {error}"))?;
         }
         let model = LlamaModel::load_from_file(backend, &path, &params).map_err(|error| {
             format!("Failed to load local model {}: {error}", model_label(&path))
@@ -2316,9 +2790,22 @@ impl NativeModelRuntime {
     }
 
     fn embed(&mut self, model_path: &Path, inputs: Vec<String>) -> Cmd<Vec<Vec<f32>>> {
+        self.embed_with_progress(model_path, inputs, None)
+    }
+
+    fn embed_with_progress(
+        &mut self,
+        model_path: &Path,
+        inputs: Vec<String>,
+        progress: Option<EmbeddingProgress>,
+    ) -> Cmd<Vec<Vec<f32>>> {
         if inputs.is_empty() {
             return Ok(Vec::new());
         }
+        if is_safetensors_embedding_model(model_path) {
+            return self.embed_safetensors(model_path, inputs, progress);
+        }
+
         self.ensure_model(NativeModelKind::Embedding, model_path)?;
         let backend = self
             .backend
@@ -2330,59 +2817,197 @@ impl NativeModelRuntime {
             .ok_or_else(|| "Local embedding model is not loaded.".to_string())?
             .model;
         let threads = auto_thread_count();
-        let mut embeddings = Vec::with_capacity(inputs.len());
+        let total = inputs.len();
+        let mut embeddings = Vec::with_capacity(total);
+        let mut tokenized_inputs = Vec::with_capacity(total);
+
+        if let Some(progress) = &progress {
+            progress.emit_message("Tokenizing chunks", 0, total);
+        }
 
         for input in inputs {
             let tokens = model
-                .str_to_token(&input, AddBos::Never)
+                .str_to_token(&input, AddBos::Always)
                 .map_err(|error| error.to_string())?;
             if tokens.is_empty() {
                 return Err("Local embedding input produced no tokens.".to_string());
             }
-            let n_ctx = embedding_context_tokens(tokens.len());
-            if tokens.len() as u32 > n_ctx {
-                return Err(format!(
-                    "Local embedding input is too long for the embedding context: {} tokens exceeds {}.",
-                    tokens.len(),
-                    n_ctx
-                ));
+            tokenized_inputs.push(tokens);
+        }
+
+        let max_sequences = embedding_batch_size().min(16);
+        let max_batch_tokens = embedding_batch_token_limit();
+        let mut input_index = 0;
+        let mut batches = Vec::new();
+
+        while input_index < tokenized_inputs.len() {
+            let mut batch_token_count = 0usize;
+            let mut batch_end = input_index;
+
+            while batch_end < tokenized_inputs.len()
+                && batch_end - input_index < max_sequences
+                && (batch_token_count == 0
+                    || batch_token_count + tokenized_inputs[batch_end].len() <= max_batch_tokens)
+            {
+                batch_token_count += tokenized_inputs[batch_end].len();
+                batch_end += 1;
             }
-            let n_batch = n_ctx.max(tokens.len() as u32).max(512);
-            let ctx_params = LlamaContextParams::default()
-                .with_n_ctx(NonZeroU32::new(n_ctx))
-                .with_n_batch(n_batch)
-                .with_n_ubatch(n_batch)
-                .with_n_threads(threads)
-                .with_n_threads_batch(threads)
-                .with_embeddings(true)
-                .with_pooling_type(LlamaPoolingType::Mean);
-            let mut ctx = model
-                .new_context(backend, ctx_params)
-                .map_err(|error| error.to_string())?;
-            let mut batch = LlamaBatch::new(tokens.len(), 1);
-            for (index, token) in tokens.iter().enumerate() {
+
+            batches.push((input_index, batch_end, batch_token_count));
+            input_index = batch_end;
+        }
+
+        let max_batch_token_count = batches
+            .iter()
+            .map(|(_, _, batch_token_count)| *batch_token_count)
+            .max()
+            .unwrap_or_default();
+        let max_batch_sequence_count = batches
+            .iter()
+            .map(|(batch_start, batch_end, _)| batch_end - batch_start)
+            .max()
+            .unwrap_or(1);
+        let n_ctx = embedding_context_tokens(max_batch_token_count);
+        if max_batch_token_count as u32 > n_ctx {
+            return Err(format!(
+                "Local embedding batch is too long for the embedding context: {} tokens exceeds {}.",
+                max_batch_token_count, n_ctx
+            ));
+        }
+        let n_batch = n_ctx.max(max_batch_token_count as u32).max(512);
+        let offload_embedding_ops = embedding_gpu_enabled();
+        let ctx_params = LlamaContextParams::default()
+            .with_n_ctx(NonZeroU32::new(n_ctx))
+            .with_n_seq_max(max_batch_sequence_count as u32)
+            .with_n_batch(n_batch)
+            .with_n_ubatch(n_batch)
+            .with_n_threads(threads)
+            .with_n_threads_batch(threads)
+            .with_embeddings(true)
+            .with_offload_kqv(offload_embedding_ops)
+            .with_op_offload(offload_embedding_ops)
+            .with_pooling_type(LlamaPoolingType::Mean);
+        let mut ctx = model
+            .new_context(backend, ctx_params)
+            .map_err(|error| error.to_string())?;
+
+        for (batch_start, batch_end, batch_token_count) in batches {
+            let batch_sequence_count = batch_end - batch_start;
+            if let Some(progress) = &progress {
+                progress.emit_message(
+                    format!(
+                        "Embedding chunks {}-{batch_end} of {total}",
+                        batch_start + 1
+                    ),
+                    batch_start,
+                    total,
+                );
+            }
+
+            ctx.clear_kv_cache();
+            let mut batch = LlamaBatch::new(batch_token_count, batch_sequence_count as i32);
+            for (sequence_index, tokens) in
+                tokenized_inputs[batch_start..batch_end].iter().enumerate()
+            {
                 batch
-                    .add(*token, index as i32, &[0], false)
+                    .add_sequence(tokens, sequence_index as i32, false)
                     .map_err(|error| error.to_string())?;
             }
             ctx.encode(&mut batch).map_err(|error| error.to_string())?;
-            let embedding = ctx
-                .embeddings_seq_ith(0)
-                .map_err(|error| error.to_string())?;
-            embeddings.push(normalize_embedding(embedding));
+
+            for sequence_index in 0..batch_sequence_count {
+                let embedding = ctx
+                    .embeddings_seq_ith(sequence_index as i32)
+                    .map_err(|error| error.to_string())?;
+                embeddings.push(normalize_embedding(embedding));
+            }
+            if let Some(progress) = &progress {
+                progress.emit(batch_end, total);
+            }
         }
 
         Ok(embeddings)
     }
 
-    fn complete(
+    fn embed_safetensors(
         &mut self,
         model_path: &Path,
-        prompt: &str,
+        inputs: Vec<String>,
+        progress: Option<EmbeddingProgress>,
+    ) -> Cmd<Vec<Vec<f32>>> {
+        let path = canonical_model_path(model_path);
+        let needs_load = self
+            .safetensors_embedding
+            .as_ref()
+            .map(|loaded| loaded.path.as_path() != path.as_path())
+            .unwrap_or(true);
+        if needs_load {
+            if let Some(progress) = &progress {
+                progress.emit_message("Loading EmbeddingGemma", 0, inputs.len());
+            }
+            let model = embeddinggemma::EmbeddingGemma::load(&path)
+                .map_err(|error| format!("Failed to load EmbeddingGemma safetensors: {error}"))?;
+            self.safetensors_embedding = Some(LoadedSafetensorsEmbeddingModel {
+                path: path.clone(),
+                model,
+            });
+        }
+        let model = self
+            .safetensors_embedding
+            .as_mut()
+            .ok_or_else(|| "Official EmbeddingGemma model is not loaded.".to_string())?;
+        let total = inputs.len();
+        let mut embeddings = Vec::with_capacity(total);
+        let batch_size = safetensors_embedding_batch_size(&inputs);
+        for batch in inputs.chunks(batch_size) {
+            if let Some(progress) = &progress {
+                let start = embeddings.len() + 1;
+                let end = (embeddings.len() + batch.len()).min(total);
+                progress.emit_message(
+                    format!("Embedding chunks {start}-{end} of {total}"),
+                    embeddings.len(),
+                    total,
+                );
+            }
+            let batch = batch.to_vec();
+            let batch_embeddings = model
+                .model
+                .embed_batch(&batch)
+                .map_err(|error| error.to_string())?;
+            embeddings.extend(batch_embeddings);
+            if let Some(progress) = &progress {
+                progress.emit(embeddings.len(), total);
+            }
+        }
+        Ok(embeddings)
+    }
+
+    fn complete_chat(
+        &mut self,
+        model_path: &Path,
+        messages: Vec<ChatPromptMessage>,
         max_tokens: usize,
         temperature: f32,
     ) -> Cmd<String> {
         self.ensure_model(NativeModelKind::Chat, model_path)?;
+        let rendered = {
+            let model = &self
+                .chat
+                .as_ref()
+                .ok_or_else(|| "Local chat model is not loaded.".to_string())?
+                .model;
+            render_model_chat_prompt(model, &messages)?
+        };
+        self.complete_loaded_prompt(&rendered.prompt, max_tokens, temperature, rendered.add_bos)
+    }
+
+    fn complete_loaded_prompt(
+        &mut self,
+        prompt: &str,
+        max_tokens: usize,
+        temperature: f32,
+        add_bos: AddBos,
+    ) -> Cmd<String> {
         let backend = self
             .backend
             .as_ref()
@@ -2393,7 +3018,7 @@ impl NativeModelRuntime {
             .ok_or_else(|| "Local chat model is not loaded.".to_string())?
             .model;
         let mut tokens = model
-            .str_to_token(prompt, AddBos::Always)
+            .str_to_token(prompt, add_bos)
             .map_err(|error| error.to_string())?;
         if tokens.is_empty() {
             return Err("Local chat prompt produced no tokens.".to_string());
@@ -2405,38 +3030,56 @@ impl NativeModelRuntime {
         if tokens.len() > max_prompt_tokens {
             tokens = tokens[tokens.len() - max_prompt_tokens..].to_vec();
         }
-        let n_batch = (tokens.len() as u32).saturating_add(1).max(512).min(n_ctx);
+        let n_batch = (chat_batch_token_limit() as u32).min(n_ctx).max(512);
+        let n_ubatch = n_batch.min(2048).max(512);
         let threads = auto_thread_count();
+        let offload_ops = local_gpu_enabled();
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(NonZeroU32::new(n_ctx))
             .with_n_batch(n_batch)
+            .with_n_ubatch(n_ubatch)
             .with_n_threads(threads)
             .with_n_threads_batch(threads)
-            .with_offload_kqv(true);
+            .with_offload_kqv(offload_ops)
+            .with_op_offload(offload_ops);
         let mut ctx = model
             .new_context(backend, ctx_params)
             .map_err(|error| error.to_string())?;
-        let mut batch = LlamaBatch::new(n_batch as usize, 1);
+
         let last_prompt_index = tokens.len().saturating_sub(1);
-        for (index, token) in tokens.iter().enumerate() {
-            batch
-                .add(*token, index as i32, &[0], index == last_prompt_index)
+        let prompt_batch_limit = n_batch as usize;
+        let mut prompt_cursor = 0usize;
+        let mut sample_index = 0;
+        while prompt_cursor < tokens.len() {
+            let prompt_end = (prompt_cursor + prompt_batch_limit).min(tokens.len());
+            let mut prompt_batch = LlamaBatch::new(prompt_end - prompt_cursor, 1);
+            for (offset, token) in tokens[prompt_cursor..prompt_end].iter().enumerate() {
+                let index = prompt_cursor + offset;
+                prompt_batch
+                    .add(*token, index as i32, &[0], index == last_prompt_index)
+                    .map_err(|error| error.to_string())?;
+            }
+            ctx.decode(&mut prompt_batch)
                 .map_err(|error| error.to_string())?;
+            if prompt_end == tokens.len() {
+                sample_index = prompt_batch.n_tokens() - 1;
+            }
+            prompt_cursor = prompt_end;
         }
-        ctx.decode(&mut batch).map_err(|error| error.to_string())?;
 
         let mut sampler = LlamaSampler::chain_simple([
-            LlamaSampler::top_k(40),
-            LlamaSampler::top_p(0.95, 1),
+            LlamaSampler::top_k(DEFAULT_TOP_K),
+            LlamaSampler::top_p(DEFAULT_TOP_P, 1),
             LlamaSampler::temp(temperature),
             LlamaSampler::dist(0xA371_2026),
         ]);
         let mut decoder = UTF_8.new_decoder();
         let mut output = String::new();
-        let mut position = batch.n_tokens();
+        let mut batch = LlamaBatch::new(1, 1);
+        let mut position = tokens.len() as i32;
 
         for _ in 0..max_tokens {
-            let token = sampler.sample(&ctx, batch.n_tokens() - 1);
+            let token = sampler.sample(&ctx, sample_index);
             if model.is_eog_token(token) {
                 break;
             }
@@ -2453,6 +3096,7 @@ impl NativeModelRuntime {
                 .add(token, position, &[0], true)
                 .map_err(|error| error.to_string())?;
             ctx.decode(&mut batch).map_err(|error| error.to_string())?;
+            sample_index = batch.n_tokens() - 1;
             position += 1;
         }
 
@@ -2478,8 +3122,11 @@ fn model_catalog(paths: &DataPaths, settings: &LocalModelSettings) -> ModelCatal
 
     let mut models = Vec::new();
     collect_gguf_models(&paths.models_path, &mut models);
+    collect_safetensors_embedding_models(&paths.models_path.join("embeddings"), &mut models);
     if let Ok(dir) = env::var(AETHER_MODEL_DIR_ENV) {
-        collect_gguf_models(Path::new(&dir), &mut models);
+        let dir = PathBuf::from(dir);
+        collect_gguf_models(&dir, &mut models);
+        collect_safetensors_embedding_models(&dir, &mut models);
     }
     for var in [AETHER_CHAT_MODEL_ENV, AETHER_EMBEDDING_MODEL_ENV] {
         match env_model_path(var) {
@@ -2494,13 +3141,13 @@ fn model_catalog(paths: &DataPaths, settings: &LocalModelSettings) -> ModelCatal
     let chat_model = pick_chat_model(&models, settings);
     if models.is_empty() {
         errors.push(format!(
-            "No GGUF models found. Add models to {} or set {AETHER_MODEL_DIR_ENV}.",
+            "No local models found. Add GGUF models or official EmbeddingGemma safetensors to {} or set {AETHER_MODEL_DIR_ENV}.",
             paths.models_path.display()
         ));
     } else {
         if embedding_model.is_none() {
             errors.push(format!(
-                "No embedding GGUF selected. Put embeddinggemma or nomic-embed-text in {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
+                "No embedding model selected. Put official EmbeddingGemma safetensors, embeddinggemma GGUF, or nomic-embed-text GGUF in {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
                 paths.models_path.join("embeddings").display()
             ));
         }
@@ -2544,6 +3191,22 @@ fn collect_gguf_models(root: &Path, models: &mut Vec<PathBuf>) {
     }
 }
 
+fn collect_safetensors_embedding_models(root: &Path, models: &mut Vec<PathBuf>) {
+    if is_safetensors_embedding_model(root) {
+        models.push(root.to_path_buf());
+        return;
+    }
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if is_safetensors_embedding_model(&path) {
+            models.push(path);
+        }
+    }
+}
+
 fn project_models_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -2570,11 +3233,16 @@ fn env_model_path(var: &str) -> Cmd<Option<PathBuf>> {
         return Ok(None);
     };
     let path = PathBuf::from(value.trim());
-    if is_gguf_model(&path) {
+    let valid = match var {
+        AETHER_CHAT_MODEL_ENV => is_chat_model(&path),
+        AETHER_EMBEDDING_MODEL_ENV => is_embedding_model(&path),
+        _ => is_gguf_model(&path) || is_safetensors_embedding_model(&path),
+    };
+    if valid {
         Ok(Some(path))
     } else {
         Err(format!(
-            "{var} does not point to an existing GGUF model: {}",
+            "{var} does not point to an existing local model: {}",
             path.display()
         ))
     }
@@ -2587,11 +3255,15 @@ fn pick_embedding_model(models: &[PathBuf], settings: &LocalModelSettings) -> Op
     if let Some(model) = settings
         .embedding_model
         .as_deref()
-        .and_then(|value| pick_selected_model(models, value))
+        .and_then(|value| pick_selected_model(models, value, true))
     {
         return Some(model);
     }
-    pick_model_by_hints(models, &PREFERRED_EMBEDDING_MODEL_HINTS, true)
+    models
+        .iter()
+        .filter(|path| is_embedding_model(path))
+        .max_by_key(|path| embedding_model_score(path))
+        .cloned()
 }
 
 fn pick_chat_model(models: &[PathBuf], settings: &LocalModelSettings) -> Option<PathBuf> {
@@ -2601,7 +3273,7 @@ fn pick_chat_model(models: &[PathBuf], settings: &LocalModelSettings) -> Option<
     if let Some(model) = settings
         .chat_model
         .as_deref()
-        .and_then(|value| pick_selected_model(models, value))
+        .and_then(|value| pick_selected_model(models, value, false))
     {
         return Some(model);
     }
@@ -2613,13 +3285,13 @@ fn pick_chat_model(models: &[PathBuf], settings: &LocalModelSettings) -> Option<
     })
 }
 
-fn pick_selected_model(models: &[PathBuf], value: &str) -> Option<PathBuf> {
+fn pick_selected_model(models: &[PathBuf], value: &str, embedding: bool) -> Option<PathBuf> {
     let value = value.trim();
     if value.is_empty() {
         return None;
     }
     let direct = PathBuf::from(value);
-    if is_gguf_model(&direct) {
+    if selected_model_matches_kind(&direct, embedding) {
         return Some(canonical_model_path(&direct));
     }
     let normalized = value.to_lowercase();
@@ -2632,6 +3304,7 @@ fn pick_selected_model(models: &[PathBuf], value: &str) -> Option<PathBuf> {
                 || strip_gguf_extension(&label) == value
                 || label.to_lowercase().contains(&normalized)
         })
+        .filter(|path| selected_model_matches_kind(path, embedding))
         .cloned()
 }
 
@@ -2640,7 +3313,12 @@ fn pick_model_by_hints(models: &[PathBuf], hints: &[&str], embedding: bool) -> O
         let hint = hint.to_lowercase();
         if let Some(model) = models.iter().find(|path| {
             let label = model_label(path).to_lowercase();
-            label.contains(&hint) && (embedding || !is_embedding_model_name(path))
+            label.contains(&hint)
+                && if embedding {
+                    is_embedding_model(path)
+                } else {
+                    is_chat_model(path)
+                }
         }) {
             return Some(model.clone());
         }
@@ -2648,17 +3326,77 @@ fn pick_model_by_hints(models: &[PathBuf], hints: &[&str], embedding: bool) -> O
     None
 }
 
+fn embedding_model_score(path: &Path) -> i32 {
+    let label = model_label(path).to_lowercase();
+    let mut score = 0;
+    if is_gguf_model(path) {
+        score += 1_000;
+    }
+    if label.contains("embeddinggemma") || label.contains("embedding-gemma") {
+        score += 500;
+    }
+    if label.contains("bf16") {
+        score += 400;
+    } else if label.contains("f16") {
+        score += 300;
+    } else if label.contains("q8") {
+        score += 150;
+    }
+    if label.contains("nomic") {
+        score += 250;
+    }
+    if is_safetensors_embedding_model(path) {
+        score -= 500;
+    }
+    score
+}
+
 fn is_gguf_model(path: &Path) -> bool {
     path.is_file()
+        && !is_mmproj_model(path)
         && path
             .extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
 }
 
+fn is_chat_model(path: &Path) -> bool {
+    is_gguf_model(path) && !is_embedding_model_name(path)
+}
+
+fn selected_model_matches_kind(path: &Path, embedding: bool) -> bool {
+    if embedding {
+        is_embedding_model(path)
+    } else {
+        is_chat_model(path)
+    }
+}
+
+fn is_embedding_model(path: &Path) -> bool {
+    is_safetensors_embedding_model(path) || (is_gguf_model(path) && is_embedding_model_name(path))
+}
+
 fn is_embedding_model_name(path: &Path) -> bool {
+    if is_safetensors_embedding_model(path) {
+        return true;
+    }
     let label = model_label(path).to_lowercase();
     label.contains("embed") || label.contains("embedding") || label.contains("nomic")
+}
+
+fn is_mmproj_model(path: &Path) -> bool {
+    model_label(path).to_lowercase().contains("mmproj")
+}
+
+fn is_safetensors_embedding_model(path: &Path) -> bool {
+    path.is_dir()
+        && path.join("config.json").is_file()
+        && path.join("tokenizer.json").is_file()
+        && path.join("model.safetensors").is_file()
+        && path.join("2_Dense").join("config.json").is_file()
+        && path.join("2_Dense").join("model.safetensors").is_file()
+        && path.join("3_Dense").join("config.json").is_file()
+        && path.join("3_Dense").join("model.safetensors").is_file()
 }
 
 fn canonical_model_path(path: &Path) -> PathBuf {
@@ -2692,6 +3430,61 @@ fn chat_context_tokens() -> u32 {
         .clamp(1024, 65_536)
 }
 
+fn chat_batch_token_limit() -> usize {
+    env::var(AETHER_LLM_BATCH_TOKENS_ENV)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_CHAT_BATCH_TOKENS)
+        .clamp(512, 8192)
+}
+
+fn local_gpu_enabled() -> bool {
+    env_flag_enabled(AETHER_LLM_GPU_ENV, cfg!(target_os = "macos"))
+}
+
+fn embedding_gpu_enabled() -> bool {
+    env_flag_enabled(AETHER_EMBED_GPU_ENV, false)
+}
+
+fn env_flag_enabled(name: &str, default: bool) -> bool {
+    env::var(name).ok().map_or(default, |value| {
+        matches!(value.to_lowercase().as_str(), "1" | "true" | "yes" | "on")
+    })
+}
+
+fn embedding_batch_size() -> usize {
+    env::var(AETHER_EMBED_BATCH_ENV)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_EMBEDDING_BATCH_SIZE)
+        .clamp(1, 24)
+}
+
+fn embedding_batch_token_limit() -> usize {
+    env::var(AETHER_EMBED_BATCH_TOKENS_ENV)
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_EMBEDDING_BATCH_TOKENS)
+        .clamp(512, 8192)
+}
+
+fn safetensors_embedding_batch_size(inputs: &[String]) -> usize {
+    let configured = embedding_batch_size();
+    let longest = inputs
+        .iter()
+        .map(|input| input.chars().count())
+        .max()
+        .unwrap_or_default();
+
+    if longest >= 1_600 {
+        configured.min(2)
+    } else if longest >= 900 {
+        configured.min(4)
+    } else {
+        configured.min(8)
+    }
+}
+
 fn embedding_context_tokens(input_tokens: usize) -> u32 {
     let needed = input_tokens.saturating_add(16).min(u32::MAX as usize) as u32;
     DEFAULT_EMBEDDING_CONTEXT_TOKENS.max(needed).min(8192)
@@ -2718,18 +3511,19 @@ fn normalize_embedding(values: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-fn build_chat_prompt(prompt: &str, citations: &[SearchResult]) -> String {
+fn build_chat_messages(prompt: &str, citations: &[SearchResult]) -> Vec<ChatPromptMessage> {
     let context_block = citations
         .iter()
         .enumerate()
         .map(|(index, item)| {
+            let source_text = strip_numeric_bracket_markers(&item.text);
             format!(
                 "[{}] {}\nURL: {}\nCollection: {}\n{}",
                 index + 1,
                 item.title,
                 item.url,
                 item.collection_id,
-                item.text
+                source_text
             )
         })
         .collect::<Vec<_>>()
@@ -2739,18 +3533,101 @@ fn build_chat_prompt(prompt: &str, citations: &[SearchResult]) -> String {
     } else {
         &context_block
     };
-    build_instruction_prompt(&format!(
-        "You are Æther, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources with bracket numbers.\n\nLocal collection context:\n{context}\n\nQuestion: {prompt}"
-    ))
+    vec![
+        ChatPromptMessage {
+            role: "system",
+            content: format!(
+                "You are Æther, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources only with Æther source numbers [1] through [{}]. Do not copy bracketed reference numbers from webpage text.",
+                citations.len().max(1)
+            ),
+        },
+        ChatPromptMessage {
+            role: "user",
+            content: format!("Local collection context:\n{context}\n\nQuestion: {prompt}"),
+        },
+    ]
 }
 
-fn build_instruction_prompt(instruction: &str) -> String {
-    format!("<start_of_turn>user\n{instruction}<end_of_turn>\n<start_of_turn>model\n")
+fn render_model_chat_prompt(
+    model: &LlamaModel,
+    messages: &[ChatPromptMessage],
+) -> Cmd<RenderedChatPrompt> {
+    let template = match model.chat_template(None) {
+        Ok(template) => template,
+        Err(_) => {
+            return Ok(RenderedChatPrompt {
+                prompt: fallback_chat_prompt(messages),
+                add_bos: AddBos::Never,
+            })
+        }
+    };
+    let chat = messages
+        .iter()
+        .map(|message| LlamaChatMessage::new(message.role.to_string(), message.content.clone()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?;
+    match model.apply_chat_template(&template, &chat, true) {
+        Ok(prompt) => Ok(RenderedChatPrompt {
+            prompt,
+            add_bos: AddBos::Never,
+        }),
+        Err(_) => Ok(RenderedChatPrompt {
+            prompt: fallback_chat_prompt(messages),
+            add_bos: AddBos::Never,
+        }),
+    }
+}
+
+fn fallback_chat_prompt(messages: &[ChatPromptMessage]) -> String {
+    let mut prompt = String::from("<bos>");
+    let mut system_messages = Vec::new();
+
+    for message in messages {
+        match message.role {
+            "system" | "developer" => {
+                system_messages.push(message.content.trim().to_string());
+            }
+            "assistant" => {
+                prompt.push_str("<|turn>model\n");
+                prompt.push_str(message.content.trim());
+                prompt.push_str("<turn|>\n");
+            }
+            "user" => {
+                if !system_messages.is_empty() {
+                    prompt.push_str("<|turn>system\n");
+                    prompt.push_str(&system_messages.join("\n\n"));
+                    prompt.push_str("<turn|>\n");
+                    system_messages.clear();
+                }
+                prompt.push_str("<|turn>user\n");
+                prompt.push_str(message.content.trim());
+                prompt.push_str("<turn|>\n");
+            }
+            role => {
+                prompt.push_str("<|turn>");
+                prompt.push_str(role);
+                prompt.push('\n');
+                prompt.push_str(message.content.trim());
+                prompt.push_str("<turn|>\n");
+            }
+        }
+    }
+
+    if !system_messages.is_empty() {
+        prompt.push_str("<|turn>system\n");
+        prompt.push_str(&system_messages.join("\n\n"));
+        prompt.push_str("<turn|>\n");
+    }
+
+    prompt.push_str("<|turn>model\n");
+    prompt
 }
 
 fn contains_stop_marker(output: &str) -> bool {
     output.contains("<end_of_turn>")
         || output.contains("<start_of_turn>")
+        || output.contains("<turn|>")
+        || output.contains("<|turn>")
         || output.contains("<|eot_id|>")
         || output.contains("<|end|>")
 }
@@ -2762,12 +3639,108 @@ fn clean_model_output(output: &str) -> String {
         "<start_of_turn>model",
         "<start_of_turn>assistant",
         "<start_of_turn>",
+        "<turn|>",
+        "<|turn>model",
+        "<|turn>assistant",
+        "<|turn>user",
+        "<|turn>system",
+        "<|turn>",
         "<|eot_id|>",
         "<|end|>",
     ] {
         cleaned = cleaned.replace(marker, "");
     }
     cleaned.trim().to_string()
+}
+
+fn normalize_answer_citations(answer: &str, citation_count: usize) -> String {
+    tidy_citation_spacing(&rewrite_numeric_bracket_markers(
+        answer,
+        citation_count,
+        true,
+    ))
+}
+
+fn strip_numeric_bracket_markers(text: &str) -> String {
+    rewrite_numeric_bracket_markers(text, 0, false)
+}
+
+fn rewrite_numeric_bracket_markers(text: &str, citation_count: usize, keep_valid: bool) -> String {
+    let mut rewritten = String::with_capacity(text.len());
+    let mut cursor = 0usize;
+
+    while let Some(relative_start) = text[cursor..].find('[') {
+        let start = cursor + relative_start;
+        let Some(relative_end) = text[start + 1..].find(']') else {
+            break;
+        };
+        let end = start + 1 + relative_end;
+        let inner = &text[start + 1..end];
+        let Some(numbers) = parse_numeric_citation_marker(inner) else {
+            rewritten.push_str(&text[cursor..=start]);
+            cursor = start + 1;
+            continue;
+        };
+
+        rewritten.push_str(&text[cursor..start]);
+        if keep_valid {
+            let valid = numbers
+                .into_iter()
+                .filter(|number| *number > 0 && *number <= citation_count)
+                .map(|number| number.to_string())
+                .collect::<Vec<_>>();
+            if !valid.is_empty() {
+                rewritten.push('[');
+                rewritten.push_str(&valid.join(", "));
+                rewritten.push(']');
+            }
+        }
+        cursor = end + 1;
+    }
+
+    rewritten.push_str(&text[cursor..]);
+    rewritten
+}
+
+fn parse_numeric_citation_marker(value: &str) -> Option<Vec<usize>> {
+    if value.trim().is_empty()
+        || !value.chars().all(|character| {
+            character.is_ascii_digit() || character == ',' || character.is_whitespace()
+        })
+    {
+        return None;
+    }
+
+    let mut numbers = Vec::new();
+    for part in value.split(',') {
+        let part = part.trim();
+        if part.is_empty() {
+            return None;
+        }
+        let number = part.parse::<usize>().ok()?;
+        numbers.push(number);
+    }
+    (!numbers.is_empty()).then_some(numbers)
+}
+
+fn tidy_citation_spacing(value: &str) -> String {
+    let mut tidied = value.trim().to_string();
+    for (from, to) in [
+        (" .", "."),
+        (" ,", ","),
+        (" ;", ";"),
+        (" :", ":"),
+        (" !", "!"),
+        (" ?", "?"),
+        (" )", ")"),
+        ("( ", "("),
+    ] {
+        tidied = tidied.replace(from, to);
+    }
+    while tidied.contains("  ") {
+        tidied = tidied.replace("  ", " ");
+    }
+    tidied
 }
 
 async fn extract_readable_active_page(
@@ -3070,10 +4043,12 @@ fn saved_iceberg_summary(iceberg: &SavedIceberg) -> SavedIcebergSummary {
 }
 
 fn dedupe_citations(citations: Vec<SearchResult>) -> Vec<SearchResult> {
-    let mut unique: HashMap<String, SearchResult> = HashMap::new();
+    let mut unique = Vec::<SearchResult>::new();
+    let mut indexes = HashMap::<String, usize>::new();
     for citation in citations {
         let key = normalize_citation_key(&citation.url);
-        if let Some(existing) = unique.get_mut(&key) {
+        if let Some(existing_index) = indexes.get(&key).copied() {
+            let existing = &mut unique[existing_index];
             if !existing.text.contains(&citation.text) {
                 existing.text = format!(
                     "{}\n\nChunk {}:\n{}",
@@ -3087,10 +4062,11 @@ fn dedupe_citations(citations: Vec<SearchResult>) -> Vec<SearchResult> {
             }
             existing.score = existing.score.min(citation.score);
         } else {
-            unique.insert(key, citation);
+            indexes.insert(key, unique.len());
+            unique.push(citation);
         }
     }
-    unique.into_values().collect()
+    unique
 }
 
 fn split_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> {
@@ -3395,4 +4371,29 @@ fn uuid() -> String {
 
 fn now() -> String {
     Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn answer_citation_normalizer_removes_out_of_range_markers() {
+        let answer = r#"The pelt was called "fitchet" [15]. It has another name [1, 16]."#;
+
+        assert_eq!(
+            normalize_answer_citations(answer, 2),
+            r#"The pelt was called "fitchet". It has another name [1]."#
+        );
+    }
+
+    #[test]
+    fn source_context_sanitizer_removes_page_native_numeric_markers() {
+        assert_eq!(
+            strip_numeric_bracket_markers(
+                "Rodents are mostly herbivorous.[1][2] Some vary [note]."
+            ),
+            "Rodents are mostly herbivorous. Some vary [note]."
+        );
+    }
 }

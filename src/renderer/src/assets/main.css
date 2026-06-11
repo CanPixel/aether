@@ -1565,6 +1565,143 @@ button {
   color: var(--muted);
 }
 
+.status-toast {
+  display: inline-flex;
+  position: fixed;
+  top: calc(var(--titlebar-height) + 14px);
+  right: calc(var(--panel-width) + 18px);
+  z-index: 80;
+  max-width: min(420px, calc(100vw - 140px));
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(111, 157, 209, 0.24);
+  border-radius: 10px;
+  padding: 10px 13px;
+  background: rgba(248, 252, 255, 0.94);
+  color: var(--ink);
+  box-shadow: 0 16px 44px rgba(64, 105, 146, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.status-toast span {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 5px rgba(75, 158, 215, 0.13);
+}
+
+.status-toast strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 820;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-toast.info span {
+  animation: statusPulse 1.05s ease-in-out infinite;
+}
+
+.status-toast.success span {
+  background: var(--success);
+  box-shadow: 0 0 0 5px rgba(42, 148, 111, 0.13);
+}
+
+.status-toast.error {
+  border-color: rgba(184, 91, 89, 0.28);
+}
+
+.status-toast.error span {
+  background: var(--danger);
+  box-shadow: 0 0 0 5px rgba(184, 91, 89, 0.13);
+}
+
+.aether-shell.panel-collapsed .status-toast {
+  right: calc(var(--panel-collapsed-width) + 18px);
+}
+
+.find-bar {
+  position: fixed;
+  z-index: 120;
+  top: calc(var(--titlebar-height) + 48px);
+  right: calc(var(--panel-width) + 24px);
+  display: grid;
+  grid-template-columns: 18px minmax(180px, 280px) auto 30px;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  height: 42px;
+  border: 1px solid rgba(41, 132, 202, 0.42);
+  border-radius: 12px;
+  padding: 6px 8px 6px 10px;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.98), transparent 42%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(226, 246, 255, 0.96)),
+    rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 0 0 4px rgba(67, 158, 221, 0.12),
+    0 18px 48px rgba(82, 125, 176, 0.24);
+  backdrop-filter: blur(18px);
+}
+
+.aether-shell.panel-collapsed .find-bar {
+  right: calc(var(--panel-collapsed-width) + 24px);
+}
+
+.find-bar svg {
+  width: 16px;
+  height: 16px;
+  color: var(--accent-strong);
+}
+
+.find-bar input {
+  min-width: 0;
+  height: 28px;
+  border: 0;
+  padding: 0 2px;
+  background: transparent;
+  color: #18324b;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 720;
+  outline: none;
+}
+
+.find-bar input::placeholder {
+  color: rgba(86, 107, 134, 0.68);
+}
+
+.find-bar .responsive-button {
+  min-width: 52px;
+  height: 28px;
+  border-radius: 9px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.find-close-button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(116, 143, 180, 0.18);
+  border-radius: 9px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.62);
+  color: #6d7f99;
+  font-size: 19px;
+  font-weight: 540;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.find-close-button:hover {
+  border-color: rgba(67, 145, 204, 0.28);
+  background: rgba(232, 247, 255, 0.9);
+  color: var(--accent-strong);
+}
+
 .panel-section {
   padding: 14px;
 }
@@ -1999,6 +2136,30 @@ button {
   font-weight: 680;
 }
 
+.answer-citation-link {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  margin: 0 1px;
+  border: 1px solid rgba(78, 143, 208, 0.22);
+  border-radius: 999px;
+  padding: 0 5px;
+  background: rgba(225, 243, 255, 0.68);
+  color: var(--accent-strong);
+  font-size: 0.86em;
+  font-weight: 820;
+  line-height: 1;
+  vertical-align: 1px;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.answer-citation-link:hover {
+  border-color: rgba(50, 137, 199, 0.42);
+  background: rgba(207, 236, 255, 0.92);
+  color: #12668f;
+}
+
 .answer-heading {
   margin: 12px 0 6px;
   color: var(--ink);
@@ -2050,6 +2211,19 @@ button {
   50% {
     opacity: 1;
     scale: 1.35;
+  }
+}
+
+@keyframes statusPulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    scale: 0.78;
+  }
+
+  50% {
+    opacity: 1;
+    scale: 1.08;
   }
 }
 

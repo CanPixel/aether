@@ -6,6 +6,7 @@ import {
   AppSettings,
   AppSummary,
   BrowserTabSummary,
+  CaptureProgress,
   CaptureResult,
   CaptureSummary,
   ChatResult,
@@ -41,6 +42,8 @@ if (isTauri) {
       activate: (tabId) => call<void>('aether_tabs_activate', { tabId }),
       close: (tabId) => call<void>('aether_tabs_close', { tabId }),
       navigate: (tabId, url) => call<void>('aether_tabs_navigate', { tabId, url }),
+      scrollToText: (tabId, text) => call<void>('aether_tabs_scroll_to_text', { tabId, text }),
+      find: (tabId, query) => call<void>('aether_tabs_find', { tabId, query }),
       goBack: (tabId) => call<void>('aether_tabs_go_back', { tabId }),
       goForward: (tabId) => call<void>('aether_tabs_go_forward', { tabId })
     },
@@ -101,6 +104,22 @@ if (isTauri) {
         call<AetherState>('aether_state')
           .then(listener)
           .catch(() => undefined)
+
+        return () => {
+          void unlisten.then((dispose) => dispose())
+        }
+      },
+      onCaptureProgress: (listener: (progress: CaptureProgress) => void) => {
+        const unlisten = listen<CaptureProgress>('aether:capture-progress', (event) =>
+          listener(event.payload)
+        )
+
+        return () => {
+          void unlisten.then((dispose) => dispose())
+        }
+      },
+      onFindRequested: (listener: () => void) => {
+        const unlisten = listen<void>('aether:find-requested', () => listener())
 
         return () => {
           void unlisten.then((dispose) => dispose())

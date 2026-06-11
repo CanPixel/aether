@@ -24,6 +24,30 @@ export function normalizeComparableUrl(value: string): string {
   }
 }
 
+export function formatLocalModelName(model?: string | null): string | null {
+  if (!model) return null
+
+  const filename = model.split(/[\\/]/).pop() ?? model
+  const normalized = filename.replace(/\.gguf$/i, '').toLowerCase()
+  const fullModel = model.toLowerCase()
+  const isCommunity = /q4_k_m|lmstudio|community/.test(fullModel)
+
+  if (normalized.includes('embeddinggemma')) return 'EmbeddingGemma 300M'
+  if (normalized.includes('nomic-embed-text')) return 'Nomic Embed Text'
+  if (normalized.includes('gemma-4-e4b')) return 'Gemma 4 E4B - Balanced'
+  if (normalized.includes('gemma-4-e2b')) {
+    return isCommunity ? 'Gemma 4 E2B - Compact (community)' : 'Gemma 4 E2B - Compact'
+  }
+  if (normalized.includes('gemma-4-12b')) return 'Gemma 4 12B - Desktop'
+
+  return filename
+    .replace(/\.gguf$/i, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\b(qat|gguf|q4 0|it)\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
 export function inferIcebergIcon(
   source: Pick<SavedIcebergSummary, 'keyword'> & { title?: string; items?: IcebergItem[] }
 ): string {

@@ -75,6 +75,12 @@ export interface CaptureResult extends CaptureSummary {
   collectionName: string
 }
 
+export interface CaptureProgress {
+  message: string
+  current?: number
+  total?: number
+}
+
 export interface SearchResult {
   id: string
   collectionId: string
@@ -145,6 +151,8 @@ export interface SystemStatus {
   embeddingModel: string | null
   chatModel: string | null
   availableModels: string[]
+  chatModels: string[]
+  embeddingModels: string[]
   modelDir: string
   dbPath: string
   libraryPath: string
@@ -183,6 +191,8 @@ export interface AetherApi {
     activate(tabId: string): Promise<void>
     close(tabId: string): Promise<void>
     navigate(tabId: string, url: string): Promise<void>
+    scrollToText(tabId: string, text: string): Promise<void>
+    find(tabId: string, query?: string): Promise<void>
     goBack(tabId: string): Promise<void>
     goForward(tabId: string): Promise<void>
   }
@@ -253,5 +263,7 @@ export interface AetherApi {
   }
   events: {
     onState(listener: (state: AetherState) => void): () => void
+    onCaptureProgress(listener: (progress: CaptureProgress) => void): () => void
+    onFindRequested(listener: () => void): () => void
   }
 }
