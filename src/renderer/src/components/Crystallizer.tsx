@@ -28,7 +28,7 @@ import {
   SavedIceberg,
   SavedIcebergSummary
 } from '../../../shared/aether'
-import { inferIcebergIcon } from '../utils/aether-ui'
+import { formatLocalModelName, inferIcebergIcon } from '../utils/aether-ui'
 import { ChevronRightIcon, SnowflakeIcon, SpinnerIcon } from './icons'
 
 type LayerDefinition = {
@@ -826,39 +826,24 @@ export function Crystallizer({
                         void openSaved(iceberg.id)
                       }}
                       type="button"
-                      style={{
-                        display: 'inline-flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '4px 12px'
-                      }}
                     >
-                      <div style={{ display: 'flex', flexDirection: 'column', textAlign: 'left' }}>
-                        <strong>{iceberg.title}</strong>
-                        <small>
-                          {iceberg.itemCount} fragments / {iceberg.model}
-                        </small>
-                      </div>
-
-                      <button
-                        className="danger-button"
-                        aria-label={`Delete ${iceberg.title}`}
-                        disabled={loading || Boolean(busy)}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void deleteSaved(iceberg.id)
-                        }}
-                        title="Delete saved iceberg"
-                        type="button"
-                        style={{
-                          verticalAlign: 'middle',
-                          height: '30px',
-                          padding: '0 8px',
-                          margin: '0'
-                        }}
-                      >
-                        <Trash2 size={13} style={{ marginTop: '5px' }} />
-                      </button>
+                      <strong>{iceberg.title}</strong>
+                      <small>
+                        {iceberg.itemCount} fragments /{' '}
+                        {formatLocalModelName(iceberg.model) ?? iceberg.model}
+                      </small>
+                    </button>
+                    <button
+                      className="danger-button"
+                      aria-label={`Delete ${iceberg.title}`}
+                      disabled={loading || Boolean(busy)}
+                      onClick={() => {
+                        void deleteSaved(iceberg.id)
+                      }}
+                      title="Delete saved iceberg"
+                      type="button"
+                    >
+                      <Trash2 size={13} />
                     </button>
                   </article>
                 ))}

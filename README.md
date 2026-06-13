@@ -1,6 +1,6 @@
-# 🌥️ ÆTHER Browser
+# ÆTHER Browser
 
-Æther is an Electron-native research browser for local knowledge work. It combines normal web browsing, persistent knowledge hubs, local page capture, semantic retrieval, AiON question answering, and the iCE Information Complexity Explorer in one desktop shell.
+Æther is a Tauri-native research browser for local knowledge work. It combines normal web browsing, persistent knowledge hubs, local page capture, semantic retrieval, AiON question answering, and the iCE Information Complexity Explorer in one desktop shell, with an Android build path under active migration.
 
 The core idea is simple: browse the web, save useful pages into local knowledge hubs, embed those captures on your machine, and ask questions against that private local context without sending captured page content to a cloud model API.
 
@@ -8,7 +8,7 @@ The core idea is simple: browse the web, save useful pages into local knowledge 
 
 Current major capabilities:
 
-- Electron desktop shell using native `WebContentsView` browser surfaces.
+- Tauri desktop shell using Rust commands and native child webview browser surfaces.
 - Browser tabs with dynamic sizing, favicons, page-theme tinting, back/forward history, and dashboard/browser switching.
 - Æther dashboard with saved portals, recent captures, and knowledge hub accordions.
 - Saved portals can be reordered by dragging and reopened as browser tabs.
@@ -21,7 +21,7 @@ Current major capabilities:
 - AI answers render as selectable markdown with copy support and clickable citations.
 - iCE, the Information Complexity Explorer, generates iceberg-style complexity maps for a topic using the local chat model.
 - Settings modal currently supports default search engine selection.
-- Ollama model menu supports local model status and model selection.
+- Local model menu supports runtime status and model selection for GGUF chat models plus GGUF or official safetensors embedding models.
 
 ## Privacy Boundary
 
@@ -33,11 +33,11 @@ Local-only pieces:
 - Capture metadata
 - Knowledge hub metadata
 - Embeddings
-- LanceDB vector storage
+- Local vector chunk storage
 - Retrieval queries
-- RAG prompts sent to Ollama
-- AiON answers generated through local Ollama models
-- iCE topic maps generated through local Ollama models
+- RAG prompts evaluated inside the app process
+- AiON answers generated through in-process local models
+- iCE topic maps generated through in-process local models
 
 Normal browsing is still normal browsing. Websites loaded in the browser can make their own network requests, track sessions, run JavaScript, and communicate with their own servers. The privacy boundary applies to Æther's indexing and intelligence pipeline, not to websites themselves.
 
@@ -46,29 +46,62 @@ Normal browsing is still normal browsing. Websites loaded in the browser can mak
 Required:
 
 - Bun for dependency management and scripts.
-- Electron-supported OS: macOS, Windows, or Linux.
-- Ollama running locally at `http://127.0.0.1:11434` for embeddings, AiON, and iCE.
+- Rust and the Tauri platform prerequisites for your target OS.
+- CMake, required for building the bundled llama.cpp Rust binding.
+- macOS, Windows, or Linux for desktop development.
+- Android Studio, Android SDK/NDK, and Rust Android targets for Android builds.
+- GGUF model files for local chat generation and either GGUF or official safetensors files for local embeddings.
 
-Recommended Ollama models:
+Recommended first-stage model setup:
 
-```bash
-ollama pull nomic-embed-text
-ollama pull llama3.1:8b
-ollama pull gemma3
-ollama pull gemma4
-```
+- Embeddings: official `google/embeddinggemma-300m` safetensors, `embeddinggemma` GGUF, or `nomic-embed-text` GGUF.
+- Chat/iCE: a Gemma chat GGUF. Official Google Gemma 4 QAT GGUF releases are available for the Gemma 4 family; use an instruction-tuned file such as `gemma-4-E4B-it-qat-q4_0-gguf` or a larger variant if the machine has enough memory.
 
-Check that Ollama is reachable:
+Chosen models:
 
-```bash
-curl http://127.0.0.1:11434/api/tags
-```
+Mobile / Z Fold 7:
+  Gemma 4 E2B official GGUF
+  Optional: E4B only if user chooses a “large mobile model” download
+
+Raspberry Pi 5 16GB:
+  E4B official GGUF as the upper practical default
+  E2B as fallback / fast mode
+
+Desktop MacBook Pro M5:
+  Gemma 4 12B official QAT GGUF
+
+- desktop default: 12B or E4B
+- desktop light: E4B
+- Pi: E4B
+- mobile: E2B default, E4B optional download/import
+
+
+Model discovery:
+
+- Put chat models in `./aether-models/chat/`.
+- Put embedding GGUF files in `./aether-models/embeddings/`.
+- Put official `google/embeddinggemma-300m` safetensors in `./aether-models/embeddings/embeddinggemma-300m/`.
+- Or set `AETHER_CHAT_MODEL=/absolute/path/to/chat.gguf`.
+- Or set `AETHER_EMBEDDING_MODEL=/absolute/path/to/embedding.gguf`.
+- Or set `AETHER_EMBEDDING_MODEL=/absolute/path/to/embeddinggemma-300m`.
+- Or set `AETHER_MODEL_DIR=/absolute/path/to/a/model/folder`.
 
 Default model behavior:
 
-- Embeddings default to `nomic-embed-text`.
-- Chat model preference is `llama3.1:8b`, then `gemma3:latest`, then `gemma3`, then the first available local model.
+- Embeddings prefer filenames containing `embeddinggemma`, `embedding-gemma`, `nomic-embed-text`, `embedding`, or `embed`.
+- Chat model preference is filenames containing `gemma4`, `gemma-4`, `gemma3`, `gemma-3`, `gemma-2b`, `2b`, `gemma`, or `qwen`, then the first non-embedding GGUF.
 - The model menu can update the selected embedding and chat models.
+- Chat generation uses the GGUF's embedded chat template when present, preserving Gemma 4 system/user message formatting instead of flattening everything into one prompt. Sampling keeps the Electron app's conservative temperatures while aligning top-k/top-p with the Gemma 4 Ollama defaults.
+
+Download the official EmbeddingGemma safetensors after accepting the Google model terms on Hugging Face:
+
+```bash
+cd /Users/canur/Projects/Can/Rust-Aether/aether
+mkdir -p aether-models/embeddings/embeddinggemma-300m
+hf auth login
+hf download google/embeddinggemma-300m \
+  --local-dir aether-models/embeddings/embeddinggemma-300m
+```
 
 ## Quick Start
 
@@ -97,80 +130,183 @@ Build compiled app bundles:
 bun run build
 ```
 
-Create a local unpacked desktop app:
+## Android Build
+
+Æther now has Tauri Android scripts, but the local Android SDK/NDK must be installed before Tauri can initialize or build the Android project.
+
+Install Android Studio, then install these SDK pieces through Android Studio's SDK Manager:
+
+- Android SDK Platform
+- Android SDK Build-Tools
+- Android SDK Platform-Tools
+- Android NDK
+- Android Emulator, if you want emulator testing
+
+Set the Android environment variables in your shell profile:
 
 ```bash
-bun run build:unpack
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+export NDK_HOME="$ANDROID_HOME/ndk/$(ls "$ANDROID_HOME/ndk" | sort -V | tail -n 1)"
+export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
 ```
 
-Open the local Apple silicon app after an unpacked macOS build:
+Install Rust Android targets:
 
 ```bash
-open dist/mac-arm64/Æther.app
+rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+```
+
+Accept the Android SDK licenses after installing or updating SDK packages:
+
+```bash
+yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
+```
+
+Initialize the Android project once:
+
+```bash
+bun run android:init
+```
+
+Run on a connected device or emulator:
+
+```bash
+bun run android:dev
+```
+
+If this reports `No available Android Emulator detected`, start an emulator from Android Studio's Device Manager or connect a physical device with USB debugging enabled, then confirm it is visible:
+
+```bash
+adb devices
+```
+
+Build Android release artifacts:
+
+```bash
+bun run android:build
+```
+
+Build an APK:
+
+```bash
+bun run android:build:apk
+```
+
+Build an AAB for Play Store distribution:
+
+```bash
+bun run android:build:aab
+```
+
+Android outputs are generated under:
+
+```text
+src-tauri/gen/android/app/build/outputs/
+```
+
+Current mobile limitation: the React shell can be packaged for Android, but Æther's current live browser tab surface uses Tauri desktop child webviews. That desktop-only browser surface must be replaced with an Android-compatible browser path before the Android app behaves like the macOS Tauri app.
+
+## Ubuntu Arm64 Build
+
+Use the Docker-based Linux export script to build an Ubuntu arm64 package from macOS or another non-Linux host:
+
+```bash
+bun run linux:arm64:build
+```
+
+This runs an `ubuntu:24.04` arm64 container, installs the Linux Tauri build dependencies, installs Bun and Rust inside Docker volumes, and builds a `.deb` package for `aarch64-unknown-linux-gnu`.
+
+The default export is a Debian package for Ubuntu:
+
+```bash
+bun run linux:arm64:deb
+```
+
+Artifacts are generated under:
+
+```text
+src-tauri/target-linux-arm64/aarch64-unknown-linux-gnu/release/bundle/
+```
+
+The script keeps Linux-specific dependencies out of the host project by mounting Docker volumes for `/work/node_modules`, `/root/.cargo`, `/root/.rustup`, and `/root/.bun`.
+
+Optional overrides:
+
+```bash
+LINUX_ARM64_IMAGE=ubuntu:24.04 bun run linux:arm64:build
+LINUX_BUNDLES=deb,appimage bun run linux:arm64:build
+LINUX_TARGET=aarch64-unknown-linux-gnu bun run linux:arm64:build
+```
+
+Build the current desktop app with Tauri:
+
+```bash
+bun run build
 ```
 
 ## Project Scripts
 
 | Script                 | Purpose                                                                                                                                      |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bun run dev`          | Start Electron through `electron-vite` for development.                                                                                      |
-| `bun run typecheck`    | Run TypeScript checks for main/preload and renderer projects.                                                                                |
+| `bun run dev`          | Start the Tauri desktop app in development.                                                                                                  |
+| `bun run typecheck`    | Run renderer TypeScript checks and Rust `cargo check` for the Tauri backend.                                                                 |
 | `bun run lint`         | Run ESLint.                                                                                                                                  |
-| `bun run build`        | Typecheck and build main, preload, and renderer bundles into `out/`.                                                                         |
-| `bun run start`        | Preview the built Electron app through `electron-vite preview`.                                                                              |
-| `bun run postinstall`  | Rebuild/install Electron app dependencies through `electron-builder install-app-deps`.                                                       |
-| `bun run build:unpack` | Run `bun run build`, then create an unpacked app directory in `dist/`.                                                                       |
-| `bun run build:mac`    | Build bundles and create macOS artifacts in `dist/`. This script currently skips `bun run typecheck`, so run checks manually before release. |
-| `bun run build:win`    | Build bundles and create Windows artifacts in `dist/`.                                                                                       |
-| `bun run build:linux`  | Build bundles and create Linux artifacts in `dist/`.                                                                                         |
+| `bun run build`        | Typecheck and build the Tauri desktop app.                                                                                                   |
+| `bun run android:dev`  | Run the Tauri Android app on a connected device or emulator.                                                                                 |
+| `bun run android:build:apk` | Build an Android APK.                                                                                                                   |
+| `bun run android:build:aab` | Build an Android App Bundle.                                                                                                           |
+| `bun run linux:arm64:build` | Build an Ubuntu arm64 Tauri package in Docker.                                                                                          |
+| `bun run linux:arm64:deb` | Build an Ubuntu arm64 `.deb` package in Docker.                                                                                             |
+| `bun run dev:electron` | Legacy Electron development path retained for reference during migration.                                                                    |
+| `bun run build:electron` | Legacy Electron bundle build retained for reference during migration.                                                                      |
+| `bun run build:mac`    | Legacy Electron macOS packaging path. Prefer Tauri builds for the rewrite.                                                                   |
+| `bun run build:win`    | Legacy Electron Windows packaging path. Prefer Tauri builds for the rewrite.                                                                 |
+| `bun run build:linux`  | Legacy Electron Linux packaging path. Prefer Tauri builds for the rewrite.                                                                   |
 
 ## Build Outputs
 
-There are three important output/resource directories:
+Important output/resource directories:
 
 | Path     | Owner              | Purpose                                                                                           |
 | -------- | ------------------ | ------------------------------------------------------------------------------------------------- |
-| `out/`   | `electron-vite`    | Compiled Electron main, preload, and renderer bundles. This is not a distributable app by itself. |
-| `dist/`  | `electron-builder` | Packaged apps and installers. This is where `.app`, `.dmg`, `.AppImage`, `.deb`, etc. appear.     |
+| `dist/`  | Vite/Tauri frontend | Compiled renderer assets consumed by Tauri. This is not a distributable app by itself.           |
+| `src-tauri/target/` | Tauri/Cargo | Desktop app binaries and bundles generated by `tauri build`.                                      |
+| `src-tauri/target-linux-arm64/` | Tauri/Cargo in Docker | Ubuntu arm64 build cache and bundle output.                                      |
+| `src-tauri/gen/android/app/build/outputs/` | Tauri Android/Gradle | Android APK/AAB outputs.                                                     |
 | `build/` | project resources  | Packaging resources such as icons and macOS entitlements. This is input to packaging, not output. |
+| `out/`   | legacy Electron    | Compiled Electron output from the old app path. Retained only while the migration is in progress. |
 
-Common macOS outputs:
+Common Tauri outputs:
 
 ```text
-out/main/index.js
-out/preload/index.js
-out/renderer/
-
-dist/mac-arm64/Æther.app
-dist/aether-browser-1.0.0.dmg
+src-tauri/target/release/bundle/
+src-tauri/target-linux-arm64/aarch64-unknown-linux-gnu/release/bundle/deb/Æther_1.0.0_arm64.deb
+src-tauri/gen/android/app/build/outputs/
 ```
 
-For quick local testing on Apple silicon, prefer:
+For quick local desktop testing, prefer:
 
 ```bash
-bun run build:unpack
-open dist/mac-arm64/Æther.app
+bun run dev
 ```
 
-`build:unpack` creates a real `.app` directory without creating the full installer flow, which makes it useful for checking launch behavior, packaged assets, native dependencies, and the app icon.
+Use `bun run build` when you need packaged Tauri desktop artifacts.
 
-## macOS Packaging Notes
+## Desktop Packaging Notes
 
-Current macOS packaging config in `electron-builder.yml`:
+Desktop packaging is now driven by Tauri config:
 
-- `appId`: `com.canur.aether`
-- `productName`: `Æther`
-- `identity: null`
-- `notarize: false`
-- `entitlementsInherit: build/entitlements.mac.plist`
+- `src-tauri/tauri.conf.json` is the main desktop/mobile Tauri configuration.
+- `src-tauri/tauri.linux.conf.json` limits the Docker Linux arm64 export to `.deb` by default.
+- `src-tauri/capabilities/default.json` controls the default Tauri permissions surface.
 
-That means local macOS builds are unsigned/ad-hoc test builds. They are suitable for development on your own machine. For external distribution, configure Apple Developer ID signing and notarization before shipping.
+Local desktop builds are suitable for development on your own machine. For external macOS distribution, configure Apple Developer ID signing and notarization in the Tauri packaging flow before shipping.
 
-If a packaged app crashes with missing Electron framework or Team ID mismatch, delete stale packaged output and rebuild from a clean package state:
+If a packaged app behaves differently from development, rebuild from a clean package state:
 
 ```bash
-bun run postinstall
-bun run build:unpack
+bun run build
 ```
 
 ## Application Surfaces
@@ -261,7 +397,7 @@ It generates five depth layers:
 The iCE canvas includes:
 
 - Topic search input.
-- Local Ollama generation.
+- In-process local model generation.
 - Manual saving and reopening of generated atlases.
 - Zoom in/out/reset controls.
 - Smooth view reset and zoom transitions.
@@ -274,15 +410,16 @@ The iCE canvas includes:
 
 ## Local Data Storage
 
-Æther stores app data under Electron's `app.getPath('userData')`.
+Æther stores app data under Tauri's app data directory.
 
 Current storage paths:
 
 ```text
-<userData>/aether-library/library.json
-<userData>/aether-realms/chunks.lance
-<userData>/aether-settings/settings.json
-<userData>/aether-icebergs/icebergs.json
+<appData>/aether-library/library.json
+<appData>/aether-realms/chunks.json
+<appData>/aether-settings/settings.json
+<appData>/aether-icebergs/icebergs.json
+./aether-models/
 ```
 
 `library.json` stores:
@@ -294,7 +431,7 @@ Current storage paths:
 - Chunk counts.
 - Legacy migration flags.
 
-`chunks.lance` stores the LanceDB chunk table:
+`chunks.json` stores embedded chunk rows:
 
 - `id`
 - `vector`
@@ -320,29 +457,25 @@ Current storage paths:
 When the current browser page is captured:
 
 1. Renderer calls `window.aether.capture.currentPage({ collectionId })`.
-2. Main process validates the selected knowledge hub.
-3. Main process reads the active `WebContentsView` page through isolated execution.
-4. It collects page URL, title, document HTML, body text fallback, and metadata.
-5. `jsdom` parses the HTML.
-6. Noisy tags and regions are removed.
-7. `@mozilla/readability` extracts article-like content.
-8. If Readability returns too little content, body text fallback is used.
-9. Pages below the minimum readable text threshold are rejected.
-10. LangChain's recursive character splitter creates overlapping chunks.
-11. Chunks are embedded through Ollama's local REST API.
-12. Chunk rows are inserted into LanceDB.
-13. Capture metadata is persisted to `library.json`.
-14. Renderer refreshes collection and capture summaries.
+2. The Tauri command validates the selected knowledge hub.
+3. The Rust backend reads the active desktop child webview snapshot when available, then falls back to fetching the active URL over HTTP.
+4. It collects page URL, title, description, body text, and metadata.
+5. Rust parsing normalizes readable text and rejects pages below the minimum readable text threshold.
+6. The backend creates overlapping chunks.
+7. Chunks are embedded through the in-process llama.cpp runtime.
+8. Chunk rows are stored on disk.
+9. Capture metadata is persisted to `library.json`.
+10. Renderer refreshes collection and capture summaries.
 
 Moving a capture between hubs updates both:
 
 - The capture's `collectionId` in `library.json`.
-- Matching LanceDB chunk rows so future search and Ask retrieval follow the moved source.
+- Matching chunk rows so future search and Ask retrieval follow the moved source.
 
 Deleting a capture removes both:
 
 - The manifest capture summary.
-- Matching LanceDB chunk rows.
+- Matching chunk rows.
 
 ## Retrieval And Chat Flow
 
@@ -350,13 +483,13 @@ Search flow:
 
 1. User enters a query.
 2. Query is embedded with the configured embedding model.
-3. LanceDB returns nearest chunks scoped to the selected hub.
+3. The local chunk store returns nearest chunks scoped to the selected hub.
 4. Renderer receives typed `SearchResult` objects.
 
 Ask flow:
 
 1. User chooses current page, a populated hub, or both.
-2. If a hub is selected, top chunks are retrieved from LanceDB.
+2. If a hub is selected, top chunks are retrieved from the local vector chunk store.
 3. If current page is included, the active page is extracted and added as context.
 4. Duplicate source citations are merged.
 5. The local chat model receives a grounded prompt.
@@ -369,51 +502,51 @@ The intended answer behavior is grounded: when hub context is used, the model sh
 ```text
 Renderer React UI
   |
-  | window.aether typed preload API
+  | window.aether typed API
   v
-Electron Preload
+src/renderer/src/tauri-aether.ts
   |
-  | validated IPC channels
+  | Tauri invoke() commands and event listeners
   v
-Electron Main Process
+Rust Tauri Backend
   |
-  |-- AppContainerManager
-  |     WebContentsView browser tabs, dashboard visibility, resize, popups, history
+  |-- Native browser view manager
+  |     desktop child webview tabs, dashboard visibility, resize, popups, history
   |
-  |-- LibraryStore
+  |-- Library storage
   |     knowledge hubs, captures, saved portals, migration metadata
   |
-  |-- SettingsStore
+  |-- Settings storage
   |     default search engine and app settings
   |
   |-- Capture pipeline
-  |     active page -> jsdom -> Readability -> fallback text -> chunks
+  |     active page snapshot or fetch -> readable text -> chunks
   |
-  |-- OllamaClient
-  |     /api/tags, /api/embed, /api/chat
+  |-- Local model runtime
+  |     llama.cpp GGUF loading, Metal offload, safetensors embeddings, chat, and iCE generation
   |
-  |-- LanceDB Chunk Store
+  |-- Local chunk store
   |     vector search and chunk metadata
   |
   |-- iCE generator
         local chat prompt -> parsed iceberg JSON -> typed renderer result
 ```
 
-Main process responsibilities:
+Rust backend responsibilities:
 
 - Owns browser views and tabs.
 - Owns file-system writes.
-- Owns LanceDB access.
-- Owns Ollama REST calls.
+- Owns local chunk storage and vector search.
+- Owns in-process local model loading and inference.
 - Owns capture extraction from the active page.
-- Exposes only typed IPC results to the renderer.
+- Exposes typed Tauri command results to the renderer.
 
 Renderer responsibilities:
 
 - App shell and UI state.
 - Dashboard, browser chrome, AiON, iCE, modals, and interactions.
 - Drag/drop interactions for portals, hubs, and captured source cards.
-- Calls typed `window.aether` APIs instead of direct Electron or database access.
+- Calls typed `window.aether` APIs instead of direct Tauri, database, or file-system access.
 
 ## Typed Renderer API
 
@@ -478,11 +611,6 @@ window.aether.events.onState(listener)
 
 ```text
 src/
-  main/
-    index.ts                      Electron main process, browser views, stores, IPC, RAG, iCE
-  preload/
-    index.ts                      Typed bridge exposed as window.aether
-    index.d.ts                    Renderer global typing
   shared/
     aether.ts                     Shared API, state, settings, capture, chat, and iCE types
   renderer/
@@ -500,18 +628,32 @@ src/
         Crystallizer.tsx          iCE Information Complexity Explorer
         Dashboard.tsx             Portals, knowledge hubs, recent captures
         IntelligencePanel.tsx     AiON search/ask sidepanel and model controls
-        OllamaStatusMenu.tsx      Ollama status/model popover
         SourceTray.tsx            Search/citation source display
         icons.tsx                 Local icon components
       utils/
         aether-ui.ts              UI formatting helpers
         collection-icon-data.ts   Knowledge hub icon option data
         collection-icons.tsx      Knowledge hub icon renderer
+      tauri-aether.ts             Tauri invoke bridge exposed as window.aether
+  main/
+    index.ts                      Legacy Electron backend retained for migration reference
+  preload/
+    index.ts                      Legacy Electron preload bridge
+    index.d.ts                    Renderer global typing
+src-tauri/
+  src/
+    lib.rs                        Rust Tauri backend, browser views, stores, commands, RAG, iCE
+    main.rs                       Tauri entrypoint
+  tauri.conf.json                 Main Tauri configuration
+  tauri.linux.conf.json           Linux arm64 bundle override
+  capabilities/
+    default.json                  Tauri permission capability
+  gen/android/                    Generated Tauri Android project
 ```
 
-## Electron Builder Configuration
+## Legacy Electron Configuration
 
-Packaging is configured in `electron-builder.yml`.
+The old Electron project files are still present for migration reference. Packaging for that path is configured in `electron-builder.yml`, but the primary app path is now Tauri.
 
 Important details:
 
@@ -521,56 +663,47 @@ Important details:
 - `npmRebuild: false` is currently set.
 - `publish` is configured as a generic provider pointing at `https://canpixel.com/auto-updates`.
 
-If a module is required at runtime by Electron main, it must be in `dependencies`, not only `devDependencies`. For example, LanceDB requires `apache-arrow`, so `apache-arrow` must be packaged as a runtime dependency.
+Do not add new features to the legacy Electron path unless you are deliberately comparing behavior with the original app.
 
 ## Development Guidelines
 
 Prefer:
 
 - Bun scripts over npm scripts.
-- Vite/Electron-native development over Next.js-style web app assumptions.
-- Main-process ownership for privileged APIs, database work, file writes, and web contents access.
-- Typed IPC through `src/shared/aether.ts` and `src/preload/index.ts`.
+- Vite/Tauri-native development over Next.js-style web app assumptions.
+- Rust backend ownership for privileged APIs, database work, file writes, and web contents access.
+- Typed renderer API contracts through `src/shared/aether.ts` and `src/renderer/src/tauri-aether.ts`.
 - Renderer-only components for presentation and interaction logic.
-- Local Ollama REST calls rather than cloud model SDKs for app intelligence.
+- In-process local model inference rather than cloud model SDKs or local REST sidecars for app intelligence.
 
 Avoid:
 
 - Direct database access from the renderer.
-- Raw Electron IPC from renderer components.
-- Hard-coded absolute asset URLs that break in packaged `app.asar` builds.
-- Moving capture metadata without also updating LanceDB chunk metadata.
+- Raw Tauri `invoke()` calls spread through renderer components.
+- Hard-coded absolute asset URLs that break in packaged Tauri builds.
+- Moving capture metadata without also updating chunk metadata.
 - Adding runtime-only packages to `devDependencies`.
 
 ## Troubleshooting
 
-### Ollama is not reachable
+### No local model is available
 
-Start Ollama and verify the local API:
+Add local models to the project-local model directory shown in the AiON model settings, or point the app at explicit files:
 
 ```bash
-ollama serve
-curl http://127.0.0.1:11434/api/tags
+export AETHER_CHAT_MODEL=/absolute/path/to/chat.gguf
+export AETHER_EMBEDDING_MODEL=/absolute/path/to/embedding.gguf
+# or:
+export AETHER_EMBEDDING_MODEL=/absolute/path/to/embeddinggemma-300m
 ```
 
 ### Missing embedding model
 
-Install the default embedding model:
-
-```bash
-ollama pull nomic-embed-text
-```
+Add the official `google/embeddinggemma-300m` safetensors folder to `./aether-models/embeddings/embeddinggemma-300m/`, or add an embedding GGUF such as `embeddinggemma` or `nomic-embed-text` to `./aether-models/embeddings/`.
 
 ### Chat model unavailable
 
-Install a preferred chat model:
-
-```bash
-ollama pull llama3.1:8b
-ollama pull gemma3
-```
-
-Or select an installed model from the AiON model menu.
+Add a chat GGUF, preferably Gemma-family for the current prompt template, to `./aether-models/chat/` or select it from the AiON model menu.
 
 ### Capture says the page has too little readable text
 
@@ -578,40 +711,39 @@ Some pages are login screens, app shells, canvases, PDFs, or script-heavy views 
 
 ### Google SSO or passkey popup does not behave like a normal browser
 
-The app allows browser popups through Electron's window-open handling and routes external flows where appropriate. If a specific provider still fails, check whether the site requires browser APIs Electron does not expose by default, third-party cookies, or platform authenticator behavior that needs additional Electron permissions.
+The desktop app allows browser popups through Tauri child webview handling and routes external flows where appropriate. If a specific provider still fails, check whether the site requires browser APIs the system webview does not expose by default, third-party cookies, or platform authenticator behavior that needs additional native integration.
 
-### Packaged app cannot find a module
+### Packaged app cannot find a frontend dependency
 
 Move the missing runtime package into `dependencies`, reinstall, and rebuild:
 
 ```bash
 bun install
-bun run postinstall
-bun run build:unpack
+bun run build
 ```
 
 ### Packaged app has missing dashboard images or renderer assets
 
-Use Vite-compatible asset imports or renderer-public assets. Avoid assuming `/some-file.svg` will resolve the same way in development and inside packaged `app.asar`.
+Use Vite-compatible asset imports or renderer-public assets. Avoid assuming `/some-file.svg` will resolve the same way in development and inside packaged Tauri assets.
 
-### Native dependency issues after dependency changes
+### Rust dependency issues after dependency changes
 
-Rebuild Electron app dependencies:
-
-```bash
-bun run postinstall
-```
-
-### macOS packaged app fails with Electron Framework Team ID mismatch
-
-Stale package output can preserve mismatched signatures. Rebuild from a fresh package state:
+Recheck and rebuild the Tauri backend:
 
 ```bash
-bun run postinstall
-bun run build:unpack
+bun run typecheck:tauri
+bun run build
 ```
 
-If needed, delete stale `dist/` output manually before rebuilding.
+### macOS packaged app has stale bundle behavior
+
+Stale package output can preserve old assets or bundle metadata. Rebuild from a fresh package state:
+
+```bash
+bun run build
+```
+
+If needed, delete stale `dist/` and `src-tauri/target/release/bundle/` output manually before rebuilding.
 
 ### iCE returns invalid or empty results
 
@@ -619,13 +751,12 @@ iCE depends on the local chat model returning parseable JSON. Try:
 
 - Use a stronger chat model.
 - Regenerate with a simpler topic.
-- Confirm Ollama is reachable.
 - Check the model menu for the active chat model.
 
 ## Current Limitations
 
 - macOS packages are local unsigned/ad-hoc builds until Developer ID signing and notarization are configured.
-- Capture quality depends on page structure and Readability extraction quality.
+- Capture quality depends on page structure, active webview snapshots, and fallback HTTP extraction quality.
 - App-like authenticated services can still have browser API or popup edge cases.
 - iCE generation depends on local model quality and JSON compliance.
 - Search and Ask currently use one selected hub plus optional current page, not arbitrary multi-hub selection.
@@ -642,7 +773,7 @@ Likely next improvements:
 - Better authenticated-app compatibility coverage.
 - Capture selected text or a selected DOM region.
 - More precise token-aware chunking.
-- Local embedding fallback beyond Ollama.
+- Built-in model download/import flow for recommended GGUFs.
 - Richer iCE export/share behavior.
 - More complete settings surface.
 

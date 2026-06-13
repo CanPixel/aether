@@ -1,12 +1,25 @@
 node_modules
 dist
 out
+src-tauri/gen/*
+!src-tauri/gen/android/
+!src-tauri/gen/android/**
+src-tauri/gen/schemas/
+src-tauri/target
+src-tauri/target-linux-arm64
+aether-models/
 .DS_Store
 .eslintcache
 *.log*
 
 screens/*
 
+ICE
+
 src-tauri
 
+aether-web
+
 .claude
+
+.env

@@ -31,6 +31,8 @@ export interface HubShortcutSummary {
   url: string
   host: string
   createdAt: string
+  favicon?: string
+  themeColor?: string
 }
 
 export type SearchEngineId = 'google' | 'bing' | 'yahoo' | 'ecosia' | 'duckduckgo'
@@ -73,6 +75,12 @@ export interface CaptureResult extends CaptureSummary {
   collectionName: string
 }
 
+export interface CaptureProgress {
+  message: string
+  current?: number
+  total?: number
+}
+
 export interface SearchResult {
   id: string
   collectionId: string
@@ -90,6 +98,13 @@ export interface ChatResult {
   answer: string
   model: string
   citations: SearchResult[]
+}
+
+export interface ChatStreamEvent {
+  requestId: string
+  status?: string
+  delta?: string
+  citations?: SearchResult[]
 }
 
 export interface IcebergItem {
@@ -138,10 +153,14 @@ export interface SaveIcebergInput {
 }
 
 export interface SystemStatus {
-  ollamaReachable: boolean
-  embeddingModel: string
+  runtimeReady: boolean
+  runtimeName: string
+  embeddingModel: string | null
   chatModel: string | null
   availableModels: string[]
+  chatModels: string[]
+  embeddingModels: string[]
+  modelDir: string
   dbPath: string
   libraryPath: string
   collections: CollectionSummary[]
@@ -179,6 +198,8 @@ export interface AetherApi {
     activate(tabId: string): Promise<void>
     close(tabId: string): Promise<void>
     navigate(tabId: string, url: string): Promise<void>
+    scrollToText(tabId: string, text: string): Promise<void>
+    find(tabId: string, query?: string): Promise<void>
     goBack(tabId: string): Promise<void>
     goForward(tabId: string): Promise<void>
   }
@@ -187,7 +208,12 @@ export interface AetherApi {
   }
   hub: {
     list(): Promise<HubShortcutSummary[]>
-    create(input: { title: string; url: string }): Promise<HubShortcutSummary>
+    create(input: {
+      title: string
+      url: string
+      favicon?: string
+      themeColor?: string
+    }): Promise<HubShortcutSummary>
     reorder(ids: string[]): Promise<HubShortcutSummary[]>
     delete(id: string): Promise<void>
   }
@@ -221,7 +247,9 @@ export interface AetherApi {
       collectionId?: string
       prompt: string
       includeCurrentPage?: boolean
+      requestId?: string
     }): Promise<ChatResult>
+    cancel(): Promise<void>
   }
   crystallizer: {
     generate(input: { keyword: string }): Promise<IcebergResult>
@@ -244,5 +272,8 @@ export interface AetherApi {
   }
   events: {
     onState(listener: (state: AetherState) => void): () => void
+    onCaptureProgress(listener: (progress: CaptureProgress) => void): () => void
+    onChatStream(listener: (event: ChatStreamEvent) => void): () => void
+    onFindRequested(listener: () => void): () => void
   }
 }

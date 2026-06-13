@@ -28,7 +28,12 @@ import {
   SavedIcebergSummary
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
-import { formatDate, getCaptureHost, inferIcebergIcon } from '../utils/aether-ui'
+import {
+  formatDate,
+  formatLocalModelName,
+  getCaptureHost,
+  inferIcebergIcon
+} from '../utils/aether-ui'
 import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, SnowflakeIcon } from './icons'
 import { Trash2 as TrashIcon } from 'lucide-react'
 
@@ -86,7 +91,7 @@ function getRootDomainLetter(hostString: string): string {
   return cleanHost.charAt(0).toUpperCase()
 }
 
-function getPortalTint(host: string): string {
+function getPortalTint(host: string, themeColor?: string): string {
   const normalized = host.replace(/^www\./, '')
   const brandColors: Record<string, string> = {
     'reddit.com': '#ff8800',
@@ -102,6 +107,7 @@ function getPortalTint(host: string): string {
     ([domain]) => normalized === domain || normalized.endsWith(`.${domain}`)
   )
   if (matchedBrand) return matchedBrand[1]
+  if (themeColor) return themeColor
 
   const palette = ['#4f8fd6', '#3aaea1', '#c07f43', '#7772d6', '#4e9a62', '#b95f79', '#547aa5']
   let hash = 0
@@ -256,7 +262,11 @@ export function Dashboard({
                   setDraggedShortcutId('')
                   setDragOverShortcutId('')
                 }}
-                style={{ '--portal-tint': getPortalTint(shortcut.host) } as CSSProperties}
+                style={
+                  {
+                    '--portal-tint': getPortalTint(shortcut.host, shortcut.themeColor)
+                  } as CSSProperties
+                }
               >
                 <button
                   className="hub-launch"
@@ -345,7 +355,8 @@ export function Dashboard({
                   <span>{iceberg.itemCount} frozen fragments</span>
                   <strong>{iceberg.title}</strong>
                   <small>
-                    {formatDate(iceberg.savedAt)} {iceberg.model}
+                    {formatDate(iceberg.savedAt)}{' '}
+                    {formatLocalModelName(iceberg.model) ?? iceberg.model}
                   </small>
                 </button>
                 <button

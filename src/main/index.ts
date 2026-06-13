@@ -160,7 +160,12 @@ class LibraryStore {
     return [...data.shortcuts]
   }
 
-  async createShortcut(input: { title: string; url: string }): Promise<HubShortcutSummary> {
+  async createShortcut(input: {
+    title: string
+    url: string
+    favicon?: string
+    themeColor?: string
+  }): Promise<HubShortcutSummary> {
     const title = input.title.trim()
     const url = normalizeUrl(input.url)
     if (!title) {
@@ -168,15 +173,31 @@ class LibraryStore {
     }
 
     const data = await this.load()
+    const favicon = input.favicon || undefined
+    const themeColor = normalizeThemeColor(input.themeColor || '')
     const existing = data.shortcuts.find((shortcut) => shortcut.url === url)
-    if (existing) return existing
+    if (existing) {
+      let changed = false
+      if (!existing.favicon && favicon) {
+        existing.favicon = favicon
+        changed = true
+      }
+      if (!existing.themeColor && themeColor) {
+        existing.themeColor = themeColor
+        changed = true
+      }
+      if (changed) await this.save(data)
+      return existing
+    }
 
     const shortcut: HubShortcutSummary = {
       id: crypto.randomUUID(),
       title,
       url,
       host: getTabHost(url),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      favicon,
+      themeColor
     }
     data.shortcuts.unshift(shortcut)
     await this.save(data)
@@ -2086,8 +2107,10 @@ function registerIpcHandlers(): void {
   )
   ipcMain.handle('aether:dashboard:open', () => getContainers().openDashboard())
   ipcMain.handle('aether:hub:list', () => getLibrary().listShortcuts())
-  ipcMain.handle('aether:hub:create', (_event, input: { title: string; url: string }) =>
-    getLibrary().createShortcut(input)
+  ipcMain.handle(
+    'aether:hub:create',
+    (_event, input: { title: string; url: string; favicon?: string; themeColor?: string }) =>
+      getLibrary().createShortcut(input)
   )
   ipcMain.handle('aether:hub:reorder', (_event, ids: string[]) =>
     getLibrary().reorderShortcuts(ids)
