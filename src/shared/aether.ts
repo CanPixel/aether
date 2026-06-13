@@ -199,7 +199,7 @@ export interface AetherApi {
     close(tabId: string): Promise<void>
     navigate(tabId: string, url: string): Promise<void>
     scrollToText(tabId: string, text: string): Promise<void>
-    find(tabId: string, query?: string): Promise<void>
+    find(tabId: string, query?: string, action?: FindAction): Promise<void>
     goBack(tabId: string): Promise<void>
     goForward(tabId: string): Promise<void>
   }
@@ -275,5 +275,14 @@ export interface AetherApi {
     onCaptureProgress(listener: (progress: CaptureProgress) => void): () => void
     onChatStream(listener: (event: ChatStreamEvent) => void): () => void
     onFindRequested(listener: () => void): () => void
+    onFindResult(listener: (result: FindResult) => void): () => void
   }
+}
+
+export type FindAction = 'find' | 'next' | 'prev' | 'clear'
+
+export interface FindResult {
+  tabId: string
+  current: number
+  total: number
 }

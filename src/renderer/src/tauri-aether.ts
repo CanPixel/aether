@@ -12,6 +12,7 @@ import {
   ChatResult,
   ChatStreamEvent,
   CollectionSummary,
+  FindResult,
   HubShortcutSummary,
   IcebergResult,
   SaveIcebergInput,
@@ -44,7 +45,7 @@ if (isTauri) {
       close: (tabId) => call<void>('aether_tabs_close', { tabId }),
       navigate: (tabId, url) => call<void>('aether_tabs_navigate', { tabId, url }),
       scrollToText: (tabId, text) => call<void>('aether_tabs_scroll_to_text', { tabId, text }),
-      find: (tabId, query) => call<void>('aether_tabs_find', { tabId, query }),
+      find: (tabId, query, action) => call<void>('aether_tabs_find', { tabId, query, action }),
       goBack: (tabId) => call<void>('aether_tabs_go_back', { tabId }),
       goForward: (tabId) => call<void>('aether_tabs_go_forward', { tabId })
     },
@@ -131,6 +132,15 @@ if (isTauri) {
       },
       onFindRequested: (listener: () => void) => {
         const unlisten = listen<void>('aether:find-requested', () => listener())
+
+        return () => {
+          void unlisten.then((dispose) => dispose())
+        }
+      },
+      onFindResult: (listener: (result: FindResult) => void) => {
+        const unlisten = listen<FindResult>('aether:find-result', (event) =>
+          listener(event.payload)
+        )
 
         return () => {
           void unlisten.then((dispose) => dispose())

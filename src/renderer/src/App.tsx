@@ -9,6 +9,7 @@ import {
   CaptureSummary,
   ChatResult,
   CollectionSummary,
+  FindAction,
   HubShortcutSummary,
   IcebergItem,
   IcebergResult,
@@ -28,7 +29,7 @@ import { GlobeIcon, CloudIcon, GearIcon, SnowflakeIcon } from './components/icon
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
 import { formatLocalModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
-import { SearchIcon } from 'lucide-react'
+import { SearchIcon, ChevronUp, ChevronDown } from 'lucide-react'
 
 const TEXT_INPUT_TYPES = new Set([
   '',
@@ -159,6 +160,8 @@ function App(): React.JSX.Element {
   const [toast, setToast] = useState<(StatusToastInput & { id: number }) | null>(null)
   const [findOpen, setFindOpen] = useState(false)
   const [findQuery, setFindQuery] = useState('')
+  const [findCurrent, setFindCurrent] = useState(0)
+  const [findTotal, setFindTotal] = useState(0)
   const [collectionDialog, setCollectionDialog] = useState<CollectionDialogState>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const addressInputRef = useRef<HTMLInputElement>(null)
@@ -214,6 +217,32 @@ function App(): React.JSX.Element {
     }
     setFindOpen(true)
   }, [activeTab?.id, dashboardOpen])
+
+  const findHighlight = useCallback(
+    (query: string, action: FindAction): void => {
+      if (!activeTab?.id) return
+      const trimmed = query.trim()
+      if (!trimmed) {
+        setFindCurrent(0)
+        setFindTotal(0)
+        void window.aether.tabs.find(activeTab.id, '', 'clear').catch(() => undefined)
+        return
+      }
+      void window.aether.tabs
+        .find(activeTab.id, trimmed, action)
+        .catch((error) => setNotice(getErrorMessage(error)))
+    },
+    [activeTab?.id]
+  )
+
+  const closeFindBar = useCallback((): void => {
+    setFindOpen(false)
+    setFindCurrent(0)
+    setFindTotal(0)
+    if (activeTab?.id) {
+      void window.aether.tabs.find(activeTab.id, '', 'clear').catch(() => undefined)
+    }
+  }, [activeTab?.id])
 
   const refreshCollections = useCallback(
     async (preferredCollectionId?: string): Promise<void> => {
@@ -321,6 +350,16 @@ function App(): React.JSX.Element {
 
   useEffect(() => window.aether.events.onFindRequested(openFindBar), [openFindBar])
 
+  useEffect(
+    () =>
+      window.aether.events.onFindResult((result) => {
+        if (result.tabId && activeTab?.id && result.tabId !== activeTab.id) return
+        setFindCurrent(result.current)
+        setFindTotal(result.total)
+      }),
+    [activeTab?.id]
+  )
+
   useEffect(() => {
     const unsubscribe = window.aether.events.onChatStream((event) => {
       if (!askRequestIdRef.current || event.requestId !== askRequestIdRef.current) return
@@ -340,14 +379,19 @@ function App(): React.JSX.Element {
     return unsubscribe
   }, [])
 
+  const findQueryRef = useRef(findQuery)
+  findQueryRef.current = findQuery
+
   useEffect(() => {
     if (!findOpen) return
     const timer = window.setTimeout(() => {
       findInputRef.current?.focus()
       findInputRef.current?.select()
+      const query = findQueryRef.current.trim()
+      if (query) findHighlight(query, 'find')
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [findOpen])
+  }, [findOpen, findHighlight])
 
   useEffect(() => {
     const handler = (event: KeyboardEvent): void => {
@@ -422,18 +466,6 @@ function App(): React.JSX.Element {
 
     return unsubscribe
   }, [showToast])
-
-  async function findInActivePage(query: string): Promise<void> {
-    const nextQuery = query.trim()
-    if (!nextQuery || !activeTab?.id) return
-
-    try {
-      await window.aether.tabs.find(activeTab.id, nextQuery)
-      setFindQuery(nextQuery)
-    } catch (error) {
-      setNotice(getErrorMessage(error))
-    }
-  }
 
   async function openDashboard(): Promise<void> {
     await window.aether.dashboard.open()
@@ -912,9 +944,13 @@ function App(): React.JSX.Element {
         <FindBar
           inputRef={findInputRef}
           query={findQuery}
+          current={findCurrent}
+          total={findTotal}
           onChange={setFindQuery}
-          onClose={() => setFindOpen(false)}
-          onFind={findInActivePage}
+          onSearch={(value) => findHighlight(value, 'find')}
+          onNext={() => findHighlight(findQuery, 'next')}
+          onPrev={() => findHighlight(findQuery, 'prev')}
+          onClose={closeFindBar}
         />
       )}
       <div className="window-titlebar" aria-hidden="true">
@@ -1126,30 +1162,56 @@ function StatusToast({ toast }: { toast: StatusToastInput & { id: number } }): R
 function FindBar({
   inputRef,
   query,
+  current,
+  total,
   onChange,
-  onClose,
-  onFind
+  onSearch,
+  onNext,
+  onPrev,
+  onClose
 }: {
   inputRef: RefObject<HTMLInputElement | null>
   query: string
+  current: number
+  total: number
   onChange: (query: string) => void
+  onSearch: (query: string) => void
+  onNext: () => void
+  onPrev: () => void
   onClose: () => void
-  onFind: (query: string) => Promise<void>
 }): React.JSX.Element {
+  const debounceRef = useRef<number | null>(null)
+  const scheduleSearch = (value: string): void => {
+    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current)
+    debounceRef.current = window.setTimeout(() => {
+      debounceRef.current = null
+      onSearch(value)
+    }, 140)
+  }
+  const flushPending = (): void => {
+    if (debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current)
+      debounceRef.current = null
+    }
+  }
+  const hasQuery = query.trim().length > 0
+  const hasMatches = total > 0
   return (
-    <form
-      className="find-bar"
-      onSubmit={(event) => {
-        event.preventDefault()
-        void onFind(query)
-      }}
-    >
+    <div className="find-bar" role="search">
       <SearchIcon aria-hidden="true" />
       <input
         aria-label="Find in page"
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => {
+          onChange(event.target.value)
+          scheduleSearch(event.target.value)
+        }}
         onKeyDown={(event) => {
-          if (event.key === 'Escape') {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            flushPending()
+            if (event.shiftKey) onPrev()
+            else onNext()
+          } else if (event.key === 'Escape') {
             event.preventDefault()
             onClose()
           }
@@ -1159,13 +1221,42 @@ function FindBar({
         type="search"
         value={query}
       />
-      <button className="responsive-button" disabled={!query.trim()} type="submit">
-        Find
-      </button>
+      <span
+        className={`find-count ${hasQuery && !hasMatches ? 'is-empty' : ''}`}
+        aria-live="polite"
+      >
+        {hasQuery ? `${current}/${total}` : ''}
+      </span>
+      <div className="find-nav" role="group" aria-label="Match navigation">
+        <button
+          aria-label="Previous match"
+          className="find-nav-button"
+          disabled={!hasMatches}
+          onClick={() => {
+            flushPending()
+            onPrev()
+          }}
+          type="button"
+        >
+          <ChevronUp aria-hidden="true" />
+        </button>
+        <button
+          aria-label="Next match"
+          className="find-nav-button"
+          disabled={!hasMatches}
+          onClick={() => {
+            flushPending()
+            onNext()
+          }}
+          type="button"
+        >
+          <ChevronDown aria-hidden="true" />
+        </button>
+      </div>
       <button aria-label="Close find" className="find-close-button" onClick={onClose} type="button">
         ×
       </button>
-    </form>
+    </div>
   )
 }
 

@@ -45,6 +45,7 @@ const PANEL_COLLAPSED_WIDTH: f64 = 58.0;
 const LOCAL_RUNTIME_NAME: &str = "llama.cpp";
 const AETHER_FIND_MENU_ID: &str = "aether-find-in-page";
 const AETHER_FIND_REQUESTED_EVENT: &str = "aether:find-requested";
+const AETHER_FIND_RESULT_EVENT: &str = "aether:find-result";
 const AETHER_CHAT_STREAM_EVENT: &str = "aether:chat-stream";
 const AETHER_MODEL_DIR_ENV: &str = "AETHER_MODEL_DIR";
 const AETHER_CHAT_MODEL_ENV: &str = "AETHER_CHAT_MODEL";
@@ -477,6 +478,20 @@ struct CreateShortcutInput {
 struct PageMetadataSnapshot {
     theme_color: Option<String>,
     favicon: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct FindMatchSnapshot {
+    current: usize,
+    total: usize,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FindResultPayload {
+    tab_id: String,
+    current: usize,
+    total: usize,
 }
 
 #[derive(Deserialize)]
@@ -1070,7 +1085,13 @@ fn scroll_native_webview_to_text(_state: &State<Backend>, _tab_id: &str, _text: 
 }
 
 #[cfg(desktop)]
-fn find_native_webview_text(state: &State<Backend>, tab_id: &str, query: Option<&str>) -> Cmd<()> {
+fn find_native_webview_text(
+    app: &AppHandle,
+    state: &State<Backend>,
+    tab_id: &str,
+    query: Option<&str>,
+    action: &str,
+) -> Cmd<()> {
     let webview = state
         .webviews
         .lock()
@@ -1083,15 +1104,36 @@ fn find_native_webview_text(state: &State<Backend>, tab_id: &str, query: Option<
         Some(value) => serde_json::to_string(value).map_err(|error| error.to_string())?,
         None => "null".to_string(),
     };
-    let script = find_in_page_script().replace("__AETHER_FIND_QUERY__", &query_json);
-    webview.eval(script).map_err(|error| error.to_string())
+    let action_json = serde_json::to_string(action).map_err(|error| error.to_string())?;
+    let script = find_in_page_script()
+        .replace("__AETHER_FIND_QUERY__", &query_json)
+        .replace("__AETHER_FIND_ACTION__", &action_json);
+    let app = app.clone();
+    let tab_id = tab_id.to_string();
+    webview
+        .eval_with_callback(script, move |payload| {
+            let Ok(snapshot) = parse_json_payload::<FindMatchSnapshot>(&payload) else {
+                return;
+            };
+            let _ = app.emit(
+                AETHER_FIND_RESULT_EVENT,
+                FindResultPayload {
+                    tab_id: tab_id.clone(),
+                    current: snapshot.current,
+                    total: snapshot.total,
+                },
+            );
+        })
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(not(desktop))]
 fn find_native_webview_text(
+    _app: &AppHandle,
     _state: &State<Backend>,
     _tab_id: &str,
     _query: Option<&str>,
+    _action: &str,
 ) -> Cmd<()> {
     Ok(())
 }
@@ -1118,39 +1160,160 @@ fn close_native_webview(_state: &State<Backend>, _tab_id: &str) -> Cmd<()> {
 fn find_in_page_script() -> &'static str {
     r#"
 (() => {
-  const providedQuery = __AETHER_FIND_QUERY__;
-  const normalizeQuery = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
-  const selectedText = () => {
-    try {
-      return normalizeQuery(window.getSelection && window.getSelection().toString());
-    } catch {
-      return '';
+  const action = __AETHER_FIND_ACTION__;
+  const rawQuery = __AETHER_FIND_QUERY__;
+  const HL = 'aether-find';
+  const HL_CUR = 'aether-find-current';
+  const STYLE_ID = 'aether-find-style';
+  const MAX = 5000;
+  const supportsHighlight =
+    typeof CSS !== 'undefined' &&
+    CSS.highlights &&
+    typeof Highlight !== 'undefined' &&
+    typeof Range !== 'undefined';
+  const normalize = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+  const state = (window.__aetherFind = window.__aetherFind || { query: '', index: 0, total: 0 });
+
+  const clearHighlights = () => {
+    if (supportsHighlight) {
+      try { CSS.highlights.delete(HL); CSS.highlights.delete(HL_CUR); } catch (error) {}
     }
-  };
-  const runFind = (rawQuery) => {
-    const query = normalizeQuery(rawQuery);
-    if (!query || typeof window.find !== 'function') return;
-    window.__aetherFindQuery = query;
-    let found = window.find(query, false, false, true, false, true, false);
-    if (!found) {
-      try {
-        window.getSelection()?.removeAllRanges();
-      } catch {}
-      found = window.find(query, false, false, true, false, true, false);
-    }
-    return found;
+    document.querySelectorAll('mark[data-aether-find]').forEach((mark) => {
+      const parent = mark.parentNode;
+      if (!parent) return;
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      parent.removeChild(mark);
+      parent.normalize();
+    });
   };
 
-  if (providedQuery !== null && providedQuery !== undefined) {
-    runFind(providedQuery);
-    return;
+  const ensureStyle = () => {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent =
+      '::highlight(aether-find){background-color:#bfe9f7;color:#0e364a;}' +
+      '::highlight(aether-find-current){background-color:#247fa7;color:#f4fbff;}' +
+      'mark[data-aether-find]{background-color:#bfe9f7;color:#0e364a;border-radius:2px;padding:0;}' +
+      'mark[data-aether-find="current"]{background-color:#247fa7;color:#f4fbff;}';
+    (document.head || document.documentElement).appendChild(style);
+  };
+
+  if (action === 'clear') {
+    clearHighlights();
+    state.query = ''; state.index = 0; state.total = 0;
+    return { current: 0, total: 0 };
   }
 
-  const previous = normalizeQuery(window.__aetherFindQuery) || selectedText();
-  const query = window.prompt('Find in page', previous);
-  if (query === null) return;
-  runFind(query);
-})();
+  const query = normalize(rawQuery);
+  clearHighlights();
+  if (!query) {
+    state.query = ''; state.index = 0; state.total = 0;
+    return { current: 0, total: 0 };
+  }
+
+  const collectRanges = (needle) => {
+    const lc = needle.toLowerCase();
+    const len = lc.length;
+    const root = document.body || document.documentElement;
+    if (!root || !len) return [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.nodeValue) return NodeFilter.FILTER_REJECT;
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        const tag = parent.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEXTAREA') {
+          return NodeFilter.FILTER_REJECT;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const nodes = [];
+    let buffer = '';
+    let node;
+    while ((node = walker.nextNode())) {
+      nodes.push({ node, start: buffer.length });
+      buffer += node.nodeValue;
+    }
+    const haystack = buffer.toLowerCase();
+    const nodeAt = (offset) => {
+      let lo = 0, hi = nodes.length - 1, pick = 0;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (nodes[mid].start <= offset) { pick = mid; lo = mid + 1; } else { hi = mid - 1; }
+      }
+      return pick;
+    };
+    const ranges = [];
+    let from = 0, at;
+    while ((at = haystack.indexOf(lc, from)) !== -1) {
+      const end = at + len;
+      const startNode = nodeAt(at);
+      const endNode = nodeAt(end - 1);
+      try {
+        const range = document.createRange();
+        range.setStart(nodes[startNode].node, at - nodes[startNode].start);
+        range.setEnd(nodes[endNode].node, end - nodes[endNode].start);
+        ranges.push(range);
+      } catch (error) {}
+      from = end;
+      if (ranges.length >= MAX) break;
+    }
+    return ranges;
+  };
+
+  const ranges = collectRanges(query);
+  const total = ranges.length;
+  if (total === 0) {
+    state.query = query; state.index = 0; state.total = 0;
+    return { current: 0, total: 0 };
+  }
+
+  let index;
+  if ((action === 'next' || action === 'prev') && state.query === query) {
+    index = state.index + (action === 'next' ? 1 : -1);
+  } else {
+    index = 0;
+  }
+  index = ((index % total) + total) % total;
+  state.query = query; state.index = index; state.total = total;
+
+  ensureStyle();
+  if (supportsHighlight) {
+    try {
+      const all = new Highlight();
+      for (const range of ranges) all.add(range);
+      CSS.highlights.set(HL, all);
+      const current = new Highlight();
+      current.add(ranges[index]);
+      CSS.highlights.set(HL_CUR, current);
+    } catch (error) {}
+  } else {
+    for (let i = ranges.length - 1; i >= 0; i--) {
+      try {
+        const mark = document.createElement('mark');
+        mark.setAttribute('data-aether-find', i === index ? 'current' : 'all');
+        ranges[i].surroundContents(mark);
+      } catch (error) {}
+    }
+  }
+
+  let scrollTarget = null;
+  if (supportsHighlight) {
+    const node = ranges[index].startContainer;
+    scrollTarget = node.nodeType === 1 ? node : node.parentElement;
+  } else {
+    scrollTarget = document.querySelector('mark[data-aether-find="current"]');
+  }
+  try {
+    if (scrollTarget && scrollTarget.scrollIntoView) {
+      scrollTarget.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+    }
+  } catch (error) {}
+
+  return { current: index + 1, total };
+})()
 "#
 }
 
@@ -1775,7 +1938,13 @@ fn aether_tabs_scroll_to_text(state: State<Backend>, tab_id: String, text: Strin
 }
 
 #[tauri::command(rename_all = "camelCase")]
-fn aether_tabs_find(state: State<Backend>, tab_id: String, query: Option<String>) -> Cmd<()> {
+fn aether_tabs_find(
+    app: AppHandle,
+    state: State<Backend>,
+    tab_id: String,
+    query: Option<String>,
+    action: Option<String>,
+) -> Cmd<()> {
     let target_tab_id = {
         let tabs = lock_tabs(&state)?;
         if tab_id.is_empty() {
@@ -1786,7 +1955,8 @@ fn aether_tabs_find(state: State<Backend>, tab_id: String, query: Option<String>
             return Err(format!("Unknown tab: {tab_id}"));
         }
     };
-    find_native_webview_text(&state, &target_tab_id, query.as_deref())
+    let action = action.as_deref().unwrap_or("find");
+    find_native_webview_text(&app, &state, &target_tab_id, query.as_deref(), action)
 }
 
 #[tauri::command(rename_all = "camelCase")]

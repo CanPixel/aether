@@ -1629,7 +1629,7 @@ button {
   top: calc(var(--titlebar-height) + 48px);
   right: calc(var(--panel-width) + 24px);
   display: grid;
-  grid-template-columns: 18px minmax(180px, 280px) auto 30px;
+  grid-template-columns: 18px minmax(150px, 240px) auto auto 30px;
   align-items: center;
   gap: 8px;
   box-sizing: border-box;
@@ -1674,12 +1674,56 @@ button {
   color: rgba(86, 107, 134, 0.68);
 }
 
-.find-bar .responsive-button {
-  min-width: 52px;
+.find-count {
+  min-width: 38px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+  color: #56708c;
+  white-space: nowrap;
+}
+
+.find-count.is-empty {
+  color: #d2604b;
+}
+
+.find-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.find-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
   height: 28px;
+  border: 1px solid rgba(116, 143, 180, 0.18);
   border-radius: 9px;
-  padding: 0 10px;
-  font-size: 11px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.62);
+  color: #6d7f99;
+  line-height: 1;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.find-nav-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.find-nav-button:hover:not(:disabled) {
+  border-color: rgba(67, 145, 204, 0.28);
+  background: rgba(232, 247, 255, 0.9);
+  color: var(--accent-strong);
+}
+
+.find-nav-button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .find-close-button {
