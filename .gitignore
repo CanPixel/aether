@@ -6,3 +6,7 @@ out
 *.log*
 
 screens/*
+
+src-tauri
+
+.claude
