@@ -2189,6 +2189,54 @@ button {
   box-shadow: none;
 }
 
+.answer-stop-button {
+  height: 26px;
+  border: 1px solid rgba(78, 143, 208, 0.26);
+  border-radius: 8px;
+  padding: 0 9px;
+  background: rgba(235, 248, 255, 0.85);
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 780;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.answer-stop-button:hover {
+  border-color: rgba(50, 137, 199, 0.46);
+  background: rgba(213, 240, 255, 0.95);
+}
+
+.answer-loading .answer-stop-button {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 1;
+}
+
+.answer-card.is-streaming footer span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 720;
+}
+
+.answer-stream-caret {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  margin-left: 2px;
+  border-radius: 2px;
+  background: var(--accent-strong);
+  vertical-align: -2px;
+  animation: answerCaretBlink 0.9s steps(2, start) infinite;
+}
+
+@keyframes answerCaretBlink {
+  to {
+    visibility: hidden;
+  }
+}
+
 @keyframes answerHaze {
   to {
     transform: rotate(360deg);
@@ -4434,7 +4482,7 @@ button {
 
 .saved-atlas-list article {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 8px;
+  grid-template-columns: minmax(0, 1fr) 28px;
   align-self: start;
   gap: 6px;
 }

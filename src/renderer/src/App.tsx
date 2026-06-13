@@ -145,14 +145,18 @@ function App(): React.JSX.Element {
   const [selectedCollectionId, setSelectedCollectionId] = useState('')
   const [addressDraft, setAddressDraft] = useState('aether://dashboard')
   const [addressFocused, setAddressFocused] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
   const [chatPrompt, setChatPrompt] = useState('')
   const [askCollectionId, setAskCollectionId] = useState('')
   const [askIncludeCurrentPage, setAskIncludeCurrentPage] = useState(true)
   const [askCurrentPageOnly, setAskCurrentPageOnly] = useState(false)
   const [askPanelOpen, setAskPanelOpen] = useState(true)
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
   const [chatResult, setChatResult] = useState<ChatResult | null>(null)
+  const [streamingAnswer, setStreamingAnswer] = useState('')
+  const [streamingCitations, setStreamingCitations] = useState<SearchResult[]>([])
+  const [askPhase, setAskPhase] = useState<string | null>(null)
+  const askRequestIdRef = useRef<string | null>(null)
+  const streamBufferRef = useRef('')
+  const streamFlushRef = useRef<number | null>(null)
   const [lastCapture, setLastCapture] = useState<CaptureResult | null>(null)
   const [panelCollapsed, setPanelCollapsed] = useState(true)
   const [busy, setBusy] = useState<string | null>('')
@@ -162,7 +166,6 @@ function App(): React.JSX.Element {
   const [findQuery, setFindQuery] = useState('')
   const [collectionDialog, setCollectionDialog] = useState<CollectionDialogState>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const searchInputRef = useRef<HTMLInputElement>(null)
   const addressInputRef = useRef<HTMLInputElement>(null)
   const findInputRef = useRef<HTMLInputElement>(null)
   const toastIdRef = useRef(0)
@@ -322,6 +325,25 @@ function App(): React.JSX.Element {
   }, [refreshAll])
 
   useEffect(() => window.aether.events.onFindRequested(openFindBar), [openFindBar])
+
+  useEffect(() => {
+    const unsubscribe = window.aether.events.onChatStream((event) => {
+      if (!askRequestIdRef.current || event.requestId !== askRequestIdRef.current) return
+      if (event.status) setAskPhase(event.status)
+      if (event.citations) setStreamingCitations(event.citations)
+      if (event.delta) {
+        streamBufferRef.current += event.delta
+        if (streamFlushRef.current === null) {
+          streamFlushRef.current = window.requestAnimationFrame(() => {
+            streamFlushRef.current = null
+            setStreamingAnswer(streamBufferRef.current)
+          })
+        }
+      }
+    })
+
+    return unsubscribe
+  }, [])
 
   useEffect(() => {
     if (!findOpen) return
@@ -517,7 +539,6 @@ function App(): React.JSX.Element {
     await runTask('Deleting collection', async () => {
       await window.aether.collections.delete(collectionDialog.collection.id)
       await closeCollectionDialog()
-      setSearchResults([])
       setChatResult(null)
       await refreshCollections()
       setStatus(await window.aether.system.status())
@@ -528,7 +549,6 @@ function App(): React.JSX.Element {
   async function selectCollection(collectionId: string): Promise<void> {
     setSelectedCollectionId(collectionId)
     setAskCollectionId(collectionId)
-    setSearchResults([])
     setChatResult(null)
   }
 
@@ -554,7 +574,6 @@ function App(): React.JSX.Element {
     await runTask('Deleting capture', async () => {
       await window.aether.capture.delete(captureId)
       await refreshCollections(selectedCollection?.id)
-      setSearchResults((current) => current.filter((result) => result.captureId !== captureId))
       setNotice('Capture deleted.')
     })
   }
@@ -563,25 +582,8 @@ function App(): React.JSX.Element {
     await runTask('Moving capture', async () => {
       const capture = await window.aether.capture.move({ captureId, collectionId })
       await refreshCollections(collectionId)
-      setSearchResults([])
       setChatResult(null)
       setNotice(`Moved ${capture.title}.`)
-    })
-  }
-
-  async function search(event?: FormEvent): Promise<void> {
-    event?.preventDefault()
-    if (!selectedCollection) return
-
-    await runTask('Searching collection', async () => {
-      const results = await window.aether.search.collection({
-        collectionId: selectedCollection.id,
-        query: searchQuery,
-        limit: 8
-      })
-
-      setSearchResults(results)
-      setNotice(results.length ? `${results.length} local matches.` : 'No local matches found.')
     })
   }
 
@@ -621,17 +623,42 @@ function App(): React.JSX.Element {
       return
     }
 
-    await runTask('Asking Æther', async () => {
-      const result = await window.aether.chat.ask({
-        prompt,
-        collectionId,
-        includeCurrentPage
-      })
+    const requestId = crypto.randomUUID()
+    askRequestIdRef.current = requestId
+    streamBufferRef.current = ''
+    setStreamingAnswer('')
+    setStreamingCitations([])
+    setAskPhase('Preparing local context')
+    setChatResult(null)
 
-      setChatResult(result)
-      setAskPanelOpen(false)
-      setNotice(`Answered with ${formatLocalModelName(result.model) ?? result.model}.`)
+    await runTask('Asking Æther', async () => {
+      try {
+        const result = await window.aether.chat.ask({
+          prompt,
+          collectionId,
+          includeCurrentPage,
+          requestId
+        })
+
+        setChatResult(result)
+        setAskPanelOpen(false)
+        setNotice(`Answered with ${formatLocalModelName(result.model) ?? result.model}.`)
+      } finally {
+        askRequestIdRef.current = null
+        if (streamFlushRef.current !== null) {
+          window.cancelAnimationFrame(streamFlushRef.current)
+          streamFlushRef.current = null
+        }
+        streamBufferRef.current = ''
+        setStreamingAnswer('')
+        setStreamingCitations([])
+        setAskPhase(null)
+      }
     })
+  }
+
+  function cancelAsk(): void {
+    void window.aether.chat.cancel().catch(() => undefined)
   }
 
   async function handleQuickAction(action: QuickAction): Promise<void> {
@@ -1052,15 +1079,13 @@ function App(): React.JSX.Element {
         chatResult={chatResult}
         notice={notice}
         panelCollapsed={panelCollapsed}
-        searchInputRef={searchInputRef}
-        searchQuery={searchQuery}
-        searchResults={searchResults}
-        selectedCollection={selectedCollection}
+        askPhase={askPhase}
+        streamingAnswer={streamingAnswer}
+        streamingCitations={streamingCitations}
         status={status}
         onAsk={ask}
         onAskPanelOpenChange={setAskPanelOpen}
-        onSearch={search}
-        onSearchQueryChange={setSearchQuery}
+        onCancelAsk={cancelAsk}
         onTogglePanel={togglePanel}
         onChatPromptChange={setChatPrompt}
         onAskCollectionChange={setAskCollectionId}

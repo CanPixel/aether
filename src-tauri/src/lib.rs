@@ -18,7 +18,10 @@ use std::{
     env, fs,
     num::NonZeroU32,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering as AtomicOrdering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 #[cfg(desktop)]
@@ -42,6 +45,7 @@ const PANEL_COLLAPSED_WIDTH: f64 = 58.0;
 const LOCAL_RUNTIME_NAME: &str = "llama.cpp";
 const AETHER_FIND_MENU_ID: &str = "aether-find-in-page";
 const AETHER_FIND_REQUESTED_EVENT: &str = "aether:find-requested";
+const AETHER_CHAT_STREAM_EVENT: &str = "aether:chat-stream";
 const AETHER_MODEL_DIR_ENV: &str = "AETHER_MODEL_DIR";
 const AETHER_CHAT_MODEL_ENV: &str = "AETHER_CHAT_MODEL";
 const AETHER_EMBEDDING_MODEL_ENV: &str = "AETHER_EMBEDDING_MODEL";
@@ -81,6 +85,8 @@ struct Backend {
     webviews: Mutex<NativeBrowserViews>,
     client: Client,
     native_runtime: Arc<Mutex<NativeModelRuntime>>,
+    vectors: tokio::sync::RwLock<Option<VectorStoreData>>,
+    generation_cancelled: Arc<AtomicBool>,
 }
 
 #[cfg(desktop)]
@@ -334,6 +340,57 @@ struct ChatResult {
     citations: Vec<SearchResult>,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatStreamPayload {
+    request_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delta: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    citations: Option<Vec<SearchResult>>,
+}
+
+#[derive(Clone)]
+struct ChatStreamEmitter {
+    app: AppHandle,
+    request_id: String,
+}
+
+impl ChatStreamEmitter {
+    fn emit(&self, payload: ChatStreamPayload) {
+        let _ = self.app.emit(AETHER_CHAT_STREAM_EVENT, payload);
+    }
+
+    fn status(&self, status: &str) {
+        self.emit(ChatStreamPayload {
+            request_id: self.request_id.clone(),
+            status: Some(status.to_string()),
+            delta: None,
+            citations: None,
+        });
+    }
+
+    fn citations(&self, citations: &[SearchResult]) {
+        self.emit(ChatStreamPayload {
+            request_id: self.request_id.clone(),
+            status: Some("Generating answer".to_string()),
+            delta: None,
+            citations: Some(citations.to_vec()),
+        });
+    }
+
+    fn delta(&self, delta: &str) {
+        self.emit(ChatStreamPayload {
+            request_id: self.request_id.clone(),
+            status: None,
+            delta: Some(delta.to_string()),
+            citations: None,
+        });
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IcebergItem {
@@ -451,6 +508,7 @@ struct MoveCaptureInput {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SearchCollectionInput {
     collection_id: String,
     query: String,
@@ -463,6 +521,7 @@ struct AskChatInput {
     collection_id: Option<String>,
     prompt: String,
     include_current_page: Option<bool>,
+    request_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -650,6 +709,8 @@ impl Backend {
                 .build()
                 .expect("reqwest client"),
             native_runtime: Arc::new(Mutex::new(NativeModelRuntime::default())),
+            vectors: tokio::sync::RwLock::new(None),
+            generation_cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -1450,7 +1511,7 @@ pub fn run() {
                         eprintln!("Æther browser webview prewarm failed: {error}");
                     }
                 }
-                prewarm_local_chat_model(&app_handle);
+                prewarm_local_models(&app_handle);
             }
             Ok(())
         })
@@ -1486,6 +1547,7 @@ pub fn run() {
             aether_capture_delete,
             aether_search_collection,
             aether_chat_ask,
+            aether_chat_cancel,
             aether_crystallizer_generate,
             aether_crystallizer_list_saved,
             aether_crystallizer_get_saved,
@@ -1505,7 +1567,7 @@ pub fn run() {
 }
 
 #[cfg(desktop)]
-fn prewarm_local_chat_model(app: &AppHandle) {
+fn prewarm_local_models(app: &AppHandle) {
     let state = app.state::<Backend>();
     let paths = state.paths.clone();
     let runtime = Arc::clone(&state.native_runtime);
@@ -1514,26 +1576,39 @@ fn prewarm_local_chat_model(app: &AppHandle) {
         let Ok(settings) = load_settings(&paths.settings_path).await else {
             return;
         };
-        let Some(model_path) = model_catalog(&paths, &settings.local_model).chat_model else {
+        let catalog = model_catalog(&paths, &settings.local_model);
+        let chat_model = catalog.chat_model;
+        let embedding_model = catalog.embedding_model;
+        if chat_model.is_none() && embedding_model.is_none() {
             return;
-        };
-        let model_name = model_label(&model_path);
+        }
         let result = task::spawn_blocking(move || {
             let mut runtime = runtime
                 .lock()
                 .map_err(|_| "Local model runtime is unavailable.".to_string())?;
-            runtime.ensure_model(NativeModelKind::Chat, &model_path)
+            if let Some(model_path) = &chat_model {
+                runtime
+                    .ensure_model(NativeModelKind::Chat, model_path)
+                    .map_err(|error| {
+                        format!("chat model {} failed: {error}", model_label(model_path))
+                    })?;
+            }
+            if let Some(model_path) = &embedding_model {
+                runtime.warm_embedding_model(model_path).map_err(|error| {
+                    format!(
+                        "embedding model {} failed: {error}",
+                        model_label(model_path)
+                    )
+                })?;
+            }
+            Ok::<(), String>(())
         })
         .await;
 
         match result {
             Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                eprintln!("Æther chat model prewarm failed for {model_name}: {error}")
-            }
-            Err(error) => {
-                eprintln!("Æther chat model prewarm task failed for {model_name}: {error}")
-            }
+            Ok(Err(error)) => eprintln!("Æther model prewarm failed: {error}"),
+            Err(error) => eprintln!("Æther model prewarm task failed: {error}"),
         }
     });
 }
@@ -1931,9 +2006,10 @@ async fn aether_collections_delete(state: State<'_, Backend>, id: String) -> Cmd
         .retain(|capture| capture.collection_id != id);
     save_json(&state.paths.library_path, &library).await?;
 
-    let mut vectors = load_vectors(&state.paths.chunks_path).await?;
-    vectors.chunks.retain(|chunk| chunk.collection_id != id);
-    save_json(&state.paths.chunks_path, &vectors).await
+    with_vectors_mut(&state, |vectors| {
+        vectors.chunks.retain(|chunk| chunk.collection_id != id);
+    })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -1958,7 +2034,13 @@ async fn aether_capture_current_page(
     input: CaptureCurrentPageInput,
 ) -> Cmd<CaptureResult> {
     let settings = load_settings(&state.paths.settings_path).await?;
-    let collection = get_collection(&state.paths.library_path, &input.collection_id).await?;
+    let mut library = load_library(&state.paths.library_path).await?;
+    let collection = library
+        .collections
+        .iter()
+        .find(|collection| collection.id == input.collection_id)
+        .cloned()
+        .ok_or_else(|| "Collection not found.".to_string())?;
     emit_capture_progress(&app, "Reading current page", None, None);
     let active_tab = {
         let tabs = lock_tabs(&state)?;
@@ -1972,7 +2054,6 @@ async fn aether_capture_current_page(
     let captured = extract_readable_active_page(&state, &active_tab).await?;
     emit_capture_progress(&app, "Chunking readable text", None, None);
     let captured_key = normalize_capture_url_key(&captured.url);
-    let mut library = load_library(&state.paths.library_path).await?;
     if library.captures.iter().any(|capture| {
         capture.collection_id == collection.id
             && normalize_capture_url_key(&capture.url) == captured_key
@@ -2032,9 +2113,10 @@ async fn aether_capture_current_page(
         })
         .collect::<Vec<_>>();
 
-    let mut vectors = load_vectors(&state.paths.chunks_path).await?;
-    vectors.chunks.extend(records.iter().cloned());
-    save_json(&state.paths.chunks_path, &vectors).await?;
+    with_vectors_mut(&state, |vectors| {
+        vectors.chunks.extend(records.iter().cloned());
+    })
+    .await?;
 
     let capture = CaptureSummary {
         id: capture_id,
@@ -2104,13 +2186,14 @@ async fn aether_capture_move(
     }
     save_json(&state.paths.library_path, &library).await?;
 
-    let mut vectors = load_vectors(&state.paths.chunks_path).await?;
-    for chunk in &mut vectors.chunks {
-        if chunk.capture_id == input.capture_id {
-            chunk.collection_id = input.collection_id.clone();
+    with_vectors_mut(&state, |vectors| {
+        for chunk in &mut vectors.chunks {
+            if chunk.capture_id == input.capture_id {
+                chunk.collection_id = input.collection_id.clone();
+            }
         }
-    }
-    save_json(&state.paths.chunks_path, &vectors).await?;
+    })
+    .await?;
     Ok(moved)
 }
 
@@ -2135,11 +2218,12 @@ async fn aether_capture_delete(state: State<'_, Backend>, capture_id: String) ->
         }
     }
     save_json(&state.paths.library_path, &library).await?;
-    let mut vectors = load_vectors(&state.paths.chunks_path).await?;
-    vectors
-        .chunks
-        .retain(|chunk| chunk.capture_id != capture_id);
-    save_json(&state.paths.chunks_path, &vectors).await
+    with_vectors_mut(&state, |vectors| {
+        vectors
+            .chunks
+            .retain(|chunk| chunk.capture_id != capture_id);
+    })
+    .await
 }
 
 #[tauri::command]
@@ -2151,13 +2235,25 @@ async fn aether_search_collection(
 }
 
 #[tauri::command]
-async fn aether_chat_ask(state: State<'_, Backend>, input: AskChatInput) -> Cmd<ChatResult> {
+async fn aether_chat_ask(
+    app: AppHandle,
+    state: State<'_, Backend>,
+    input: AskChatInput,
+) -> Cmd<ChatResult> {
     let prompt = input.prompt.trim().to_string();
     if prompt.is_empty() {
         return Err("Enter a question before asking Æther.".to_string());
     }
+    state
+        .generation_cancelled
+        .store(false, AtomicOrdering::Relaxed);
+    let stream = ChatStreamEmitter {
+        app,
+        request_id: input.request_id.clone().unwrap_or_else(uuid),
+    };
     let settings = load_settings(&state.paths.settings_path).await?;
     let mut citations = if let Some(collection_id) = input.collection_id.clone() {
+        stream.status("Searching your knowledge hub");
         search_collection(
             &state,
             SearchCollectionInput {
@@ -2172,6 +2268,7 @@ async fn aether_chat_ask(state: State<'_, Backend>, input: AskChatInput) -> Cmd<
     };
 
     if input.include_current_page.unwrap_or(false) {
+        stream.status("Reading current page");
         if let Ok(active_url) = active_tab_url(&state) {
             let active_tab = {
                 let tabs = lock_tabs(&state)?;
@@ -2196,7 +2293,7 @@ async fn aether_chat_ask(state: State<'_, Backend>, input: AskChatInput) -> Cmd<
         .into_iter()
         .take(8)
         .collect::<Vec<_>>();
-    local_chat(&state, &settings, &prompt, citations).await
+    local_chat(&state, &settings, &prompt, citations, Some(stream)).await
 }
 
 #[tauri::command]
@@ -2208,8 +2305,19 @@ async fn aether_crystallizer_generate(
     if topic.is_empty() {
         return Err("Enter a topic before crystallizing.".to_string());
     }
+    state
+        .generation_cancelled
+        .store(false, AtomicOrdering::Relaxed);
     let settings = load_settings(&state.paths.settings_path).await?;
     local_generate_iceberg(&state, &settings, &topic).await
+}
+
+#[tauri::command]
+fn aether_chat_cancel(state: State<Backend>) -> Cmd<()> {
+    state
+        .generation_cancelled
+        .store(true, AtomicOrdering::Relaxed);
+    Ok(())
 }
 
 #[tauri::command]
@@ -2422,36 +2530,37 @@ async fn search_collection(
     }
     get_collection(&state.paths.library_path, &input.collection_id).await?;
     let settings = load_settings(&state.paths.settings_path).await?;
-    let vectors = load_vectors(&state.paths.chunks_path).await?;
     let query_vector = local_embed(state, &settings, vec![query])
         .await?
         .into_iter()
         .next()
         .ok_or_else(|| "Local embedding model returned no embedding.".to_string())?;
-    let mut results = vectors
-        .chunks
-        .into_iter()
-        .filter(|chunk| chunk.collection_id == input.collection_id)
-        .map(|chunk| SearchResult {
-            score: cosine_distance(&query_vector, &chunk.vector),
-            id: chunk.id,
-            collection_id: chunk.collection_id,
-            capture_id: chunk.capture_id,
-            app_id: chunk.app_id,
-            title: chunk.title,
-            url: chunk.url,
-            captured_at: chunk.captured_at,
-            chunk_index: chunk.chunk_index,
-            text: chunk.text,
-        })
-        .collect::<Vec<_>>();
-    results.sort_by(|left, right| {
-        left.score
-            .partial_cmp(&right.score)
-            .unwrap_or(Ordering::Equal)
-    });
-    results.truncate(input.limit.unwrap_or(8));
-    Ok(results)
+    with_vectors_read(state, |vectors| {
+        let mut scored = vectors
+            .chunks
+            .iter()
+            .filter(|chunk| chunk.collection_id == input.collection_id)
+            .map(|chunk| (cosine_distance(&query_vector, &chunk.vector), chunk))
+            .collect::<Vec<_>>();
+        scored.sort_by(|left, right| left.0.partial_cmp(&right.0).unwrap_or(Ordering::Equal));
+        scored.truncate(input.limit.unwrap_or(8));
+        scored
+            .into_iter()
+            .map(|(score, chunk)| SearchResult {
+                score,
+                id: chunk.id.clone(),
+                collection_id: chunk.collection_id.clone(),
+                capture_id: chunk.capture_id.clone(),
+                app_id: chunk.app_id.clone(),
+                title: chunk.title.clone(),
+                url: chunk.url.clone(),
+                captured_at: chunk.captured_at.clone(),
+                chunk_index: chunk.chunk_index,
+                text: chunk.text.clone(),
+            })
+            .collect::<Vec<_>>()
+    })
+    .await
 }
 
 fn capture_chunk_settings(paths: &DataPaths, settings: &UserSettings) -> (usize, usize) {
@@ -2594,6 +2703,51 @@ async fn load_vectors(path: &Path) -> Cmd<VectorStoreData> {
     read_json_or_default(path).await
 }
 
+async fn with_vectors_read<T>(
+    state: &State<'_, Backend>,
+    read: impl FnOnce(&VectorStoreData) -> T,
+) -> Cmd<T> {
+    {
+        let guard = state.vectors.read().await;
+        if let Some(vectors) = guard.as_ref() {
+            return Ok(read(vectors));
+        }
+    }
+    let mut guard = state.vectors.write().await;
+    if guard.is_none() {
+        *guard = Some(load_vectors(&state.paths.chunks_path).await?);
+    }
+    Ok(read(guard.as_ref().expect("vector store cache")))
+}
+
+async fn with_vectors_mut<T>(
+    state: &State<'_, Backend>,
+    mutate: impl FnOnce(&mut VectorStoreData) -> T,
+) -> Cmd<T> {
+    let mut guard = state.vectors.write().await;
+    if guard.is_none() {
+        *guard = Some(load_vectors(&state.paths.chunks_path).await?);
+    }
+    let vectors = guard.as_mut().expect("vector store cache");
+    let result = mutate(vectors);
+    save_vectors(&state.paths.chunks_path, vectors).await?;
+    Ok(result)
+}
+
+// Vector rows are large and machine-managed, so they are persisted as compact
+// JSON instead of the pretty format used for small user-editable stores.
+async fn save_vectors(path: &Path, data: &VectorStoreData) -> Cmd<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|error| error.to_string())?;
+    }
+    let raw = serde_json::to_string(data).map_err(|error| error.to_string())?;
+    tokio::fs::write(path, raw)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 async fn read_json_or_default<T>(path: &Path) -> Cmd<T>
 where
     T: DeserializeOwned + Default + Serialize,
@@ -2669,6 +2823,7 @@ async fn local_chat(
     settings: &UserSettings,
     prompt: &str,
     citations: Vec<SearchResult>,
+    stream: Option<ChatStreamEmitter>,
 ) -> Cmd<ChatResult> {
     let catalog = model_catalog(&state.paths, &settings.local_model);
     let model_path = catalog.chat_model.ok_or_else(|| {
@@ -2677,14 +2832,27 @@ async fn local_chat(
             state.paths.models_path.display()
         )
     })?;
+    if let Some(stream) = &stream {
+        stream.citations(&citations);
+    }
     let messages = build_chat_messages(prompt, &citations);
     let runtime = Arc::clone(&state.native_runtime);
+    let cancel = Arc::clone(&state.generation_cancelled);
     let model_label = model_label(&model_path);
     let answer = task::spawn_blocking(move || {
         let mut runtime = runtime
             .lock()
             .map_err(|_| "Local model runtime is unavailable.".to_string())?;
-        runtime.complete_chat(&model_path, messages, DEFAULT_GENERATION_TOKENS, 0.2)
+        let on_token: Option<Box<dyn FnMut(&str) + Send>> = stream
+            .map(|stream| Box::new(move |delta: &str| stream.delta(delta)) as Box<dyn FnMut(&str) + Send>);
+        runtime.complete_chat(
+            &model_path,
+            messages,
+            DEFAULT_GENERATION_TOKENS,
+            0.2,
+            &cancel,
+            on_token,
+        )
     })
     .await
     .map_err(|error| error.to_string())??;
@@ -2713,6 +2881,7 @@ async fn local_generate_iceberg(
         content: build_iceberg_prompt(topic),
     }];
     let runtime = Arc::clone(&state.native_runtime);
+    let cancel = Arc::clone(&state.generation_cancelled);
     let model_label = model_label(&model_path);
     let generated = task::spawn_blocking(move || {
         let mut runtime = runtime
@@ -2723,10 +2892,15 @@ async fn local_generate_iceberg(
             messages,
             DEFAULT_ICEBERG_GENERATION_TOKENS,
             0.35,
+            &cancel,
+            None,
         )
     })
     .await
     .map_err(|error| error.to_string())??;
+    if state.generation_cancelled.load(AtomicOrdering::Relaxed) {
+        return Err("Crystallization stopped.".to_string());
+    }
     let generated = clean_model_output(&generated);
     Ok(IcebergResult {
         keyword: topic.to_string(),
@@ -2929,29 +3103,44 @@ impl NativeModelRuntime {
         Ok(embeddings)
     }
 
+    fn has_safetensors_embedding(&self, model_path: &Path) -> bool {
+        let path = canonical_model_path(model_path);
+        self.safetensors_embedding
+            .as_ref()
+            .is_some_and(|loaded| loaded.path.as_path() == path.as_path())
+    }
+
+    fn ensure_safetensors_embedding(&mut self, model_path: &Path) -> Cmd<()> {
+        if self.has_safetensors_embedding(model_path) {
+            return Ok(());
+        }
+        let path = canonical_model_path(model_path);
+        let model = embeddinggemma::EmbeddingGemma::load(&path)
+            .map_err(|error| format!("Failed to load EmbeddingGemma safetensors: {error}"))?;
+        self.safetensors_embedding = Some(LoadedSafetensorsEmbeddingModel { path, model });
+        Ok(())
+    }
+
+    fn warm_embedding_model(&mut self, model_path: &Path) -> Cmd<()> {
+        if is_safetensors_embedding_model(model_path) {
+            self.ensure_safetensors_embedding(model_path)
+        } else {
+            self.ensure_model(NativeModelKind::Embedding, model_path)
+        }
+    }
+
     fn embed_safetensors(
         &mut self,
         model_path: &Path,
         inputs: Vec<String>,
         progress: Option<EmbeddingProgress>,
     ) -> Cmd<Vec<Vec<f32>>> {
-        let path = canonical_model_path(model_path);
-        let needs_load = self
-            .safetensors_embedding
-            .as_ref()
-            .map(|loaded| loaded.path.as_path() != path.as_path())
-            .unwrap_or(true);
-        if needs_load {
+        if !self.has_safetensors_embedding(model_path) {
             if let Some(progress) = &progress {
                 progress.emit_message("Loading EmbeddingGemma", 0, inputs.len());
             }
-            let model = embeddinggemma::EmbeddingGemma::load(&path)
-                .map_err(|error| format!("Failed to load EmbeddingGemma safetensors: {error}"))?;
-            self.safetensors_embedding = Some(LoadedSafetensorsEmbeddingModel {
-                path: path.clone(),
-                model,
-            });
         }
+        self.ensure_safetensors_embedding(model_path)?;
         let model = self
             .safetensors_embedding
             .as_mut()
@@ -2988,6 +3177,8 @@ impl NativeModelRuntime {
         messages: Vec<ChatPromptMessage>,
         max_tokens: usize,
         temperature: f32,
+        cancel: &AtomicBool,
+        on_token: Option<Box<dyn FnMut(&str) + Send>>,
     ) -> Cmd<String> {
         self.ensure_model(NativeModelKind::Chat, model_path)?;
         let rendered = {
@@ -2998,7 +3189,14 @@ impl NativeModelRuntime {
                 .model;
             render_model_chat_prompt(model, &messages)?
         };
-        self.complete_loaded_prompt(&rendered.prompt, max_tokens, temperature, rendered.add_bos)
+        self.complete_loaded_prompt(
+            &rendered.prompt,
+            max_tokens,
+            temperature,
+            rendered.add_bos,
+            cancel,
+            on_token,
+        )
     }
 
     fn complete_loaded_prompt(
@@ -3007,6 +3205,8 @@ impl NativeModelRuntime {
         max_tokens: usize,
         temperature: f32,
         add_bos: AddBos,
+        cancel: &AtomicBool,
+        mut on_token: Option<Box<dyn FnMut(&str) + Send>>,
     ) -> Cmd<String> {
         let backend = self
             .backend
@@ -3051,6 +3251,9 @@ impl NativeModelRuntime {
         let mut prompt_cursor = 0usize;
         let mut sample_index = 0;
         while prompt_cursor < tokens.len() {
+            if cancel.load(AtomicOrdering::Relaxed) {
+                return Err("Generation stopped.".to_string());
+            }
             let prompt_end = (prompt_cursor + prompt_batch_limit).min(tokens.len());
             let mut prompt_batch = LlamaBatch::new(prompt_end - prompt_cursor, 1);
             for (offset, token) in tokens[prompt_cursor..prompt_end].iter().enumerate() {
@@ -3075,10 +3278,14 @@ impl NativeModelRuntime {
         ]);
         let mut decoder = UTF_8.new_decoder();
         let mut output = String::new();
+        let mut streamed_len = 0usize;
         let mut batch = LlamaBatch::new(1, 1);
         let mut position = tokens.len() as i32;
 
         for _ in 0..max_tokens {
+            if cancel.load(AtomicOrdering::Relaxed) {
+                break;
+            }
             let token = sampler.sample(&ctx, sample_index);
             if model.is_eog_token(token) {
                 break;
@@ -3090,6 +3297,13 @@ impl NativeModelRuntime {
             if contains_stop_marker(&output) {
                 break;
             }
+            if let Some(on_token) = on_token.as_mut() {
+                let safe_end = stream_safe_len(&output);
+                if safe_end > streamed_len {
+                    on_token(&output[streamed_len..safe_end]);
+                    streamed_len = safe_end;
+                }
+            }
 
             batch.clear();
             batch
@@ -3098,6 +3312,10 @@ impl NativeModelRuntime {
             ctx.decode(&mut batch).map_err(|error| error.to_string())?;
             sample_index = batch.n_tokens() - 1;
             position += 1;
+        }
+
+        if output.trim().is_empty() && cancel.load(AtomicOrdering::Relaxed) {
+            return Err("Generation stopped.".to_string());
         }
 
         Ok(output)
@@ -3621,6 +3839,19 @@ fn fallback_chat_prompt(messages: &[ChatPromptMessage]) -> String {
 
     prompt.push_str("<|turn>model\n");
     prompt
+}
+
+// Streaming deltas hold back a short tail starting at the most recent '<' so a
+// stop marker arriving across several tokens is never shown to the user.
+fn stream_safe_len(output: &str) -> usize {
+    let tail_start = output.len().saturating_sub(18);
+    let Some((boundary, _)) = output.char_indices().find(|(index, _)| *index >= tail_start) else {
+        return output.len();
+    };
+    match output[boundary..].rfind('<') {
+        Some(position) => boundary + position,
+        None => output.len(),
+    }
 }
 
 fn contains_stop_marker(output: &str) -> bool {
@@ -4395,5 +4626,27 @@ mod tests {
             ),
             "Rodents are mostly herbivorous. Some vary [note]."
         );
+    }
+
+    #[test]
+    fn stream_safe_len_holds_back_potential_stop_marker() {
+        assert_eq!(stream_safe_len("Plain prose with no markers"), 27);
+        assert_eq!(stream_safe_len("Answer text <end_of"), 12);
+        assert_eq!(stream_safe_len("Tail <"), 5);
+        assert_eq!(stream_safe_len(""), 0);
+    }
+
+    #[test]
+    fn stream_safe_len_releases_old_angle_brackets() {
+        let text = "a < b is true, and much more prose follows here";
+        assert_eq!(stream_safe_len(text), text.len());
+    }
+
+    #[test]
+    fn stream_safe_len_respects_multibyte_boundaries() {
+        let text = "Æther çalışması — özet <eö";
+        let safe = stream_safe_len(text);
+        assert!(text.is_char_boundary(safe));
+        assert_eq!(&text[safe..], "<eö");
     }
 }

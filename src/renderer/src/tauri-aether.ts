@@ -10,6 +10,7 @@ import {
   CaptureResult,
   CaptureSummary,
   ChatResult,
+  ChatStreamEvent,
   CollectionSummary,
   HubShortcutSummary,
   IcebergResult,
@@ -74,7 +75,8 @@ if (isTauri) {
       collection: (input) => call<SearchResult[]>('aether_search_collection', { input })
     },
     chat: {
-      ask: (input) => call<ChatResult>('aether_chat_ask', { input })
+      ask: (input) => call<ChatResult>('aether_chat_ask', { input }),
+      cancel: () => call<void>('aether_chat_cancel')
     },
     crystallizer: {
       generate: (input) => call<IcebergResult>('aether_crystallizer_generate', { input }),
@@ -111,6 +113,15 @@ if (isTauri) {
       },
       onCaptureProgress: (listener: (progress: CaptureProgress) => void) => {
         const unlisten = listen<CaptureProgress>('aether:capture-progress', (event) =>
+          listener(event.payload)
+        )
+
+        return () => {
+          void unlisten.then((dispose) => dispose())
+        }
+      },
+      onChatStream: (listener: (event: ChatStreamEvent) => void) => {
+        const unlisten = listen<ChatStreamEvent>('aether:chat-stream', (event) =>
           listener(event.payload)
         )
 

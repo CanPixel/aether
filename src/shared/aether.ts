@@ -100,6 +100,13 @@ export interface ChatResult {
   citations: SearchResult[]
 }
 
+export interface ChatStreamEvent {
+  requestId: string
+  status?: string
+  delta?: string
+  citations?: SearchResult[]
+}
+
 export interface IcebergItem {
   id: string
   name: string
@@ -240,7 +247,9 @@ export interface AetherApi {
       collectionId?: string
       prompt: string
       includeCurrentPage?: boolean
+      requestId?: string
     }): Promise<ChatResult>
+    cancel(): Promise<void>
   }
   crystallizer: {
     generate(input: { keyword: string }): Promise<IcebergResult>
@@ -264,6 +273,7 @@ export interface AetherApi {
   events: {
     onState(listener: (state: AetherState) => void): () => void
     onCaptureProgress(listener: (progress: CaptureProgress) => void): () => void
+    onChatStream(listener: (event: ChatStreamEvent) => void): () => void
     onFindRequested(listener: () => void): () => void
   }
 }
