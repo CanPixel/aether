@@ -16,6 +16,8 @@ screens/*
 
 ICE
 
+src-tauri
+
 aether-web
 
 .claude
