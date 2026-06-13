@@ -548,15 +548,15 @@ function renderAnswerMarkdown(
     if (numbered) {
       listItems = []
       orderedItems.push(
-        <li key={`oli-${index}`}>
-          {renderInlineMarkdown(numbered[1], citations, onOpenCitation)}
-        </li>
+        <li key={`oli-${index}`}>{renderInlineMarkdown(numbered[1], citations, onOpenCitation)}</li>
       )
       return
     }
 
     flushLists()
-    blocks.push(<p key={`p-${index}`}>{renderInlineMarkdown(trimmed, citations, onOpenCitation)}</p>)
+    blocks.push(
+      <p key={`p-${index}`}>{renderInlineMarkdown(trimmed, citations, onOpenCitation)}</p>
+    )
   })
 
   flushLists()

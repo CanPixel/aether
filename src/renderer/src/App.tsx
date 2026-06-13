@@ -86,12 +86,7 @@ function buildCitationTargetUrl(citation: SearchResult): string {
 
   if (url.hash || !citation.text.trim()) return url.toString()
 
-  const fragmentText = citation.text
-    .replace(/\s+/g, ' ')
-    .trim()
-    .split(/\s+/)
-    .slice(0, 14)
-    .join(' ')
+  const fragmentText = citation.text.replace(/\s+/g, ' ').trim().split(/\s+/).slice(0, 14).join(' ')
 
   if (!fragmentText) return url.toString()
 
@@ -1119,11 +1114,7 @@ function App(): React.JSX.Element {
   )
 }
 
-function StatusToast({
-  toast
-}: {
-  toast: StatusToastInput & { id: number }
-}): React.JSX.Element {
+function StatusToast({ toast }: { toast: StatusToastInput & { id: number } }): React.JSX.Element {
   return (
     <div className={`status-toast ${toast.tone}`} role="status" aria-live="polite">
       <span aria-hidden="true" />
@@ -1171,12 +1162,7 @@ function FindBar({
       <button className="responsive-button" disabled={!query.trim()} type="submit">
         Find
       </button>
-      <button
-        aria-label="Close find"
-        className="find-close-button"
-        onClick={onClose}
-        type="button"
-      >
+      <button aria-label="Close find" className="find-close-button" onClick={onClose} type="button">
         ×
       </button>
     </form>
