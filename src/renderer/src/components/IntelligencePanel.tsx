@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, useState } from 'react'
+import { CSSProperties, FormEvent, useEffect, useRef, useState } from 'react'
 import { ChatResult, CollectionSummary, SearchResult, SystemStatus } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
 import { formatLocalModelName, getCaptureHost } from '../utils/aether-ui'
@@ -12,21 +12,19 @@ type IntelligencePanelProps = {
   askCurrentPageOnly: boolean
   askIncludeCurrentPage: boolean
   askPanelOpen: boolean
+  askPhase: string | null
   canUseCurrentPage: boolean
   collections: CollectionSummary[]
   dashboardOpen: boolean
   chatResult: ChatResult | null
   notice: string | null
   panelCollapsed: boolean
-  searchInputRef: React.RefObject<HTMLInputElement | null>
-  searchQuery: string
-  searchResults: SearchResult[]
-  selectedCollection?: CollectionSummary
   status: SystemStatus | null
+  streamingAnswer: string
+  streamingCitations: SearchResult[]
   onAsk: (event: FormEvent) => Promise<void>
   onAskPanelOpenChange: (value: boolean) => void
-  onSearch: (event?: FormEvent) => Promise<void>
-  onSearchQueryChange: (value: string) => void
+  onCancelAsk: () => void
   onTogglePanel: () => Promise<void>
   onChatPromptChange: (value: string) => void
   onAskCollectionChange: (collectionId: string) => void
@@ -44,6 +42,7 @@ export function IntelligencePanel({
   askCurrentPageOnly,
   askIncludeCurrentPage,
   askPanelOpen,
+  askPhase,
   canUseCurrentPage,
   collections,
   dashboardOpen,
@@ -51,8 +50,11 @@ export function IntelligencePanel({
   notice,
   panelCollapsed,
   status,
+  streamingAnswer,
+  streamingCitations,
   onAsk,
   onAskPanelOpenChange,
+  onCancelAsk,
   onTogglePanel,
   onChatPromptChange,
   onAskCollectionChange,
@@ -195,7 +197,23 @@ export function IntelligencePanel({
           </div>
         </section>
 
-        {busy === 'Asking Æther' && <AnswerLoading />}
+        {busy === 'Asking Æther' &&
+          (streamingAnswer ? (
+            <section className="panel-section mode-section answer-section">
+              <div className="section-heading">
+                <h2>Answer</h2>
+                <span>{formatLocalModelName(status?.chatModel) ?? 'Local model'}</span>
+              </div>
+              <StreamingAnswerCard
+                citations={streamingCitations}
+                text={streamingAnswer}
+                onCancel={onCancelAsk}
+                onOpenCitation={onOpenCitation}
+              />
+            </section>
+          ) : (
+            <AnswerLoading phase={askPhase} onCancel={onCancelAsk} />
+          ))}
 
         {chatResult && busy !== 'Asking Æther' && (
           <section className="panel-section mode-section answer-section">
@@ -230,7 +248,13 @@ export function IntelligencePanel({
   )
 }
 
-function AnswerLoading(): React.JSX.Element {
+function AnswerLoading({
+  phase,
+  onCancel
+}: {
+  phase: string | null
+  onCancel: () => void
+}): React.JSX.Element {
   return (
     <div className="answer-loading" role="status" aria-live="polite">
       <div className="answer-loading-haze" aria-hidden="true" />
@@ -241,9 +265,56 @@ function AnswerLoading(): React.JSX.Element {
       </div>
       <div className="answer-loading-copy">
         <strong>Composing answer</strong>
-        <span>Gathering local context</span>
+        <span>{phase ?? 'Gathering local context'}</span>
       </div>
+      <button
+        className="answer-stop-button responsive-button"
+        onClick={onCancel}
+        title="Stop generating"
+        type="button"
+      >
+        Stop
+      </button>
     </div>
+  )
+}
+
+function StreamingAnswerCard({
+  citations,
+  text,
+  onCancel,
+  onOpenCitation
+}: {
+  citations: SearchResult[]
+  text: string
+  onCancel: () => void
+  onOpenCitation: (citation: SearchResult) => Promise<void>
+}): React.JSX.Element {
+  const markdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const element = markdownRef.current
+    if (element) element.scrollTop = element.scrollHeight
+  }, [text])
+
+  return (
+    <article className="answer-card is-streaming">
+      <div className="answer-markdown" aria-live="polite" ref={markdownRef}>
+        {renderAnswerMarkdown(text, citations, onOpenCitation)}
+        <span className="answer-stream-caret" aria-hidden="true" />
+      </div>
+      <footer>
+        <span>Writing answer…</span>
+        <button
+          className="answer-stop-button responsive-button"
+          onClick={onCancel}
+          title="Stop generating"
+          type="button"
+        >
+          Stop
+        </button>
+      </footer>
+    </article>
   )
 }
 
