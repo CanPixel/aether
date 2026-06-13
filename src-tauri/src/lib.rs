@@ -1623,6 +1623,22 @@ fn update_tab_title(state: &State<Backend>, tab_id: &str, title: &str) {
     }
 }
 
+// macOS quit (`-[NSApplication terminate:]`) calls libc `exit()`, which runs
+// C++ static destructors. llama.cpp's Metal backend frees its global device
+// registry there and asserts that all residency sets were released first — but
+// our loaded models (which hold those Metal buffers) are never dropped, because
+// the Cocoa quit path skips Rust's normal teardown. That assert aborts the
+// process ("Æther quit unexpectedly"). Terminate immediately via `_exit`, which
+// bypasses the static destructors entirely; the OS reclaims Metal/host memory,
+// and all app state is already persisted per-action (no exit-time flush).
+#[cfg(desktop)]
+fn force_exit() -> ! {
+    extern "C" {
+        fn _exit(code: i32) -> !;
+    }
+    unsafe { _exit(0) }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -1725,8 +1741,14 @@ pub fn run() {
             aether_layout_set_modal_overlay_open,
             aether_layout_show_status_toast
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Æther");
+        .build(tauri::generate_context!())
+        .expect("error while building Æther")
+        .run(|_app_handle, event| {
+            #[cfg(desktop)]
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                force_exit();
+            }
+        });
 }
 
 #[cfg(desktop)]
