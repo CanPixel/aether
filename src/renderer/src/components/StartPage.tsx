@@ -53,7 +53,9 @@ export function StartPage({
           </button>
         </form>
         {shortcuts.length === 0 ? (
-          <p className="start-empty">Save pages as Portals to launch them from here.</p>
+          <p className="start-empty">
+            Explore the web, then save pages as Portals to launch them from here.
+          </p>
         ) : (
           <div className="start-portals">
             {shortcuts.map((shortcut) => (

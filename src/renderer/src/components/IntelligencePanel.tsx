@@ -687,8 +687,11 @@ function StatusPill({ status }: { status: SystemStatus | null }): React.JSX.Elem
   }
 
   return (
-    <span className={`status-pill ${status.runtimeReady ? 'online' : 'offline'}`}>
-      {status.runtimeReady ? status.runtimeName : 'No model'}
+    <span
+      className={`status-pill ${status.runtimeReady ? 'online' : 'offline'}`}
+      title={status.runtimeReady ? status.runtimeName : undefined}
+    >
+      {status.runtimeReady ? 'Ready' : 'No model'}
     </span>
   )
 }

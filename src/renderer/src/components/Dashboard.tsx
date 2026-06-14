@@ -166,169 +166,171 @@ export function Dashboard({
         <img className="wavy-lines" src={wavyLinesSrc} alt="Wavy lines" draggable={false} />
       </header>
 
-      <section className="hub-row">
-        <div className="section-title compact">
-          <span className="section-symbol">
-            <GridIcon />
-          </span>
-          <div>
-            <h2>Portals</h2>
-            <p>Launch saved pages like local workspaces.</p>
+      <div className="saved-shelves">
+        <section className="hub-row">
+          <div className="section-title compact">
+            <span className="section-symbol">
+              <GridIcon />
+            </span>
+            <div>
+              <h2>Portals</h2>
+              <p>Launch saved pages like local workspaces.</p>
+            </div>
           </div>
-        </div>
-        {shortcuts.length === 0 ? (
-          <div className="empty-row">Saved pages will appear here as launch tiles.</div>
-        ) : (
-          <div className="hub-shortcuts">
-            {shortcuts.map((shortcut) => (
-              <article
-                className={`hub-shortcut ${
-                  draggedShortcutId === shortcut.id ? 'dragging' : ''
-                } ${dragOverShortcutId === shortcut.id ? 'drop-target' : ''}`}
-                draggable
-                key={shortcut.id}
-                onDragEnd={() => {
-                  setDraggedShortcutId('')
-                  setDragOverShortcutId('')
-                }}
-                onDragEnter={(event) => {
-                  if (!draggedShortcutId || draggedShortcutId === shortcut.id) return
-                  event.preventDefault()
-                  setDragOverShortcutId(shortcut.id)
-                }}
-                onDragOver={(event) => {
-                  if (!draggedShortcutId || draggedShortcutId === shortcut.id) return
-                  event.preventDefault()
-                  event.dataTransfer.dropEffect = 'move'
-                }}
-                onDragStart={(event) => {
-                  setDraggedShortcutId(shortcut.id)
-                  event.dataTransfer.effectAllowed = 'move'
-                  event.dataTransfer.setData('application/x-aether-shortcut', shortcut.id)
-                  event.dataTransfer.setData('text/plain', shortcut.title)
-                }}
-                onDrop={async (event) => {
-                  event.preventDefault()
-                  await reorderPortal(shortcut.id)
-                  setDraggedShortcutId('')
-                  setDragOverShortcutId('')
-                }}
-                style={
-                  {
-                    '--portal-tint': getPortalTint(shortcut.host, shortcut.themeColor)
-                  } as CSSProperties
-                }
-              >
-                <button
-                  className="hub-launch"
-                  draggable={false}
-                  onClick={() => openShortcut(shortcut)}
-                  title={shortcut.url}
-                  type="button"
-                >
-                  <span>{getRootDomainLetter(shortcut.host)}</span>
-                  <strong>{cleanTitle(shortcut.title)}</strong>
-                  <small>{shortcut.host}</small>
-                </button>
-                <button
-                  className="hub-delete"
-                  draggable={false}
-                  onClick={() => deleteShortcut(shortcut.id)}
-                  title="Remove from Hub"
-                  type="button"
-                >
-                  <CloseIcon />
-                </button>
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="iceberg-band">
-        <div className="section-title compact">
-          <span className="section-symbol">
-            <SnowflakeIcon />
-          </span>
-          <div>
-            <h2>Saved Icebergs</h2>
-            <p>Reopen complexity atlases from iCE.</p>
-          </div>
-        </div>
-
-        {savedIcebergs.length === 0 ? (
-          <div className="empty-row">Saved iCE atlases will appear here.</div>
-        ) : (
-          <div className="saved-iceberg-grid">
-            {savedIcebergs.map((iceberg) => (
-              <article
-                className={`saved-iceberg-card ${
-                  draggedIcebergId === iceberg.id ? 'dragging' : ''
-                } ${dragOverIcebergId === iceberg.id ? 'drop-target' : ''}`}
-                draggable
-                key={iceberg.id}
-                onDragEnd={() => {
-                  setDraggedIcebergId('')
-                  setDragOverIcebergId('')
-                }}
-                onDragEnter={(event) => {
-                  if (!draggedIcebergId || draggedIcebergId === iceberg.id) return
-                  event.preventDefault()
-                  setDragOverIcebergId(iceberg.id)
-                }}
-                onDragOver={(event) => {
-                  if (!draggedIcebergId || draggedIcebergId === iceberg.id) return
-                  event.preventDefault()
-                  event.dataTransfer.dropEffect = 'move'
-                }}
-                onDragStart={(event) => {
-                  setDraggedIcebergId(iceberg.id)
-                  event.dataTransfer.effectAllowed = 'move'
-                  event.dataTransfer.setData('application/x-aether-iceberg', iceberg.id)
-                  event.dataTransfer.setData('text/plain', iceberg.title)
-                }}
-                onDrop={async (event) => {
-                  event.preventDefault()
-                  await reorderIceberg(iceberg.id)
-                  setDraggedIcebergId('')
-                  setDragOverIcebergId('')
-                }}
-              >
-                <button
-                  className="saved-iceberg-open"
-                  disabled={Boolean(busy)}
-                  draggable={false}
-                  onClick={() => {
-                    void openSavedIceberg(iceberg.id)
+          {shortcuts.length === 0 ? (
+            <div className="empty-row">Saved pages will appear here as launch tiles.</div>
+          ) : (
+            <div className="hub-shortcuts">
+              {shortcuts.map((shortcut) => (
+                <article
+                  className={`hub-shortcut ${
+                    draggedShortcutId === shortcut.id ? 'dragging' : ''
+                  } ${dragOverShortcutId === shortcut.id ? 'drop-target' : ''}`}
+                  draggable
+                  key={shortcut.id}
+                  onDragEnd={() => {
+                    setDraggedShortcutId('')
+                    setDragOverShortcutId('')
                   }}
-                  type="button"
+                  onDragEnter={(event) => {
+                    if (!draggedShortcutId || draggedShortcutId === shortcut.id) return
+                    event.preventDefault()
+                    setDragOverShortcutId(shortcut.id)
+                  }}
+                  onDragOver={(event) => {
+                    if (!draggedShortcutId || draggedShortcutId === shortcut.id) return
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                  }}
+                  onDragStart={(event) => {
+                    setDraggedShortcutId(shortcut.id)
+                    event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.setData('application/x-aether-shortcut', shortcut.id)
+                    event.dataTransfer.setData('text/plain', shortcut.title)
+                  }}
+                  onDrop={async (event) => {
+                    event.preventDefault()
+                    await reorderPortal(shortcut.id)
+                    setDraggedShortcutId('')
+                    setDragOverShortcutId('')
+                  }}
+                  style={
+                    {
+                      '--portal-tint': getPortalTint(shortcut.host, shortcut.themeColor)
+                    } as CSSProperties
+                  }
                 >
-                  <span>{iceberg.itemCount} frozen fragments</span>
-                  <strong>{iceberg.title}</strong>
-                  <small>
-                    {formatDate(iceberg.savedAt)}{' '}
-                    {formatLocalModelName(iceberg.model) ?? iceberg.model}
-                  </small>
-                </button>
-                <button
-                  aria-label={`Delete ${iceberg.title}`}
-                  className="saved-iceberg-delete"
-                  disabled={Boolean(busy)}
-                  draggable={false}
-                  onClick={() => deleteSavedIceberg(iceberg.id)}
-                  title="Delete saved iceberg"
-                  type="button"
-                >
-                  <CloseIcon />
-                </button>
-                <span className="saved-iceberg-flair" aria-hidden="true">
-                  <IcebergFlairIcon icon={iceberg.icon ?? inferIcebergIcon(iceberg)} />
-                </span>
-              </article>
-            ))}
+                  <button
+                    className="hub-launch"
+                    draggable={false}
+                    onClick={() => openShortcut(shortcut)}
+                    title={shortcut.url}
+                    type="button"
+                  >
+                    <span>{getRootDomainLetter(shortcut.host)}</span>
+                    <strong>{cleanTitle(shortcut.title)}</strong>
+                    <small>{shortcut.host}</small>
+                  </button>
+                  <button
+                    className="hub-delete"
+                    draggable={false}
+                    onClick={() => deleteShortcut(shortcut.id)}
+                    title="Remove from Hub"
+                    type="button"
+                  >
+                    <CloseIcon />
+                  </button>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="iceberg-band">
+          <div className="section-title compact">
+            <span className="section-symbol">
+              <SnowflakeIcon />
+            </span>
+            <div>
+              <h2>Saved Icebergs</h2>
+              <p>Reopen complexity atlases from iCE.</p>
+            </div>
           </div>
-        )}
-      </section>
+
+          {savedIcebergs.length === 0 ? (
+            <div className="empty-row">Saved iCE atlases will appear here.</div>
+          ) : (
+            <div className="saved-iceberg-grid">
+              {savedIcebergs.map((iceberg) => (
+                <article
+                  className={`saved-iceberg-card ${
+                    draggedIcebergId === iceberg.id ? 'dragging' : ''
+                  } ${dragOverIcebergId === iceberg.id ? 'drop-target' : ''}`}
+                  draggable
+                  key={iceberg.id}
+                  onDragEnd={() => {
+                    setDraggedIcebergId('')
+                    setDragOverIcebergId('')
+                  }}
+                  onDragEnter={(event) => {
+                    if (!draggedIcebergId || draggedIcebergId === iceberg.id) return
+                    event.preventDefault()
+                    setDragOverIcebergId(iceberg.id)
+                  }}
+                  onDragOver={(event) => {
+                    if (!draggedIcebergId || draggedIcebergId === iceberg.id) return
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = 'move'
+                  }}
+                  onDragStart={(event) => {
+                    setDraggedIcebergId(iceberg.id)
+                    event.dataTransfer.effectAllowed = 'move'
+                    event.dataTransfer.setData('application/x-aether-iceberg', iceberg.id)
+                    event.dataTransfer.setData('text/plain', iceberg.title)
+                  }}
+                  onDrop={async (event) => {
+                    event.preventDefault()
+                    await reorderIceberg(iceberg.id)
+                    setDraggedIcebergId('')
+                    setDragOverIcebergId('')
+                  }}
+                >
+                  <button
+                    className="saved-iceberg-open"
+                    disabled={Boolean(busy)}
+                    draggable={false}
+                    onClick={() => {
+                      void openSavedIceberg(iceberg.id)
+                    }}
+                    type="button"
+                  >
+                    <span>{iceberg.itemCount} frozen fragments</span>
+                    <strong>{iceberg.title}</strong>
+                    <small>
+                      {formatDate(iceberg.savedAt)}{' '}
+                      {formatLocalModelName(iceberg.model) ?? iceberg.model}
+                    </small>
+                  </button>
+                  <button
+                    aria-label={`Delete ${iceberg.title}`}
+                    className="saved-iceberg-delete"
+                    disabled={Boolean(busy)}
+                    draggable={false}
+                    onClick={() => deleteSavedIceberg(iceberg.id)}
+                    title="Delete saved iceberg"
+                    type="button"
+                  >
+                    <CloseIcon />
+                  </button>
+                  <span className="saved-iceberg-flair" aria-hidden="true">
+                    <IcebergFlairIcon icon={iceberg.icon ?? inferIcebergIcon(iceberg)} />
+                  </span>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
 
       <section className="knowledge-band">
         <div className="section-title">

@@ -77,6 +77,8 @@ export function BrowserChrome({
   onSelectTab,
   onSelectCollection
 }: BrowserChromeProps): React.JSX.Element {
+  const startPageActive = activeTab?.url === 'aether://start'
+
   return (
     <div className={`browser-chrome ${dashboardOpen ? 'dashboard-open' : ''}`}>
       <form className="address-bar" onSubmit={onNavigate}>
@@ -103,7 +105,13 @@ export function BrowserChrome({
         <div className="active-app">
           <span>{dashboardOpen ? dashboardTitle : activeTab?.title || 'Browser'}</span>
           <small>
-            {dashboardOpen ? dashboardSubtitle : activeTab?.isLoading ? 'Loading' : activeTab?.host}
+            {dashboardOpen
+              ? dashboardSubtitle
+              : activeTab?.isLoading
+                ? 'Loading'
+                : startPageActive
+                  ? 'Discover'
+                  : activeTab?.host}
           </small>
         </div>
         <input

@@ -2873,6 +2873,7 @@ button {
   background: rgba(246, 249, 253, 0.42);
 }
 
+.saved-shelves,
 .hub-row,
 .iceberg-band,
 .knowledge-band,
@@ -2883,16 +2884,37 @@ button {
   padding: 28px 34px;
 }
 
-.hub-row {
+.saved-shelves {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+  gap: 0;
   margin: 0 -34px;
+  padding: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.34), rgba(239, 249, 255, 0.2)),
+    rgba(255, 255, 255, 0.26);
+}
+
+.hub-row {
+  margin: 0;
   background: rgba(255, 255, 255, 0.32);
 }
 
 .iceberg-band {
-  margin: 0 -34px;
+  margin: 0;
   background:
     radial-gradient(circle at 12% 18%, rgba(186, 230, 253, 0.34), transparent 28%),
     linear-gradient(135deg, rgba(255, 255, 255, 0.28), rgba(239, 249, 255, 0.18));
+}
+
+.saved-shelves .hub-row,
+.saved-shelves .iceberg-band {
+  min-width: 0;
+  border-top: 0;
+}
+
+.saved-shelves .iceberg-band {
+  border-left: 1px solid rgba(143, 165, 196, 0.18);
 }
 
 .knowledge-band {
@@ -3906,6 +3928,9 @@ button {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
 }
 
 .crystallizer-tools {
@@ -3946,10 +3971,19 @@ button {
   height: 100%;
   cursor: grab;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
 }
 
 .crystallizer-canvas.dragging {
   cursor: grabbing;
+}
+
+.crystallizer-canvas,
+.crystallizer-canvas * {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .iceberg-shape {
@@ -4113,7 +4147,18 @@ button {
 }
 
 .ice-node-hit {
+  cursor: pointer;
   outline: none;
+}
+
+.ice-node-scale {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ice-node-hit.selected .ice-node-scale {
+  transform: scale(1.035);
 }
 
 .crystallizer-body.results-ready .ice-node-hit {
@@ -4140,18 +4185,23 @@ button {
   text-align: left;
   box-shadow: 0 18px 36px rgba(8, 47, 73, 0.12);
   transition:
-    transform 160ms ease,
-    border-color 160ms ease,
-    box-shadow 160ms ease;
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .ice-node-hit.selected .ice-node,
-.ice-node:hover {
+.ice-node:hover,
+.ice-node:focus-visible {
   border-color: color-mix(in srgb, var(--layer-accent) 58%, white);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.78)),
+    color-mix(in srgb, var(--layer-accent) 12%, white);
   box-shadow:
-    0 24px 48px rgba(8, 47, 73, 0.16),
-    0 0 0 4px color-mix(in srgb, var(--layer-accent) 12%, transparent);
-  transform: translateY(-2px);
+    0 20px 42px rgba(8, 47, 73, 0.14),
+    0 0 0 3px color-mix(in srgb, var(--layer-accent) 12%, transparent);
 }
 
 .ice-node span {
@@ -5737,6 +5787,15 @@ button:disabled:hover {
 }
 
 @media (max-width: 1120px) {
+  .saved-shelves {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .saved-shelves .iceberg-band {
+    border-top: 1px solid rgba(143, 165, 196, 0.18);
+    border-left: 0;
+  }
+
   .crystallizer-header {
     align-items: stretch;
     flex-direction: column;

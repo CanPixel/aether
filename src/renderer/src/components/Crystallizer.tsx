@@ -386,6 +386,7 @@ export function Crystallizer({
 
   function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>): void {
     if ((event.target as Element).closest('.ice-node-hit')) return
+    event.preventDefault()
     if (animationFrame.current) {
       cancelAnimationFrame(animationFrame.current)
       animationFrame.current = null
@@ -403,6 +404,7 @@ export function Crystallizer({
 
   function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>): void {
     if (!dragStart.current) return
+    event.preventDefault()
 
     const SENSITIVITY = 1.75
 
@@ -660,7 +662,10 @@ export function Crystallizer({
                   <g
                     className={`ice-node-hit ${selected ? 'selected' : ''}`}
                     key={item.id}
-                    onClick={() => setSelectedItem(item)}
+                    onClick={() => {
+                      setSelectedItem(item)
+                      focusItem(item)
+                    }}
                     style={
                       {
                         '--layer-accent': layer.accent,
@@ -668,19 +673,22 @@ export function Crystallizer({
                       } as CSSProperties
                     }
                     tabIndex={0}
+                    transform={`translate(${displayX} ${displayY})`}
                   >
-                    <foreignObject
-                      height={NODE_HEIGHT}
-                      width={NODE_WIDTH}
-                      x={displayX - NODE_WIDTH / 2}
-                      y={displayY - NODE_HEIGHT / 2}
-                    >
-                      <button className="ice-node" type="button">
-                        <span>{item.level}</span>
-                        <strong>{item.name}</strong>
-                        <small>{item.description}</small>
-                      </button>
-                    </foreignObject>
+                    <g className="ice-node-scale">
+                      <foreignObject
+                        height={NODE_HEIGHT}
+                        width={NODE_WIDTH}
+                        x={-NODE_WIDTH / 2}
+                        y={-NODE_HEIGHT / 2}
+                      >
+                        <button className="ice-node" type="button">
+                          <span>{item.level}</span>
+                          <strong>{item.name}</strong>
+                          <small>{item.description}</small>
+                        </button>
+                      </foreignObject>
+                    </g>
                   </g>
                 )
               })}

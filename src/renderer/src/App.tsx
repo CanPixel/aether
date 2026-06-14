@@ -1082,7 +1082,7 @@ function App(): React.JSX.Element {
   }
 
   async function deleteShortcut(shortcutId: string): Promise<void> {
-    await runTask('Removing shortcut', async () => {
+    await runTask('Removed shortcut', async () => {
       await window.aether.hub.delete(shortcutId)
       await refreshShortcuts()
     })
