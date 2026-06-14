@@ -219,6 +219,16 @@ button:disabled {
   user-select: none;
   -webkit-user-drag: none;
 }
+.wavy-lines-start-page {
+  position: absolute;
+  left: 0;
+  width: 230%;
+  z-index: -20;
+  top: -24px;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
 
 .brand-mark {
   position: relative;
@@ -560,6 +570,7 @@ button {
 }
 
 .address-bar button,
+.start-search button,
 .capture-row button,
 .search-form button,
 .chat-form button,
@@ -579,6 +590,7 @@ button {
 }
 
 .address-bar button:hover,
+.start-search button:hover,
 .capture-row button:hover,
 .search-form button:hover,
 .chat-form button:hover,
@@ -805,6 +817,49 @@ button {
     /* Brightened inner frost */ 0 0 20px rgba(255, 255, 255, 0.4),
     /* Core white intense glow */ 0 0 60px rgba(185, 226, 250, 0.5),
     /* Vivid icy cyan mid-glow */ 0 0 120px rgba(58, 146, 196, 0.3),
+    /* Deep arctic blue wide haze */ 0 30px 80px rgba(0, 0, 0, 0.15); /* Subtle grounding shadow */
+}
+
+.start-orb {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  left: 43%;
+  top: 20.1%;
+  width: 185px;
+  height: 185px;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.start-orb img {
+  position: relative;
+  z-index: 2;
+  object-fit: contain;
+  filter: drop-shadow(0 26px 32px rgba(58, 115, 146, 0.2))
+    drop-shadow(0 0 28px rgba(255, 255, 255, 0.86));
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.start-orb-aura {
+  position: absolute;
+  inset: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 36% 25%, rgba(255, 255, 255, 0.92), transparent 22%),
+    radial-gradient(circle at 66% 70%, rgba(98, 216, 198, 0.16), transparent 36%),
+    radial-gradient(circle, rgba(126, 215, 237, 0.18), transparent 62%);
+
+  box-shadow:
+    inset 0 0 40px rgba(255, 255, 255, 0.6),
+    /* Brightened inner frost */ 0 0 20px rgba(255, 255, 255, 0.84),
+    /* Core white intense glow */ 0 0 60px rgba(185, 226, 250, 0.75),
+    /* Vivid icy cyan mid-glow */ 0 0 120px rgba(58, 146, 196, 0.63),
     /* Deep arctic blue wide haze */ 0 30px 80px rgba(0, 0, 0, 0.15); /* Subtle grounding shadow */
 }
 
@@ -1285,6 +1340,13 @@ button {
   margin-top: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keep the date/chunk badges intact and let the title truncate, rather than letting
+   the badges wrap or spill past the card edge in a narrow hub. */
+.recent-card-title-row .data-badges {
+  flex: 0 0 auto;
   white-space: nowrap;
 }
 
@@ -1814,7 +1876,9 @@ button {
 .chat-section {
   flex: 0 0 auto;
   min-height: 0;
-  transition: background 300ms ease, border-color 300ms ease;
+  transition:
+    background 300ms ease,
+    border-color 300ms ease;
 }
 
 .chat-section.open {
@@ -1853,7 +1917,7 @@ button {
   transform-origin: top center;
   overflow: hidden;
 
-  transition: 
+  transition:
     max-height 500ms cubic-bezier(0.25, 1.4, 0.5, 1),
     transform 500ms cubic-bezier(0.25, 1.4, 0.5, 1),
     opacity 400ms ease,
@@ -1905,6 +1969,7 @@ button {
   color: var(--muted);
   font-size: 12px;
   font-weight: 780;
+  margin-top: 2px;
 }
 
 .ask-current-button {
@@ -2833,12 +2898,7 @@ button {
   z-index: -1;
   content: '';
   background:
-    linear-gradient(
-      118deg,
-      transparent 0 34%,
-      rgba(126, 205, 233, 0.22) 35% 37%,
-      transparent 38%
-    ),
+    linear-gradient(118deg, transparent 0 34%, rgba(126, 205, 233, 0.22) 35% 37%, transparent 38%),
     linear-gradient(62deg, transparent 0 58%, rgba(255, 255, 255, 0.82) 59% 61%, transparent 62%),
     radial-gradient(circle at 40% 0%, rgba(255, 255, 255, 0.86), transparent 30%);
   opacity: 0.92;
@@ -2987,10 +3047,16 @@ button {
   min-width: 0;
 }
 
+/* An expanded hub takes the full row instead of stretching one grid cell — this keeps
+   collapsed siblings tidy (no phantom gaps) and gives capture cards room to breathe. */
+.knowledge-band .collection-accordion.open {
+  grid-column: 1 / -1;
+}
+
 .knowledge-band .collection-row {
-  position: relative;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
   padding: 4px 6px 4px 0;
 }
 
@@ -3035,9 +3101,9 @@ button {
 
 .knowledge-band .collection-meta {
   justify-self: end;
-  min-width: 76px;
+  min-width: 0;
   max-width: none;
-  padding-right: 8px;
+  padding-right: 4px;
   text-align: right;
 }
 
@@ -3046,27 +3112,68 @@ button {
 }
 
 .knowledge-band .collection-row-actions {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  z-index: 2;
-  gap: 4px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 140ms ease;
-}
-
-.knowledge-band .collection-row:hover .collection-row-actions,
-.knowledge-band .collection-row:focus-within .collection-row-actions {
-  opacity: 1;
-  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 10px;
 }
 
 .knowledge-band .collection-row-actions button {
-  height: 24px;
-  border-radius: 7px;
-  padding: 0 7px;
-  font-size: 10px;
+  height: 26px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+/* Always-visible "Ask this hub" pill — opens AiON focused on the collection. */
+.knowledge-band .collection-ask {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border-color: rgba(86, 139, 218, 0.3);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.9), transparent 42%),
+    linear-gradient(135deg, rgba(233, 244, 255, 0.95), rgba(255, 255, 255, 0.82));
+  color: var(--accent-strong);
+  font-weight: 800;
+}
+
+.knowledge-band .collection-ask:hover:not(:disabled) {
+  border-color: rgba(86, 139, 218, 0.5);
+  box-shadow: 0 8px 18px rgba(74, 145, 194, 0.14);
+  transform: translateY(-1px);
+}
+
+.knowledge-band .collection-ask:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.knowledge-band .collection-ask svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Edit/Delete stay out of the way until the hub is hovered or focused. */
+.knowledge-band .collection-edit,
+.knowledge-band .collection-delete {
+  display: none;
+  place-items: center;
+  width: 26px;
+  padding: 0;
+}
+
+.knowledge-band .collection-row:hover .collection-edit,
+.knowledge-band .collection-row:hover .collection-delete,
+.knowledge-band .collection-row:focus-within .collection-edit,
+.knowledge-band .collection-row:focus-within .collection-delete {
+  display: grid;
+}
+
+.knowledge-band .collection-edit svg,
+.knowledge-band .collection-delete svg {
+  width: 13px;
+  height: 13px;
 }
 
 .knowledge-band .collection-toggle > svg {
@@ -3082,6 +3189,164 @@ button {
   padding: 15px 22px 28px;
   scroll-padding: 22px;
   scroll-behavior: smooth;
+}
+
+.start-page {
+  position: absolute;
+  inset: var(--top-bar-height) 0 0;
+  display: grid;
+  place-items: center;
+  overflow: auto;
+  padding: 32px;
+}
+
+.start-page-inner {
+  display: flex;
+  width: min(720px, 100%);
+  flex-direction: column;
+  align-items: center;
+  gap: 26px;
+}
+
+.start-mark {
+  display: grid;
+  place-items: center;
+  width: 172px;
+  height: 172px;
+  opacity: 0.92;
+}
+
+.start-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.start-search {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+}
+
+.start-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 48px;
+  border: 1px solid rgba(145, 166, 195, 0.28);
+  border-radius: 14px;
+  padding: 0 18px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  box-shadow: 0 12px 30px rgba(94, 132, 185, 0.1);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    background 160ms ease;
+}
+
+.start-search input:focus {
+  border-color: rgba(86, 139, 218, 0.5);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14px 34px rgba(74, 145, 194, 0.16);
+  outline: none;
+}
+
+.start-search button {
+  flex: 0 0 auto;
+  height: 48px;
+  border-radius: 14px;
+  padding: 0 22px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.start-empty {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.start-portals {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 12px;
+}
+
+.start-portal {
+  display: grid;
+  height: 118px;
+  justify-items: center;
+  gap: 7px;
+  border-radius: 16px;
+  padding: 13px 10px 10px;
+  border: 1px solid
+    color-mix(in srgb, var(--portal-tint, var(--accent)) 28%, rgba(104, 140, 190, 0.22));
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.96), transparent 48%),
+    radial-gradient(
+      circle at 88% 90%,
+      color-mix(in srgb, var(--portal-tint, var(--accent)) 18%, transparent),
+      transparent 42%
+    ),
+    rgba(255, 255, 255, 0.58);
+  color: var(--ink);
+  box-shadow: 0 12px 28px rgba(94, 132, 185, 0.08);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.start-portal:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--portal-tint, var(--accent)) 46%,
+    rgba(255, 255, 255, 0.46)
+  );
+  box-shadow: 0 6px 14px
+    color-mix(in srgb, var(--portal-tint, var(--accent)) 18%, rgba(62, 132, 163, 0.12));
+  transform: translateY(-2px);
+}
+
+.start-portal span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 40px;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 35% 22%, #ffffff, transparent 44%),
+    linear-gradient(145deg, #dff9ff, #ffffff);
+  color: var(--accent-strong);
+  font-family: 'New York', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.start-portal strong,
+.start-portal small {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.start-portal strong {
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.1;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.start-portal small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hub-shortcut {

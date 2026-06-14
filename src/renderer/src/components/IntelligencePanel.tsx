@@ -235,9 +235,7 @@ export function IntelligencePanel({
             title="Model settings"
             type="button"
           >
-            {status?.chatModel
-              ? `Model ${formatLocalModelName(status.chatModel)}`
-              : 'Model settings'}
+            {status?.chatModel ? `${formatLocalModelName(status.chatModel)}` : 'Model settings'}
           </button>
         </footer>
         {settingsOpen && (
@@ -359,7 +357,7 @@ function AskContextControls({
             }}
             type="button"
           >
-            Current page
+            Current Page
           </button>
           <div className="ask-hub-picker">
             {collections.map((collection) => (
@@ -391,7 +389,7 @@ function AskContextControls({
           <span>
             <AetherSigilIcon />
           </span>
-          <strong>Current page</strong>
+          <strong>Current Page</strong>
         </div>
       )}
     </section>

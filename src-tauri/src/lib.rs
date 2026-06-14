@@ -63,6 +63,9 @@ const DEFAULT_EMBEDDING_BATCH_SIZE: usize = 8;
 const DEFAULT_EMBEDDING_BATCH_TOKENS: usize = 2048;
 const DEFAULT_CAPTURE_CHUNK_SIZE: usize = 2200;
 const DEFAULT_CAPTURE_CHUNK_OVERLAP: usize = 240;
+// Sentinel URL for a blank tab that shows the Æther start page in the renderer instead
+// of loading a remote page. Must match START_PAGE_URL in src/renderer/src/App.tsx.
+const START_PAGE_URL: &str = "aether://start";
 const SAFETENSORS_CAPTURE_CHUNK_SIZE: usize = DEFAULT_CAPTURE_CHUNK_SIZE;
 const SAFETENSORS_CAPTURE_CHUNK_OVERLAP: usize = DEFAULT_CAPTURE_CHUNK_OVERLAP;
 const DEFAULT_GENERATION_TOKENS: usize = 900;
@@ -732,8 +735,7 @@ impl Backend {
 
 impl TabState {
     fn new() -> Self {
-        let url = "https://www.google.com".to_string();
-        let initial = ManagedTab::new("browser", &url);
+        let initial = ManagedTab::new("browser", START_PAGE_URL);
         let active_tab_id = initial.id.clone();
         Self {
             tabs: vec![initial],
@@ -796,10 +798,15 @@ impl TabState {
 impl ManagedTab {
     fn new(app_id: &str, raw_url: &str) -> Self {
         let url = normalize_url(raw_url, "google");
+        let title = if url == START_PAGE_URL {
+            "New tab".to_string()
+        } else {
+            title_from_url(&url)
+        };
         Self {
             id: uuid(),
             app_id: app_id.to_string(),
-            title: title_from_url(&url),
+            title,
             url: url.clone(),
             is_loading: false,
             favicon: None,
@@ -895,6 +902,12 @@ fn ensure_native_webview(app: &AppHandle, state: &State<Backend>, tab_id: &str) 
             .cloned()
             .ok_or_else(|| format!("Unknown tab: {tab_id}"))?
     };
+
+    // A blank start-page tab has no remote page to load — just reconcile visibility so
+    // any previously-active webview is hidden and the renderer's start page shows.
+    if tab.url == START_PAGE_URL {
+        return sync_native_webview_visibility(app, state);
+    }
 
     let exists = state
         .webviews
@@ -1863,10 +1876,12 @@ async fn aether_tabs_create(
     input: Option<CreateTabInput>,
 ) -> Cmd<BrowserTabSummary> {
     let settings = load_settings(&state.paths.settings_path).await?;
-    let raw_url = input
-        .and_then(|input| input.url)
-        .unwrap_or_else(|| "https://www.google.com".to_string());
-    let url = normalize_url(&raw_url, &settings.browser.default_search_engine);
+    // No URL → open a blank start-page tab (Portals + search) rather than a search engine.
+    let requested_url = input.and_then(|input| input.url);
+    let url = match requested_url {
+        Some(raw_url) => normalize_url(&raw_url, &settings.browser.default_search_engine),
+        None => START_PAGE_URL.to_string(),
+    };
     let tab = ManagedTab::new("browser", &url);
     let tab_id = tab.id.clone();
     let summary = tab.summary(true);

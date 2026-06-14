@@ -29,13 +29,16 @@ import {
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
 import {
+  cleanTitle,
   formatDate,
   formatLocalModelName,
   getCaptureHost,
+  getPortalTint,
+  getRootDomainLetter,
   inferIcebergIcon
 } from '../utils/aether-ui'
 import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, SnowflakeIcon } from './icons'
-import { Trash2 as TrashIcon } from 'lucide-react'
+import { Sparkles, SquarePen, Trash2 as TrashIcon } from 'lucide-react'
 
 type CollectionDialogState =
   | { mode: 'create' }
@@ -55,6 +58,7 @@ type DashboardProps = {
   openSavedIceberg: (id: string) => Promise<unknown>
   openShortcut: (shortcut: HubShortcutSummary) => Promise<void>
   openCollectionDialog: (state: NonNullable<CollectionDialogState>) => void
+  askCollection: (collectionId: string) => void
   reorderCollections: (ids: string[]) => Promise<void>
   reorderSavedIcebergs: (ids: string[]) => Promise<void>
   reorderShortcuts: (ids: string[]) => Promise<void>
@@ -62,60 +66,6 @@ type DashboardProps = {
   savedIcebergs: SavedIcebergSummary[]
   shortcuts: HubShortcutSummary[]
   selectCollection: (value: string) => Promise<void>
-}
-
-function cleanTitle(title: string): string {
-  if (!title) return ''
-
-  const suffixRegex =
-    /[\s\-_|—]+(Wikipedia|YouTube|Reddit.*|GitHub|Twitter|X|Medium|Stack Overflow|LinkedIn|The heart of the internet)$/i
-
-  return title.replace(suffixRegex, '').trim()
-}
-
-function getRootDomainLetter(hostString: string): string {
-  if (!hostString) return 'Æ'
-
-  let hostname = hostString.toLowerCase().trim()
-  if (hostname.includes('://')) {
-    try {
-      hostname = new URL(hostname).hostname
-    } catch {
-      /* empty */
-    }
-  }
-
-  const cleanHost = hostname.replace(/^(www\.|en\.|m\.|beta\.)/, '')
-
-  // Grab the very first character of the remaining root domain
-  return cleanHost.charAt(0).toUpperCase()
-}
-
-function getPortalTint(host: string, themeColor?: string): string {
-  const normalized = host.replace(/^www\./, '')
-  const brandColors: Record<string, string> = {
-    'reddit.com': '#ff8800',
-    'youtube.com': '#ff0000',
-    'youtu.be': '#ff0000',
-    'google.com': '#4285f4',
-    'github.com': '#6e7681',
-    'duckduckgo.com': '#de5833',
-    'ecosia.org': '#39a96b',
-    'wikipedia.org': '#727b86'
-  }
-  const matchedBrand = Object.entries(brandColors).find(
-    ([domain]) => normalized === domain || normalized.endsWith(`.${domain}`)
-  )
-  if (matchedBrand) return matchedBrand[1]
-  if (themeColor) return themeColor
-
-  const palette = ['#4f8fd6', '#3aaea1', '#c07f43', '#7772d6', '#4e9a62', '#b95f79', '#547aa5']
-  let hash = 0
-  for (let index = 0; index < normalized.length; index += 1) {
-    hash = (hash * 31 + normalized.charCodeAt(index)) >>> 0
-  }
-
-  return palette[hash % palette.length]
 }
 
 export function Dashboard({
@@ -130,6 +80,7 @@ export function Dashboard({
   openSavedIceberg,
   openShortcut,
   openCollectionDialog,
+  askCollection,
   reorderCollections,
   reorderSavedIcebergs,
   reorderShortcuts,
@@ -508,20 +459,32 @@ export function Dashboard({
                     </button>
                     <div className="collection-row-actions">
                       <button
-                        onClick={() => openCollectionDialog({ mode: 'edit', collection })}
+                        className="collection-ask"
+                        disabled={collection.captureCount === 0 || collection.chunkCount === 0}
+                        onClick={() => askCollection(collection.id)}
+                        title={`Ask ${collection.name}`}
                         type="button"
                       >
-                        Edit
+                        <Sparkles size={13} />
+                        <span>Ask</span>
+                      </button>
+                      <button
+                        aria-label={`Edit ${collection.name}`}
+                        className="collection-edit"
+                        onClick={() => openCollectionDialog({ mode: 'edit', collection })}
+                        title={`Edit ${collection.name}`}
+                        type="button"
+                      >
+                        <SquarePen size={13} />
                       </button>
                       <button
                         aria-label={`Delete ${collection.name}`}
-                        className="danger-button"
+                        className="danger-button collection-delete"
                         onClick={() => openCollectionDialog({ mode: 'delete', collection })}
                         title={`Delete ${collection.name}`}
                         type="button"
-                        style={{ padding: '0 4px' }}
                       >
-                        <TrashIcon size={13} style={{ marginTop: '4px' }} />
+                        <TrashIcon size={13} />
                       </button>
                     </div>
                   </div>

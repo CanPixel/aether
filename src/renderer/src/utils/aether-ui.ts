@@ -9,6 +9,60 @@ export function getCaptureHost(url: string): string {
   }
 }
 
+export function cleanTitle(title: string): string {
+  if (!title) return ''
+
+  const suffixRegex =
+    /[\s\-_|—]+(Wikipedia|YouTube|Reddit.*|GitHub|Twitter|X|Medium|Stack Overflow|LinkedIn|The heart of the internet)$/i
+
+  return title.replace(suffixRegex, '').trim()
+}
+
+export function getRootDomainLetter(hostString: string): string {
+  if (!hostString) return 'Æ'
+
+  let hostname = hostString.toLowerCase().trim()
+  if (hostname.includes('://')) {
+    try {
+      hostname = new URL(hostname).hostname
+    } catch {
+      /* empty */
+    }
+  }
+
+  const cleanHost = hostname.replace(/^(www\.|en\.|m\.|beta\.)/, '')
+
+  // Grab the very first character of the remaining root domain
+  return cleanHost.charAt(0).toUpperCase()
+}
+
+export function getPortalTint(host: string, themeColor?: string): string {
+  const normalized = host.replace(/^www\./, '')
+  const brandColors: Record<string, string> = {
+    'reddit.com': '#ff8800',
+    'youtube.com': '#ff0000',
+    'youtu.be': '#ff0000',
+    'google.com': '#4285f4',
+    'github.com': '#6e7681',
+    'duckduckgo.com': '#de5833',
+    'ecosia.org': '#39a96b',
+    'wikipedia.org': '#727b86'
+  }
+  const matchedBrand = Object.entries(brandColors).find(
+    ([domain]) => normalized === domain || normalized.endsWith(`.${domain}`)
+  )
+  if (matchedBrand) return matchedBrand[1]
+  if (themeColor) return themeColor
+
+  const palette = ['#4f8fd6', '#3aaea1', '#c07f43', '#7772d6', '#4e9a62', '#b95f79', '#547aa5']
+  let hash = 0
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = (hash * 31 + normalized.charCodeAt(index)) >>> 0
+  }
+
+  return palette[hash % palette.length]
+}
+
 export function formatDate(value: string): string {
   return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }

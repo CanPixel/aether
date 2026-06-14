@@ -22,6 +22,7 @@ import {
   SystemStatus
 } from '../../shared/aether'
 import { BrowserChrome } from './components/BrowserChrome'
+import { StartPage } from './components/StartPage'
 import { CollectionDialog, CollectionDialogState } from './components/CollectionDialog'
 import { Crystallizer } from './components/Crystallizer'
 import { Dashboard } from './components/Dashboard'
@@ -30,6 +31,10 @@ import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
 import { formatLocalModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
 import { SearchIcon, ChevronUp, ChevronDown } from 'lucide-react'
+
+// Sentinel URL for a blank tab that shows the Æther start page instead of loading a
+// page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
+const START_PAGE_URL = 'aether://start'
 
 const TEXT_INPUT_TYPES = new Set([
   '',
@@ -305,8 +310,11 @@ function App(): React.JSX.Element {
   const [addressFocused, setAddressFocused] = useState(false)
   const [chatPrompt, setChatPrompt] = useState('')
   const [askCollectionId, setAskCollectionId] = useState('')
-  const [askIncludeCurrentPage, setAskIncludeCurrentPage] = useState(true)
+  const [askIncludeCurrentPage, setAskIncludeCurrentPage] = useState(false)
   const [askCurrentPageOnly, setAskCurrentPageOnly] = useState(false)
+  // Tracks the context (web page vs hub) the ask defaults were last applied for, so a
+  // new context resets to one sensible default while manual picks persist within it.
+  const appliedAskContextRef = useRef<string | null>(null)
   const [askPanelOpen, setAskPanelOpen] = useState(true)
   const [chatResult, setChatResult] = useState<ChatResult | null>(null)
   const [streamingAnswer, setStreamingAnswer] = useState('')
@@ -349,17 +357,27 @@ function App(): React.JSX.Element {
       collections.filter((collection) => collection.captureCount > 0 && collection.chunkCount > 0),
     [collections]
   )
-  const canUseCurrentPage = Boolean(activeTab?.url)
+  const isStartPage = activeTab?.url === START_PAGE_URL
+  const canUseCurrentPage = Boolean(activeTab?.url) && !isStartPage
   const chatBlocked = status ? !status.runtimeReady || !status.chatModel : false
   const quickActions = useMemo<QuickAction[]>(() => getQuickActions(activeTab), [activeTab])
   const activeTabUrl = activeTab?.url ?? ''
+  const mostRecentHubId = useMemo(
+    () =>
+      usableAskCollections.some((collection) => collection.id === selectedCollectionId)
+        ? selectedCollectionId
+        : (usableAskCollections[0]?.id ?? ''),
+    [usableAskCollections, selectedCollectionId]
+  )
   const addressValue = addressFocused
     ? addressDraft
     : dashboardOpen
       ? workspaceMode === 'crystallizer'
         ? 'ice://crystallizer'
         : 'æther://dashboard'
-      : activeTabUrl
+      : isStartPage
+        ? ''
+        : activeTabUrl
   const activeTabHubShortcut = useMemo(() => {
     if (!activeTabUrl) return undefined
     const activeUrl = normalizeComparableUrl(activeTabUrl)
@@ -509,6 +527,30 @@ function App(): React.JSX.Element {
       unsubscribe()
     }
   }, [refreshAll])
+
+  // Context-aware ask defaults: viewing a web page defaults to current-page-only; the
+  // dashboard (or no open page) defaults to the most-recent hub only. Applied during
+  // render (React's "adjust state when context changes" pattern) and guarded by a ref
+  // so it runs once per context — within a context, the user's manual toggles stick.
+  {
+    const onWebPage = !dashboardOpen && Boolean(activeTabUrl) && activeTabUrl !== START_PAGE_URL
+    const hubsReady = usableAskCollections.length > 0
+    const askContextSignature = onWebPage
+      ? `page:${activeTabUrl}`
+      : `hub|${hubsReady ? 'hubs' : 'nohubs'}`
+    if (appliedAskContextRef.current !== askContextSignature) {
+      appliedAskContextRef.current = askContextSignature
+      if (onWebPage || !hubsReady) {
+        setAskCurrentPageOnly(true)
+        setAskIncludeCurrentPage(true)
+        setAskCollectionId('')
+      } else {
+        setAskCurrentPageOnly(false)
+        setAskIncludeCurrentPage(false)
+        setAskCollectionId(mostRecentHubId)
+      }
+    }
+  }
 
   useEffect(() => window.aether.events.onFindRequested(openFindBar), [openFindBar])
 
@@ -678,6 +720,19 @@ function App(): React.JSX.Element {
     })
   }
 
+  // Navigate the active (start-page) tab to a destination. The backend normalizes a
+  // bare query into a search and lazily creates the tab's webview at the target.
+  async function navigateActiveTab(input: string): Promise<void> {
+    if (!activeTab) return
+    const target = input.trim()
+    if (!target) return
+
+    await runTask('Navigating', async () => {
+      await window.aether.tabs.navigate(activeTab.id, target)
+      setDashboardOpen(false)
+    })
+  }
+
   async function goBack(): Promise<void> {
     if (!activeTab) return
 
@@ -741,6 +796,18 @@ function App(): React.JSX.Element {
     setChatResult(null)
   }
 
+  // Open AiON focused on a single hub (from the dashboard "Ask" buttons).
+  async function askCollectionHub(collectionId: string): Promise<void> {
+    setSelectedCollectionId(collectionId)
+    setAskCollectionId(collectionId)
+    setAskCurrentPageOnly(false)
+    setAskIncludeCurrentPage(false)
+    setChatResult(null)
+    setAskPanelOpen(true)
+    setPanelCollapsed(false)
+    await window.aether.layout.setIntelligencePanelCollapsed(false)
+  }
+
   async function capturePage(): Promise<void> {
     if (!selectedCollection) {
       await openCollectionDialog({ mode: 'create' })
@@ -755,6 +822,11 @@ function App(): React.JSX.Element {
       setLastCapture(result)
       await refreshCollections(result.collectionId)
       setStatus(await window.aether.system.status())
+      // The page now lives in the hub, so default the ask to that hub and drop the
+      // (now duplicate) current-page context.
+      setAskCurrentPageOnly(false)
+      setAskIncludeCurrentPage(false)
+      setAskCollectionId(result.collectionId)
       setNotice(`Saved ${result.chunkCount} chunks into ${result.collectionName}.`)
     })
   }
@@ -1099,6 +1171,7 @@ function App(): React.JSX.Element {
   const showAppTooltips = dashboardOpen
   const crystallizerOpen = dashboardOpen && workspaceMode === 'crystallizer'
   const dashboardHomeOpen = dashboardOpen && workspaceMode === 'dashboard'
+  const startPageActive = !dashboardOpen && isStartPage
 
   return (
     <main className={`aether-shell ${panelCollapsed ? 'panel-collapsed' : ''}`}>
@@ -1178,14 +1251,17 @@ function App(): React.JSX.Element {
           addressDraft={addressValue}
           addressInputRef={addressInputRef}
           busy={busy}
-          capturesBlocked={dashboardOpen}
+          capturesBlocked={dashboardOpen || startPageActive}
           collections={collections}
           dashboardOpen={dashboardOpen}
           dashboardSubtitle={crystallizerOpen ? 'Info Crystallizer Engine' : 'Knowledge Hub'}
           dashboardTitle={crystallizerOpen ? 'iCE' : 'ÆTHER'}
           lastCapture={lastCapture}
           portalSaveBlocked={
-            dashboardOpen || !activeTab?.url || (activeTabSavedToHub && !activeTabHubNeedsMetadata)
+            dashboardOpen ||
+            startPageActive ||
+            !activeTab?.url ||
+            (activeTabSavedToHub && !activeTabHubNeedsMetadata)
           }
           portalSaveTitle={
             activeTabSavedToHub
@@ -1194,7 +1270,7 @@ function App(): React.JSX.Element {
                 : 'Already saved as a portal'
               : 'Save current page as portal'
           }
-          quickActions={dashboardOpen ? [] : quickActions}
+          quickActions={dashboardOpen || startPageActive ? [] : quickActions}
           selectedCollection={selectedCollection}
           selectedCollectionId={selectedCollectionId}
           tabs={tabs}
@@ -1231,6 +1307,8 @@ function App(): React.JSX.Element {
             onOpenTopic={openCrystallizedTopic}
             onSave={saveIceberg}
           />
+        ) : startPageActive ? (
+          <StartPage shortcuts={shortcuts} onNavigate={navigateActiveTab} />
         ) : dashboardOpen ? (
           <Dashboard
             busy={busy}
@@ -1245,6 +1323,9 @@ function App(): React.JSX.Element {
             openShortcut={openShortcut}
             openCollectionDialog={(state) => {
               void openCollectionDialog(state)
+            }}
+            askCollection={(collectionId) => {
+              void askCollectionHub(collectionId)
             }}
             reorderCollections={reorderCollections}
             reorderSavedIcebergs={reorderSavedIcebergs}
