@@ -30,7 +30,7 @@ type IntelligencePanelProps = {
   onAskCollectionChange: (collectionId: string) => void
   onAskCurrentPageOnlyChange: (value: boolean) => void
   onAskIncludeCurrentPageChange: (value: boolean) => void
-  onOpenCitation: (citation: SearchResult) => Promise<void>
+  onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
 }
 
@@ -288,7 +288,7 @@ function StreamingAnswerCard({
   citations: SearchResult[]
   text: string
   onCancel: () => void
-  onOpenCitation: (citation: SearchResult) => Promise<void>
+  onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>
 }): React.JSX.Element {
   const markdownRef = useRef<HTMLDivElement>(null)
 
@@ -464,7 +464,7 @@ function AnswerCard({
   onOpenCitation
 }: {
   result: ChatResult
-  onOpenCitation: (citation: SearchResult) => Promise<void>
+  onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>
 }): React.JSX.Element {
   const [copied, setCopied] = useState(false)
 
@@ -499,7 +499,7 @@ function AnswerCard({
 function renderAnswerMarkdown(
   markdown: string,
   citations: SearchResult[],
-  onOpenCitation: (citation: SearchResult) => Promise<void>
+  onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>
 ): React.ReactNode[] {
   const blocks: React.ReactNode[] = []
   const lines = markdown.split(/\r?\n/)
@@ -563,11 +563,26 @@ function renderAnswerMarkdown(
   return blocks
 }
 
+// Strip inline markup so the remaining text reads as a plain claim sentence, which
+// is what we hand to the citation anchor to locate the exact span in the source.
+function stripInlineMarkup(text: string): string {
+  return text
+    .replace(/\*\*/g, '')
+    .replace(/\[(?:\d+\s*,\s*)*\d+\]/g, ' ')
+    .replace(/\\\(|\\\)|\$/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function renderInlineMarkdown(
   text: string,
   citations: SearchResult[],
-  onOpenCitation: (citation: SearchResult) => Promise<void>
+  onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>,
+  claimText?: string
 ): React.ReactNode[] {
+  // The first (block-level) call establishes the claim; nested calls (e.g. inside
+  // bold spans) inherit it so a citation always carries its full sentence.
+  const claim = claimText ?? stripInlineMarkup(text)
   const nodes: React.ReactNode[] = []
   const pattern = /(\*\*[^*]+\*\*|\$[^$]+\$|\\\([^)]*\\\)|\[(?:\d+\s*,\s*)*\d+\])/g
   let cursor = 0
@@ -582,11 +597,17 @@ function renderInlineMarkdown(
     if (token.startsWith('**') && token.endsWith('**')) {
       nodes.push(
         <strong key={nodes.length}>
-          {renderInlineMarkdown(token.slice(2, -2), citations, onOpenCitation)}
+          {renderInlineMarkdown(token.slice(2, -2), citations, onOpenCitation, claim)}
         </strong>
       )
     } else if (/^\[(?:\d+\s*,\s*)*\d+\]$/.test(token)) {
-      const citationNodes = renderCitationToken(token, citations, onOpenCitation, nodes.length)
+      const citationNodes = renderCitationToken(
+        token,
+        citations,
+        onOpenCitation,
+        nodes.length,
+        claim
+      )
       nodes.push(...citationNodes)
     } else {
       nodes.push(
@@ -609,8 +630,9 @@ function renderInlineMarkdown(
 function renderCitationToken(
   token: string,
   citations: SearchResult[],
-  onOpenCitation: (citation: SearchResult) => Promise<void>,
-  keyOffset: number
+  onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>,
+  keyOffset: number,
+  claimText?: string
 ): React.ReactNode[] {
   const indexes = token
     .slice(1, -1)
@@ -633,7 +655,7 @@ function renderCitationToken(
         className="answer-citation-link"
         key={`citation-${keyOffset}-${citationNumber}-${index}`}
         onClick={() => {
-          void onOpenCitation(citation)
+          void onOpenCitation(citation, claimText)
         }}
         title={`${citation.title} - ${getCaptureHost(citation.url)}`}
         type="button"

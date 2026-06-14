@@ -77,7 +77,169 @@ function selectEditableContent(
   selection?.addRange(range)
 }
 
-function buildCitationTargetUrl(citation: SearchResult): string {
+// Stopwords are ignored when locating the cited span: they appear everywhere and
+// would pull the anchor toward dense prose rather than the distinctive claim.
+const CLAIM_STOPWORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'are',
+  'was',
+  'that',
+  'this',
+  'from',
+  'have',
+  'has',
+  'between',
+  'different',
+  'available',
+  'options',
+  'option',
+  'using',
+  'their',
+  'which',
+  'into',
+  'onto',
+  'than',
+  'then',
+  'also',
+  'each',
+  'per',
+  'its',
+  'about',
+  'over',
+  'under',
+  'a',
+  'an',
+  'of',
+  'to',
+  'in',
+  'on',
+  'at',
+  'is',
+  'it',
+  'as',
+  'or',
+  'by',
+  'be',
+  'but'
+])
+
+function normalizeAnchorWord(word: string): string {
+  return word.toLowerCase().replace(/^[.,;:!?'"()[\]–-]+|[.,;:!?'"()[\]–-]+$/g, '')
+}
+
+// Distinctive tokens from the cited claim, weighted so numbers/dimensions (e.g.
+// "264×176", "3.6") and longer words dominate the match score.
+function claimTokenWeights(claimText: string): Map<string, number> {
+  const weights = new Map<string, number>()
+  const tokens = claimText.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}.×'"–-]*/gu) ?? []
+  for (const raw of tokens) {
+    const token = raw.replace(/^[.'"–-]+|[.'"–-]+$/g, '')
+    if (token.length < 2 || CLAIM_STOPWORDS.has(token)) continue
+    const weight = (/\d/.test(token) ? 4 : 1) + Math.min(token.length, 8) / 4
+    const existing = weights.get(token)
+    if (existing === undefined || existing < weight) weights.set(token, weight)
+  }
+  return weights
+}
+
+// Shortest sub-span of words[lo..hi) that still contains one of every distinct
+// matched claim token in that range. Drops repeated keywords and filler so the
+// anchor is just the supporting phrase. Returns null when the range has no matches.
+function minimalCoveringSpan(
+  words: string[],
+  lo: number,
+  hi: number,
+  weights: Map<string, number>
+): { start: number; end: number; length: number } | null {
+  const targets = new Set<string>()
+  for (let index = lo; index < hi; index += 1) {
+    const word = normalizeAnchorWord(words[index])
+    if (weights.has(word)) targets.add(word)
+  }
+  if (targets.size === 0) return null
+
+  const have = new Map<string, number>()
+  let satisfied = 0
+  let left = lo
+  let best = { start: lo, end: hi, length: hi - lo }
+  for (let right = lo; right < hi; right += 1) {
+    const rightWord = normalizeAnchorWord(words[right])
+    if (targets.has(rightWord)) {
+      const next = (have.get(rightWord) ?? 0) + 1
+      have.set(rightWord, next)
+      if (next === 1) satisfied += 1
+    }
+    while (satisfied === targets.size) {
+      if (right - left + 1 < best.length) {
+        best = { start: left, end: right + 1, length: right - left + 1 }
+      }
+      const leftWord = normalizeAnchorWord(words[left])
+      if (targets.has(leftWord)) {
+        const next = (have.get(leftWord) ?? 0) - 1
+        have.set(leftWord, next)
+        if (next === 0) satisfied -= 1
+      }
+      left += 1
+    }
+  }
+  return best
+}
+
+// A citation points at a whole chunk, which can span several page sections. Given
+// the specific claim sentence the badge was attached to, find the tightest span
+// inside the chunk where that claim's keywords cluster, so the anchor lands on the
+// supporting fact rather than the chunk's opening words.
+function resolveCitationAnchorText(chunkText: string, claimText: string): string {
+  const chunk = chunkText.replace(/\s+/g, ' ').trim()
+  const claim = claimText.replace(/\s+/g, ' ').trim()
+  if (!chunk || !claim) return chunkText
+
+  const weights = claimTokenWeights(claim)
+  if (weights.size === 0) return chunkText
+
+  const words = chunk.split(' ')
+  const windowSize = 16
+  // Pick the window with the most distinct-token weight, then — for equal weight —
+  // the one whose keywords sit closest together, so we don't latch onto an earlier
+  // section that merely shares a common word (e.g. "display") with the claim.
+  let best: { score: number; coverLength: number; start: number; end: number } | null = null
+
+  for (let start = 0; start < words.length; start += 1) {
+    const end = Math.min(words.length, start + windowSize)
+    const seen = new Set<string>()
+    let score = 0
+    for (let index = start; index < end; index += 1) {
+      const word = normalizeAnchorWord(words[index])
+      const weight = weights.get(word)
+      if (weight !== undefined && !seen.has(word)) {
+        seen.add(word)
+        score += weight
+      }
+    }
+    if (score <= 0) continue
+
+    const cover = minimalCoveringSpan(words, start, end, weights)
+    if (!cover) continue
+
+    if (
+      best === null ||
+      score > best.score ||
+      (score === best.score && cover.length < best.coverLength)
+    ) {
+      best = { score, coverLength: cover.length, start: cover.start, end: cover.end }
+    }
+  }
+
+  if (best === null) return chunkText
+
+  const span = words.slice(best.start, best.end).join(' ').trim()
+  return span || chunkText
+}
+
+function buildCitationTargetUrl(citation: SearchResult, anchorText: string): string {
   let url: URL
   try {
     url = new URL(citation.url)
@@ -85,9 +247,9 @@ function buildCitationTargetUrl(citation: SearchResult): string {
     return citation.url
   }
 
-  if (url.hash || !citation.text.trim()) return url.toString()
+  if (url.hash) return url.toString()
 
-  const fragmentText = citation.text.replace(/\s+/g, ' ').trim().split(/\s+/).slice(0, 14).join(' ')
+  const fragmentText = anchorText.replace(/\s+/g, ' ').trim().split(/\s+/).slice(0, 14).join(' ')
 
   if (!fragmentText) return url.toString()
 
@@ -738,8 +900,9 @@ function App(): React.JSX.Element {
     setDashboardOpen(false)
   }
 
-  async function openCitation(citation: SearchResult): Promise<void> {
-    const targetUrl = buildCitationTargetUrl(citation)
+  async function openCitation(citation: SearchResult, claimText?: string): Promise<void> {
+    const anchorText = resolveCitationAnchorText(citation.text, claimText ?? '')
+    const targetUrl = buildCitationTargetUrl(citation, anchorText)
     const activeComparableUrl = activeTab?.url ? normalizeComparableUrl(activeTab.url) : ''
     const citationComparableUrl = normalizeComparableUrl(citation.url)
 
@@ -747,12 +910,12 @@ function App(): React.JSX.Element {
       await window.aether.tabs.navigate(activeTab.id, targetUrl)
       setDashboardOpen(false)
       setWorkspaceMode('dashboard')
-      scheduleCitationSourceScroll(activeTab.id, citation.text)
+      scheduleCitationSourceScroll(activeTab.id, anchorText)
       return
     }
 
     const tab = await createTab({ url: targetUrl })
-    if (tab) scheduleCitationSourceScroll(tab.id, citation.text)
+    if (tab) scheduleCitationSourceScroll(tab.id, anchorText)
     setDashboardOpen(false)
   }
 
