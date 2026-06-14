@@ -338,7 +338,22 @@ export function Crystallizer({
       cancelAnimationFrame(animationFrame.current)
       animationFrame.current = null
     }
-    setZoom((currentZoom) => clamp(currentZoom - event.deltaY * 0.001, MIN_ZOOM, MAX_ZOOM))
+
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const cursorX = ((event.clientX - bounds.left) / bounds.width) * CANVAS_WIDTH
+    const cursorY = ((event.clientY - bounds.top) / bounds.height) * CANVAS_HEIGHT
+    const nextZoom = clamp(zoom * Math.exp(-event.deltaY * 0.001), MIN_ZOOM, MAX_ZOOM)
+
+    if (nextZoom === zoom) return
+
+    const worldX = (cursorX - pan.x) / zoom
+    const worldY = (cursorY - pan.y) / zoom
+
+    setZoom(nextZoom)
+    setPan({
+      x: cursorX - worldX * nextZoom,
+      y: cursorY - worldY * nextZoom
+    })
   }
 
   function animateView(nextZoom: number, nextPan = pan): void {

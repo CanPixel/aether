@@ -713,11 +713,13 @@ function App(): React.JSX.Element {
     event.preventDefault()
     if (!activeTab) return
 
-    await runTask('Navigating', async () => {
+    try {
       await window.aether.tabs.navigate(activeTab.id, addressValue)
       setDashboardOpen(false)
       addressInputRef.current?.blur()
-    })
+    } catch (error) {
+      setNotice(getErrorMessage(error))
+    }
   }
 
   // Navigate the active (start-page) tab to a destination. The backend normalizes a
@@ -727,10 +729,12 @@ function App(): React.JSX.Element {
     const target = input.trim()
     if (!target) return
 
-    await runTask('Navigating', async () => {
+    try {
       await window.aether.tabs.navigate(activeTab.id, target)
       setDashboardOpen(false)
-    })
+    } catch (error) {
+      setNotice(getErrorMessage(error))
+    }
   }
 
   async function goBack(): Promise<void> {
@@ -1020,7 +1024,7 @@ function App(): React.JSX.Element {
       const saved = await window.aether.crystallizer.save(input)
       setActiveSavedIceberg(saved)
       await refreshSavedIcebergs()
-      setNotice(`Saved ${saved.title}.`)
+      setNotice(`Crystallized ${saved.title}.`)
       return saved
     } catch (error) {
       const message = error instanceof Error ? getErrorMessage(error) : 'Saving iceberg failed.'
