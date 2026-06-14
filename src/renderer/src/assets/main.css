@@ -832,6 +832,7 @@ button {
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
+  animation: startOrbFloat 7.5s ease-in-out infinite;
 }
 
 .start-orb img {
@@ -848,6 +849,7 @@ button {
 .start-orb-aura {
   position: absolute;
   inset: 30px;
+  overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 999px;
   background:
@@ -861,6 +863,88 @@ button {
     /* Core white intense glow */ 0 0 60px rgba(185, 226, 250, 0.75),
     /* Vivid icy cyan mid-glow */ 0 0 120px rgba(58, 146, 196, 0.63),
     /* Deep arctic blue wide haze */ 0 30px 80px rgba(0, 0, 0, 0.15); /* Subtle grounding shadow */
+  animation: startOrbBreath 6.5s ease-in-out infinite;
+}
+
+/* Two slowly rotating layers give the orb life: an orbiting inner glimmer and a
+   sweeping conic sheen. Clipped to the circle by the aura's overflow + radius. */
+.start-orb-aura::before,
+.start-orb-aura::after {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  content: '';
+}
+
+.start-orb-aura::before {
+  background: radial-gradient(circle at 50% 16%, rgba(255, 255, 255, 0.9), transparent 38%);
+  opacity: 0.85;
+  animation: startOrbOrbit 16s linear infinite;
+}
+
+.start-orb-aura::after {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(255, 255, 255, 0.5) 36deg,
+    transparent 96deg,
+    transparent 360deg
+  );
+  opacity: 0.55;
+  animation: startOrbSheen 11s linear infinite reverse;
+}
+
+@keyframes startOrbFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-9px);
+  }
+}
+
+@keyframes startOrbOrbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes startOrbSheen {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes startOrbBreath {
+  0%,
+  100% {
+    box-shadow:
+      inset 0 0 40px rgba(255, 255, 255, 0.6),
+      0 0 20px rgba(255, 255, 255, 0.78),
+      0 0 60px rgba(185, 226, 250, 0.62),
+      0 0 120px rgba(58, 146, 196, 0.5),
+      0 30px 80px rgba(0, 0, 0, 0.15);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 48px rgba(255, 255, 255, 0.72),
+      0 0 32px rgba(255, 255, 255, 0.96),
+      0 0 86px rgba(185, 226, 250, 0.92),
+      0 0 160px rgba(58, 146, 196, 0.82),
+      0 30px 80px rgba(0, 0, 0, 0.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .start-orb,
+  .start-orb-aura,
+  .start-orb-aura::before,
+  .start-orb-aura::after {
+    animation: none;
+  }
 }
 
 .dashboard-grid {

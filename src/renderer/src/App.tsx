@@ -1254,7 +1254,7 @@ function App(): React.JSX.Element {
           capturesBlocked={dashboardOpen || startPageActive}
           collections={collections}
           dashboardOpen={dashboardOpen}
-          dashboardSubtitle={crystallizerOpen ? 'Info Crystallizer Engine' : 'Knowledge Hub'}
+          dashboardSubtitle={crystallizerOpen ? 'Info Crystallizer Engine' : 'Knowledge Gatherer'}
           dashboardTitle={crystallizerOpen ? 'iCE' : 'ÆTHER'}
           lastCapture={lastCapture}
           portalSaveBlocked={

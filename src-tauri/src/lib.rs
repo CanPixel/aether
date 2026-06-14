@@ -1448,9 +1448,15 @@ fn resize_native_webviews(_app: &AppHandle, _state: &State<Backend>) -> Cmd<()> 
 fn sync_native_webview_visibility(app: &AppHandle, state: &State<Backend>) -> Cmd<()> {
     let (active_tab_id, show_active, panel_collapsed) = {
         let tabs = lock_tabs(state)?;
+        // A tab parked on the start page must keep its (possibly still-alive) webview
+        // hidden so the renderer's start page overlay stays visible.
+        let active_is_start = tabs
+            .active_tab()
+            .map(|tab| tab.url == START_PAGE_URL)
+            .unwrap_or(false);
         (
             tabs.active_tab_id.clone(),
-            !tabs.dashboard_open && !tabs.modal_overlay_open,
+            !tabs.dashboard_open && !tabs.modal_overlay_open && !active_is_start,
             tabs.panel_collapsed,
         )
     };
@@ -1589,6 +1595,11 @@ fn update_tab_navigation_state(state: &State<Backend>, tab_id: &str, url: &str, 
 
 fn should_accept_webview_url(current_url: &str, next_url: &str) -> bool {
     if next_url.is_empty() {
+        return false;
+    }
+    // While a tab is parked on the start page, ignore stray events from its hidden
+    // webview so they don't overwrite the start-page sentinel.
+    if current_url == START_PAGE_URL {
         return false;
     }
     if is_transient_webview_url(next_url) && !is_transient_webview_url(current_url) {
@@ -1998,6 +2009,7 @@ fn aether_tabs_find(
 
 #[tauri::command(rename_all = "camelCase")]
 fn aether_tabs_go_back(app: AppHandle, state: State<Backend>, tab_id: String) -> Cmd<()> {
+    let mut restore_start_page = false;
     let target_tab_id = {
         let mut tabs = lock_tabs(&state)?;
         let tab = if tab_id.is_empty() {
@@ -2009,17 +2021,36 @@ fn aether_tabs_go_back(app: AppHandle, state: State<Backend>, tab_id: String) ->
                 .find(|tab| tab.id == tab_id)
                 .ok_or_else(|| format!("Unknown tab: {tab_id}"))?
         };
+        // The start page is a renderer overlay, not a native page, so the webview can't
+        // navigate back to it. When the previous history entry is the start page, park
+        // the tab back on it (its webview is kept hidden for a later forward).
+        if tab.can_go_back()
+            && tab.history.get(tab.history_index - 1).map(String::as_str) == Some(START_PAGE_URL)
+        {
+            tab.history_index -= 1;
+            tab.url = START_PAGE_URL.to_string();
+            tab.title = "New tab".to_string();
+            tab.is_loading = false;
+            restore_start_page = true;
+        }
         let target_tab_id = tab.id.clone();
         #[cfg(not(desktop))]
-        tab.go_back();
+        if !restore_start_page {
+            tab.go_back();
+        }
         target_tab_id
     };
-    navigate_native_webview_history(&state, &target_tab_id, WebviewHistoryDirection::Back)?;
+    if restore_start_page {
+        sync_native_webview_visibility(&app, &state)?;
+    } else {
+        navigate_native_webview_history(&state, &target_tab_id, WebviewHistoryDirection::Back)?;
+    }
     emit_state(&app, &state)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 fn aether_tabs_go_forward(app: AppHandle, state: State<Backend>, tab_id: String) -> Cmd<()> {
+    let mut leave_start_page = false;
     let target_tab_id = {
         let mut tabs = lock_tabs(&state)?;
         let tab = if tab_id.is_empty() {
@@ -2031,12 +2062,27 @@ fn aether_tabs_go_forward(app: AppHandle, state: State<Backend>, tab_id: String)
                 .find(|tab| tab.id == tab_id)
                 .ok_or_else(|| format!("Unknown tab: {tab_id}"))?
         };
+        // Forwarding off the start page: advance to the real page whose (hidden) webview
+        // we kept, then reveal it instead of issuing a native history.forward().
+        if tab.url == START_PAGE_URL && tab.can_go_forward() {
+            tab.history_index += 1;
+            tab.url = tab.history[tab.history_index].clone();
+            tab.title = title_from_url(&tab.url);
+            tab.is_loading = false;
+            leave_start_page = true;
+        }
         let target_tab_id = tab.id.clone();
         #[cfg(not(desktop))]
-        tab.go_forward();
+        if !leave_start_page {
+            tab.go_forward();
+        }
         target_tab_id
     };
-    navigate_native_webview_history(&state, &target_tab_id, WebviewHistoryDirection::Forward)?;
+    if leave_start_page {
+        ensure_native_webview(&app, &state, &target_tab_id)?;
+    } else {
+        navigate_native_webview_history(&state, &target_tab_id, WebviewHistoryDirection::Forward)?;
+    }
     emit_state(&app, &state)
 }
 
