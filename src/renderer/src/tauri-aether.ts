@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import {
   AetherApi,
+  AetherShortcutId,
   AetherState,
   AppSettings,
   AppSummary,
@@ -123,6 +124,15 @@ if (isTauri) {
       },
       onChatStream: (listener: (event: ChatStreamEvent) => void) => {
         const unlisten = listen<ChatStreamEvent>('aether:chat-stream', (event) =>
+          listener(event.payload)
+        )
+
+        return () => {
+          void unlisten.then((dispose) => dispose())
+        }
+      },
+      onShortcut: (listener: (shortcut: AetherShortcutId) => void) => {
+        const unlisten = listen<AetherShortcutId>('aether:shortcut', (event) =>
           listener(event.payload)
         )
 

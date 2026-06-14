@@ -184,6 +184,16 @@ export interface StatusToastInput {
   durationMs?: number
 }
 
+export type AetherShortcutId =
+  | 'focus-address'
+  | 'new-tab'
+  | 'open-dashboard'
+  | 'open-ice'
+  | 'open-browser'
+  | 'toggle-aion'
+  | 'capture-page'
+  | 'find-page'
+
 export interface AetherApi {
   apps: {
     list(): Promise<AppSummary[]>
@@ -274,6 +284,7 @@ export interface AetherApi {
     onState(listener: (state: AetherState) => void): () => void
     onCaptureProgress(listener: (progress: CaptureProgress) => void): () => void
     onChatStream(listener: (event: ChatStreamEvent) => void): () => void
+    onShortcut(listener: (shortcut: AetherShortcutId) => void): () => void
     onFindRequested(listener: () => void): () => void
     onFindResult(listener: (result: FindResult) => void): () => void
   }

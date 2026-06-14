@@ -11,6 +11,7 @@ import { Readability } from '@mozilla/readability'
 import { RecursiveCharacterTextSplitter } from '@langchain/classic/text_splitter'
 import {
   AetherState,
+  AetherShortcutId,
   AppSettings,
   AppSummary,
   BrowserTabSummary,
@@ -43,6 +44,57 @@ const PREFERRED_CHAT_MODELS = ['llama3.1:8b', 'gemma3:latest', 'gemma3']
 const MIN_CAPTURE_TEXT_LENGTH = 120
 const OLLAMA_BASE_URL = 'http://127.0.0.1:11434'
 const ICEBERG_LEVEL_LANES = [13, 87, 28, 72, 42]
+const WEBVIEW_SCROLLBAR_CSS = `
+  :root,
+  html,
+  body,
+  * {
+    scrollbar-color: rgba(14, 165, 233, 0.95) rgba(229, 248, 255, 0.42) !important;
+    scrollbar-width: thin !important;
+  }
+
+  ::-webkit-scrollbar,
+  *::-webkit-scrollbar {
+    width: 14px !important;
+    height: 14px !important;
+  }
+
+  ::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-track {
+    background:
+      radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.9), transparent 44%),
+      linear-gradient(180deg, rgba(232, 250, 255, 0.78), rgba(191, 234, 250, 0.36)) !important;
+    border-radius: 999px !important;
+    box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.24) !important;
+  }
+
+  ::-webkit-scrollbar-thumb,
+  *::-webkit-scrollbar-thumb {
+    min-height: 44px !important;
+    border: 3px solid rgba(239, 249, 255, 0.72) !important;
+    border-radius: 999px !important;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.2)),
+      linear-gradient(180deg, rgba(186, 230, 253, 0.98), rgba(14, 165, 233, 0.92) 58%, rgba(6, 95, 156, 0.82)) !important;
+    background-clip: padding-box, border-box !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.96),
+      inset 0 -10px 18px rgba(14, 165, 233, 0.2),
+      0 0 20px rgba(125, 211, 252, 0.62) !important;
+  }
+
+  ::-webkit-scrollbar-thumb:hover,
+  *::-webkit-scrollbar-thumb:hover {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.3)),
+      linear-gradient(180deg, rgba(240, 249, 255, 1), rgba(14, 165, 233, 0.98) 58%, rgba(3, 105, 161, 0.9)) !important;
+  }
+
+  ::-webkit-scrollbar-corner,
+  *::-webkit-scrollbar-corner {
+    background: rgba(229, 248, 255, 0.62) !important;
+  }
+`
 const SEARCH_ENGINES: Record<SearchEngineId, string> = {
   google: 'https://www.google.com/search?q=',
   bing: 'https://www.bing.com/search?q=',
@@ -921,20 +973,28 @@ class OllamaClient {
     try {
       const availableModels = await this.listModels()
       return {
-        ollamaReachable: true,
+        runtimeReady: true,
+        runtimeName: 'llama.cpp',
         embeddingModel: this.pickEmbeddingModel(availableModels),
         chatModel: this.pickChatModel(availableModels),
         availableModels,
+        chatModels: availableModels,
+        embeddingModels: availableModels,
+        modelDir: OLLAMA_BASE_URL,
         dbPath: db.path,
         libraryPath: library.path,
         collections: await library.listCollections()
       }
     } catch (error) {
       return {
-        ollamaReachable: false,
+        runtimeReady: false,
+        runtimeName: 'llama.cpp',
         embeddingModel: EMBEDDING_MODEL,
         chatModel: null,
         availableModels: [],
+        chatModels: [],
+        embeddingModels: [],
+        modelDir: OLLAMA_BASE_URL,
         dbPath: db.path,
         libraryPath: library.path,
         collections: await library.listCollections(),
@@ -1584,6 +1644,13 @@ class AppContainerManager {
       this.createTab({ url: details.url })
       return { action: 'deny' }
     })
+    view.webContents.on('before-input-event', (event, input) => {
+      const shortcut = getAetherShortcutId(input)
+      if (!shortcut) return
+
+      event.preventDefault()
+      this.emitShortcut(shortcut)
+    })
     view.webContents.on('did-start-loading', () => {
       tab.isLoading = true
       tab.favicon = undefined
@@ -1594,6 +1661,7 @@ class AppContainerManager {
       tab.isLoading = false
       this.updateNavigationState(tab)
       this.updateTabPageMetadata(tab)
+      this.styleWebview(tab)
     })
     view.webContents.on('page-title-updated', (_event, title) => {
       tab.title = title || getTabHost(tab.url) || 'Untitled'
@@ -1606,7 +1674,10 @@ class AppContainerManager {
       this.emitState()
     })
     view.webContents.on('did-navigate', () => this.updateNavigationState(tab))
-    view.webContents.on('did-navigate-in-page', () => this.updateNavigationState(tab))
+    view.webContents.on('did-navigate-in-page', () => {
+      this.updateNavigationState(tab)
+      this.styleWebview(tab)
+    })
 
     return tab
   }
@@ -1693,6 +1764,26 @@ class AppContainerManager {
       })
   }
 
+  private styleWebview(tab: ManagedTab): void {
+    tab.view.webContents.insertCSS(WEBVIEW_SCROLLBAR_CSS).catch(() => undefined)
+    tab.view.webContents
+      .executeJavaScript(
+        `(() => {
+          const styleId = 'aether-scrollbar-style';
+          const css = ${JSON.stringify(WEBVIEW_SCROLLBAR_CSS)};
+          let style = document.getElementById(styleId);
+          if (!style) {
+            style = document.createElement('style');
+            style.id = styleId;
+            document.documentElement.appendChild(style);
+          }
+          style.textContent = css;
+        })()`,
+        true
+      )
+      .catch(() => undefined)
+  }
+
   private toTabSummary(tab: ManagedTab): BrowserTabSummary {
     return {
       id: tab.id,
@@ -1712,6 +1803,12 @@ class AppContainerManager {
   private emitState(): void {
     if (!this.mainWindow.isDestroyed()) {
       this.mainWindow.webContents.send('aether:state', this.getState())
+    }
+  }
+
+  private emitShortcut(shortcut: AetherShortcutId): void {
+    if (!this.mainWindow.isDestroyed()) {
+      this.mainWindow.webContents.send('aether:shortcut', shortcut)
     }
   }
 }
@@ -2281,6 +2378,36 @@ function normalizeUrl(rawUrl: string): string {
   }
 
   return `https://${trimmed}`
+}
+
+function getAetherShortcutId(input: {
+  type?: string
+  key?: string
+  code?: string
+  control?: boolean
+  meta?: boolean
+  alt?: boolean
+  shift?: boolean
+}): AetherShortcutId | null {
+  if (input.type !== 'keyDown') return null
+
+  const key = (input.key || '').toLowerCase()
+  const code = (input.code || '').toLowerCase()
+  const primary = Boolean(input.meta || input.control)
+  if (!primary) return null
+
+  if (!input.alt && !input.shift && key === 'l') return 'focus-address'
+  if (!input.alt && !input.shift && key === 't') return 'new-tab'
+  if (!input.alt && !input.shift && key === 'f') return 'find-page'
+
+  if (!input.alt && !input.shift && (key === '1' || code === 'digit1')) return 'open-dashboard'
+  if (!input.alt && !input.shift && (key === '2' || code === 'digit2')) return 'open-ice'
+  if (!input.alt && !input.shift && (key === '3' || code === 'digit3')) return 'open-browser'
+
+  if (!input.alt && input.shift && key === 'a') return 'toggle-aion'
+  if (!input.alt && input.shift && key === 'c') return 'capture-page'
+
+  return null
 }
 
 function normalizeSearchEngineId(value: unknown): SearchEngineId {

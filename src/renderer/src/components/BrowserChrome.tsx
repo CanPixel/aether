@@ -129,7 +129,12 @@ export function BrowserChrome({
         </button>
       </form>
 
-      <div className="tab-strip" aria-label="Browser tabs">
+      <div
+        className={`tab-strip ${tabs.length >= 12 ? 'many-tabs' : ''} ${
+          tabs.length >= 24 ? 'overflow-tabs' : ''
+        }`}
+        aria-label="Browser tabs"
+      >
         {tabs.map((tab) => (
           <button
             className={`tab-chip ${tabs.length > 1 ? 'closable' : 'frozen-tab'} ${
@@ -165,6 +170,11 @@ export function BrowserChrome({
             )}
           </button>
         ))}
+        {tabs.length >= 12 && (
+          <span className="tab-count" title={`${tabs.length} open tabs`}>
+            {tabs.length}
+          </span>
+        )}
         <button className="new-tab-button" onClick={onCreateTab} title="New tab" type="button">
           <PlusIcon />
         </button>

@@ -51,38 +51,43 @@ body {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(72, 143, 179, 0.58) rgba(232, 248, 255, 0.34);
+  scrollbar-color: rgba(122, 220, 255, 0.88) rgba(5, 18, 32, 0.2);
 }
 
 *::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
+  background: rgba(7, 22, 38, 0.14);
 }
 
 *::-webkit-scrollbar-track {
-  border: 1px solid rgba(186, 230, 253, 0.18);
+  border: 1px solid rgba(168, 232, 255, 0.22);
   border-radius: 999px;
   background:
-    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.74), transparent 36%),
-    linear-gradient(180deg, rgba(239, 249, 255, 0.42), rgba(190, 225, 244, 0.2));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(116, 205, 255, 0.2)),
+    rgba(7, 22, 38, 0.16);
+  box-shadow: inset 0 0 10px rgba(136, 221, 255, 0.12);
 }
 
 *::-webkit-scrollbar-thumb {
-  min-height: 34px;
-  border: 2px solid rgba(238, 248, 255, 0.72);
+  min-height: 42px;
+  border: 3px solid rgba(5, 18, 32, 0.28);
   border-radius: 999px;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.74), transparent 34%),
-    linear-gradient(180deg, rgba(186, 230, 253, 0.92), rgba(14, 116, 144, 0.64));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(119, 220, 255, 0.82) 44%, rgba(28, 127, 190, 0.76)),
+    rgba(122, 220, 255, 0.76);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    0 0 12px rgba(125, 211, 252, 0.22);
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 0 14px rgba(83, 212, 255, 0.4);
 }
 
 *::-webkit-scrollbar-thumb:hover {
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.86), transparent 34%),
-    linear-gradient(180deg, rgba(224, 247, 255, 0.98), rgba(3, 105, 161, 0.72));
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(158, 238, 255, 0.9) 40%, rgba(47, 151, 216, 0.84)),
+    rgba(146, 234, 255, 0.86);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 0 18px rgba(101, 226, 255, 0.54);
 }
 
 body::before {
@@ -815,7 +820,7 @@ button {
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
-  animation: heroOrbSpin 32s linear infinite;
+  animation: heroOrbSpin 200s linear infinite;
 }
 
 .hero-orb-aura {
@@ -2694,14 +2699,33 @@ button {
   min-width: 0;
   --tab-max-width: min(240px, 33%);
   padding: 4px 14px 7px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(237, 246, 255, 0.2)),
     rgba(255, 255, 255, 0.1);
+  scrollbar-color: rgba(82, 178, 219, 0.42) transparent;
+  scrollbar-width: thin;
+  scroll-padding: 14px;
 }
 
 .browser-chrome.dashboard-open .tab-strip {
   padding: 2px 14px 4px;
+}
+
+.tab-strip::-webkit-scrollbar {
+  height: 6px;
+}
+
+.tab-strip::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tab-strip::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.24)),
+    rgba(82, 178, 219, 0.42);
 }
 
 .tab-chip,
@@ -2716,7 +2740,7 @@ button {
 
 .tab-chip {
   grid-template-columns: 16px minmax(42px, 1fr);
-  flex: 1 1 clamp(112px, 18vw, 188px);
+  flex: 0 0 clamp(112px, 18vw, 188px);
   gap: 5px;
   width: auto;
   min-width: 92px;
@@ -2744,6 +2768,20 @@ button {
   will-change: flex-basis;
 }
 
+.tab-strip.many-tabs .tab-chip {
+  flex-basis: 118px;
+  min-width: 88px;
+}
+
+.tab-strip.overflow-tabs .tab-chip {
+  flex-basis: 96px;
+  min-width: 76px;
+}
+
+.tab-strip.overflow-tabs .tab-title {
+  font-size: 10px;
+}
+
 .tab-chip.closable {
   grid-template-columns: 16px minmax(42px, 1fr) 16px;
 }
@@ -2769,7 +2807,8 @@ button {
 
 .tab-status,
 .tab-close,
-.new-tab-button {
+.new-tab-button,
+.tab-count {
   display: grid;
   place-items: center;
 }
@@ -2815,6 +2854,7 @@ button {
 }
 
 .new-tab-button {
+  flex: 0 0 auto;
   width: 24px;
   padding: 0;
   color: #5d7fae;
@@ -2824,6 +2864,21 @@ button {
     background 150ms ease,
     color 150ms ease,
     box-shadow 150ms ease;
+}
+
+.tab-count {
+  flex: 0 0 auto;
+  min-width: 24px;
+  height: 24px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 999px;
+  padding: 0 7px;
+  background:
+    radial-gradient(circle at 35% 22%, rgba(255, 255, 255, 0.9), transparent 44%),
+    rgba(229, 248, 255, 0.64);
+  color: #2d7197;
+  font-size: 10px;
+  font-weight: 900;
 }
 
 .quick-action-row {
@@ -3407,7 +3462,7 @@ button {
   inset: var(--top-bar-height) 0 0;
   display: grid;
   place-items: center;
-  overflow: auto;
+  overflow: hidden;
   padding: 32px;
 }
 
@@ -5195,6 +5250,8 @@ button {
 
 .settings-modal {
   width: min(560px, calc(100vw - 56px));
+  max-height: calc(100vh - 56px);
+  overflow: auto;
   border: 1px solid rgba(101, 145, 190, 0.24);
   border-radius: 28px;
   padding: 20px;
@@ -5337,6 +5394,86 @@ button {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.35;
+}
+
+.settings-shortcuts {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+  border: 1px solid rgba(125, 211, 252, 0.22);
+  border-radius: 18px;
+  padding: 14px;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.82), transparent 38%),
+    linear-gradient(145deg, rgba(239, 249, 255, 0.58), rgba(255, 255, 255, 0.42));
+}
+
+.settings-shortcuts h2 {
+  color: #20344c;
+  font-size: 15px;
+}
+
+.settings-shortcuts p {
+  margin: 3px 0 0;
+  color: #6f8299;
+  font-size: 11px;
+}
+
+.settings-shortcut-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.settings-shortcut-row {
+  display: grid;
+  grid-template-columns: minmax(92px, auto) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(125, 158, 205, 0.16);
+  border-radius: 12px;
+  padding: 7px 8px;
+  background: rgba(255, 255, 255, 0.56);
+}
+
+.settings-shortcut-row kbd {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(105, 181, 216, 0.28);
+  border-radius: 8px;
+  padding: 3px 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(229, 248, 255, 0.72)),
+    rgba(255, 255, 255, 0.7);
+  color: #24779d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.settings-shortcut-row span,
+.settings-shortcut-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-shortcut-row span {
+  color: #24384f;
+  font-size: 11px;
+  font-weight: 780;
+}
+
+.settings-shortcut-row small {
+  color: #7890a7;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .empty-state button {

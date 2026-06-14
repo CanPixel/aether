@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { AetherApi, AetherState } from '../shared/aether'
+import {
+  AetherApi,
+  AetherShortcutId,
+  AetherState,
+  CaptureProgress,
+  ChatStreamEvent,
+  FindResult
+} from '../shared/aether'
 
 const api: AetherApi = {
   apps: {
@@ -15,6 +22,8 @@ const api: AetherApi = {
     activate: (tabId) => ipcRenderer.invoke('aether:tabs:activate', tabId),
     close: (tabId) => ipcRenderer.invoke('aether:tabs:close', tabId),
     navigate: (tabId, url) => ipcRenderer.invoke('aether:tabs:navigate', tabId, url),
+    scrollToText: (tabId, text) => ipcRenderer.invoke('aether:tabs:scroll-to-text', tabId, text),
+    find: (tabId, query, action) => ipcRenderer.invoke('aether:tabs:find', tabId, query, action),
     goBack: (tabId) => ipcRenderer.invoke('aether:tabs:go-back', tabId),
     goForward: (tabId) => ipcRenderer.invoke('aether:tabs:go-forward', tabId)
   },
@@ -44,7 +53,8 @@ const api: AetherApi = {
     collection: (input) => ipcRenderer.invoke('aether:search:collection', input)
   },
   chat: {
-    ask: (input) => ipcRenderer.invoke('aether:chat:ask', input)
+    ask: (input) => ipcRenderer.invoke('aether:chat:ask', input),
+    cancel: () => ipcRenderer.invoke('aether:chat:cancel')
   },
   crystallizer: {
     generate: (input) => ipcRenderer.invoke('aether:crystallizer:generate', input),
@@ -67,13 +77,26 @@ const api: AetherApi = {
     showStatusToast: (input) => ipcRenderer.invoke('aether:layout:show-status-toast', input)
   },
   events: {
-    onState: (listener: (state: AetherState) => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, state: AetherState): void =>
-        listener(state)
-      ipcRenderer.on('aether:state', handler)
+    onState: createEventListener<AetherState>('aether:state'),
+    onCaptureProgress: createEventListener<CaptureProgress>('aether:capture-progress'),
+    onChatStream: createEventListener<ChatStreamEvent>('aether:chat-stream'),
+    onShortcut: createEventListener<AetherShortcutId>('aether:shortcut'),
+    onFindRequested: (listener) => {
+      const handler = (): void => listener()
+      ipcRenderer.on('aether:find-requested', handler)
 
-      return () => ipcRenderer.removeListener('aether:state', handler)
-    }
+      return () => ipcRenderer.removeListener('aether:find-requested', handler)
+    },
+    onFindResult: createEventListener<FindResult>('aether:find-result')
+  }
+}
+
+function createEventListener<T>(channel: string): (listener: (payload: T) => void) => () => void {
+  return (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: T): void => listener(payload)
+    ipcRenderer.on(channel, handler)
+
+    return () => ipcRenderer.removeListener(channel, handler)
   }
 }
 

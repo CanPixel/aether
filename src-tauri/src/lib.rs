@@ -43,7 +43,15 @@ const BROWSER_VIEW_TOP: f64 = 166.0;
 const PANEL_WIDTH: f64 = 404.0;
 const PANEL_COLLAPSED_WIDTH: f64 = 58.0;
 const LOCAL_RUNTIME_NAME: &str = "llama.cpp";
+const AETHER_SHORTCUT_EVENT: &str = "aether:shortcut";
 const AETHER_FIND_MENU_ID: &str = "aether-find-in-page";
+const AETHER_FOCUS_ADDRESS_MENU_ID: &str = "aether-focus-address";
+const AETHER_NEW_TAB_MENU_ID: &str = "aether-new-tab";
+const AETHER_OPEN_DASHBOARD_MENU_ID: &str = "aether-open-dashboard";
+const AETHER_OPEN_ICE_MENU_ID: &str = "aether-open-ice";
+const AETHER_OPEN_BROWSER_MENU_ID: &str = "aether-open-browser";
+const AETHER_TOGGLE_AION_MENU_ID: &str = "aether-toggle-aion";
+const AETHER_CAPTURE_PAGE_MENU_ID: &str = "aether-capture-page";
 const AETHER_FIND_REQUESTED_EVENT: &str = "aether:find-requested";
 const AETHER_FIND_RESULT_EVENT: &str = "aether:find-result";
 const AETHER_CHAT_STREAM_EVENT: &str = "aether:chat-stream";
@@ -78,6 +86,69 @@ const PREFERRED_CHAT_MODEL_HINTS: [&str; 8] = [
 const MIN_CAPTURE_TEXT_LENGTH: usize = 120;
 const DESKTOP_BROWSER_USER_AGENT: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
+const NATIVE_WEBVIEW_SCROLLBAR_SCRIPT: &str = r##"
+(() => {
+  const styleId = 'aether-native-scrollbar-style';
+  const css = `
+    :root {
+      scrollbar-color: rgba(122, 220, 255, 0.82) rgba(7, 22, 38, 0.28);
+    }
+
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(122, 220, 255, 0.82) rgba(7, 22, 38, 0.28);
+    }
+
+    ::-webkit-scrollbar {
+      width: 13px;
+      height: 13px;
+      background: rgba(7, 22, 38, 0.2);
+    }
+
+    ::-webkit-scrollbar-track {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(116, 205, 255, 0.08)),
+        rgba(7, 22, 38, 0.2);
+      border: 1px solid rgba(168, 232, 255, 0.18);
+      border-radius: 999px;
+      box-shadow: inset 0 0 10px rgba(136, 221, 255, 0.12);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      min-height: 42px;
+      background:
+        linear-gradient(180deg, rgba(244, 253, 255, 0.94), rgba(119, 220, 255, 0.76) 42%, rgba(38, 121, 184, 0.72)),
+        rgba(122, 220, 255, 0.72);
+      border: 3px solid rgba(5, 18, 32, 0.4);
+      border-radius: 999px;
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.76),
+        0 0 14px rgba(83, 212, 255, 0.34);
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(146, 234, 255, 0.86) 38%, rgba(50, 144, 210, 0.82)),
+        rgba(146, 234, 255, 0.82);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.82),
+        0 0 18px rgba(101, 226, 255, 0.48);
+    }
+
+    ::-webkit-scrollbar-corner {
+      background: rgba(7, 22, 38, 0.24);
+    }
+  `;
+
+  let style = document.getElementById(styleId);
+  if (!style) {
+    style = document.createElement('style');
+    style.id = styleId;
+    document.documentElement.appendChild(style);
+  }
+  style.textContent = css;
+})();
+"##;
 const ICEBERG_LEVEL_LANES: [f64; 5] = [13.0, 87.0, 28.0, 72.0, 42.0];
 
 type Cmd<T> = Result<T, String>;
@@ -972,6 +1043,7 @@ fn create_native_webview(
             );
             let _ = emit_state(&app_for_load, &state);
             if payload.event() == PageLoadEvent::Finished {
+                let _ = webview.eval(NATIVE_WEBVIEW_SCROLLBAR_SCRIPT);
                 read_native_webview_metadata(
                     &webview,
                     app_for_load.clone(),
@@ -1669,7 +1741,21 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder
         .menu(|app| {
-            let menu = Menu::default(app)?;
+            let menu = Menu::new(app)?;
+            let focus_address_item = MenuItem::with_id(
+                app,
+                AETHER_FOCUS_ADDRESS_MENU_ID,
+                "Focus Address Bar",
+                true,
+                Some("CmdOrCtrl+L"),
+            )?;
+            let new_tab_item = MenuItem::with_id(
+                app,
+                AETHER_NEW_TAB_MENU_ID,
+                "New Tab",
+                true,
+                Some("CmdOrCtrl+T"),
+            )?;
             let find_item = MenuItem::with_id(
                 app,
                 AETHER_FIND_MENU_ID,
@@ -1677,13 +1763,86 @@ pub fn run() {
                 true,
                 Some("CmdOrCtrl+F"),
             )?;
-            let find_menu = Submenu::with_items(app, "Find", true, &[&find_item])?;
-            menu.append(&find_menu)?;
+            let open_dashboard_item = MenuItem::with_id(
+                app,
+                AETHER_OPEN_DASHBOARD_MENU_ID,
+                "Open Dashboard",
+                true,
+                Some("CmdOrCtrl+1"),
+            )?;
+            let open_ice_item = MenuItem::with_id(
+                app,
+                AETHER_OPEN_ICE_MENU_ID,
+                "Open iCE",
+                true,
+                Some("CmdOrCtrl+2"),
+            )?;
+            let open_browser_item = MenuItem::with_id(
+                app,
+                AETHER_OPEN_BROWSER_MENU_ID,
+                "Open Browser",
+                true,
+                Some("CmdOrCtrl+3"),
+            )?;
+            let toggle_aion_item = MenuItem::with_id(
+                app,
+                AETHER_TOGGLE_AION_MENU_ID,
+                "Toggle AiON",
+                true,
+                Some("CmdOrCtrl+Shift+A"),
+            )?;
+            let capture_page_item = MenuItem::with_id(
+                app,
+                AETHER_CAPTURE_PAGE_MENU_ID,
+                "Capture Current Page",
+                true,
+                Some("CmdOrCtrl+Shift+C"),
+            )?;
+            let shortcuts_menu = Submenu::with_items(
+                app,
+                "Shortcuts",
+                true,
+                &[
+                    &focus_address_item,
+                    &new_tab_item,
+                    &find_item,
+                    &open_dashboard_item,
+                    &open_ice_item,
+                    &open_browser_item,
+                    &toggle_aion_item,
+                    &capture_page_item,
+                ],
+            )?;
+            menu.append(&shortcuts_menu)?;
             Ok(menu)
         })
         .on_menu_event(|app, event| {
-            if event.id() == AETHER_FIND_MENU_ID {
-                let _ = app.emit(AETHER_FIND_REQUESTED_EVENT, ());
+            match event.id().as_ref() {
+                AETHER_FIND_MENU_ID => {
+                    let _ = app.emit(AETHER_FIND_REQUESTED_EVENT, ());
+                }
+                AETHER_FOCUS_ADDRESS_MENU_ID => {
+                    let _ = app.emit(AETHER_SHORTCUT_EVENT, "focus-address");
+                }
+                AETHER_NEW_TAB_MENU_ID => {
+                    let _ = app.emit(AETHER_SHORTCUT_EVENT, "new-tab");
+                }
+                AETHER_OPEN_DASHBOARD_MENU_ID => {
+                    let _ = app.emit(AETHER_SHORTCUT_EVENT, "open-dashboard");
+                }
+                AETHER_OPEN_ICE_MENU_ID => {
+                    let _ = app.emit(AETHER_SHORTCUT_EVENT, "open-ice");
+                }
+                AETHER_OPEN_BROWSER_MENU_ID => {
+                    let _ = app.emit(AETHER_SHORTCUT_EVENT, "open-browser");
+                }
+                AETHER_TOGGLE_AION_MENU_ID => {
+                    let _ = app.emit(AETHER_SHORTCUT_EVENT, "toggle-aion");
+                }
+                AETHER_CAPTURE_PAGE_MENU_ID => {
+                    let _ = app.emit(AETHER_SHORTCUT_EVENT, "capture-page");
+                }
+                _ => {}
             }
         });
 

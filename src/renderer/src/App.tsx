@@ -1,6 +1,7 @@
 import { FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AetherState,
+  AetherShortcutId,
   AppSettings,
   AppSummary,
   CaptureProgress,
@@ -36,6 +37,46 @@ import { SearchIcon, ChevronUp, ChevronDown } from 'lucide-react'
 // page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
 const START_PAGE_URL = 'aether://start'
 
+const SHORTCUT_HELP: Array<{ keys: string; action: string; scope: string }> = [
+  { keys: 'Cmd/Ctrl L', action: 'Focus address bar', scope: 'Browser' },
+  { keys: 'Cmd/Ctrl T', action: 'Open new tab', scope: 'Global' },
+  { keys: 'Cmd/Ctrl F', action: 'Find on page', scope: 'Browser' },
+  { keys: 'Cmd/Ctrl 1', action: 'Open Dashboard', scope: 'Global' },
+  { keys: 'Cmd/Ctrl 2', action: 'Open iCE', scope: 'Global' },
+  { keys: 'Cmd/Ctrl 3', action: 'Open Browser', scope: 'Global' },
+  { keys: 'Cmd/Ctrl Shift A', action: 'Toggle AiON', scope: 'Global' },
+  { keys: 'Cmd/Ctrl Shift C', action: 'Capture current page', scope: 'Browser' }
+]
+
+function getShortcutFromKeyboardEvent(event: KeyboardEvent): AetherShortcutId | null {
+  const key = event.key.toLowerCase()
+  const code = event.code.toLowerCase()
+  const primary = event.metaKey || event.ctrlKey
+  if (!primary) return null
+
+  if (!event.altKey && !event.shiftKey && key === 'l') return 'focus-address'
+  if (!event.altKey && !event.shiftKey && key === 't') return 'new-tab'
+  if (!event.altKey && !event.shiftKey && key === 'f') return 'find-page'
+
+  if (!event.altKey && !event.shiftKey && (key === '1' || code === 'digit1')) {
+    return 'open-dashboard'
+  }
+  if (!event.altKey && !event.shiftKey && (key === '2' || code === 'digit2')) return 'open-ice'
+  if (!event.altKey && !event.shiftKey && (key === '3' || code === 'digit3')) {
+    return 'open-browser'
+  }
+
+  if (!event.altKey && event.shiftKey && key === 'a') return 'toggle-aion'
+  if (!event.altKey && event.shiftKey && key === 'c') return 'capture-page'
+
+  return null
+}
+
+function isBlockedShellShortcut(event: KeyboardEvent): boolean {
+  const key = event.key.toLowerCase()
+  return (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && key === 'w'
+}
+
 const TEXT_INPUT_TYPES = new Set([
   '',
   'email',
@@ -65,21 +106,6 @@ function getEditableShortcutTarget(
     return !editable.readOnly && !editable.disabled ? editable : null
   }
   return editable instanceof HTMLElement && editable.isContentEditable ? editable : null
-}
-
-function selectEditableContent(
-  element: HTMLInputElement | HTMLTextAreaElement | HTMLElement
-): void {
-  if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-    element.select()
-    return
-  }
-
-  const selection = window.getSelection()
-  const range = document.createRange()
-  range.selectNodeContents(element)
-  selection?.removeAllRanges()
-  selection?.addRange(range)
 }
 
 // Stopwords are ignored when locating the cited span: they appear everywhere and
@@ -391,12 +417,12 @@ function App(): React.JSX.Element {
   )
 
   const openFindBar = useCallback((): void => {
-    if (dashboardOpen || !activeTab?.id) {
+    if (dashboardOpen || isStartPage || !activeTab?.id) {
       setNotice('Open a web page before using find.')
       return
     }
     setFindOpen(true)
-  }, [activeTab?.id, dashboardOpen])
+  }, [activeTab?.id, dashboardOpen, isStartPage])
 
   const findHighlight = useCallback(
     (query: string, action: FindAction): void => {
@@ -597,39 +623,72 @@ function App(): React.JSX.Element {
     return () => window.clearTimeout(timer)
   }, [findOpen, findHighlight])
 
-  useEffect(() => {
-    const handler = (event: KeyboardEvent): void => {
-      const key = event.key.toLowerCase()
-      if ((event.metaKey || event.ctrlKey) && key === 'f') {
-        event.preventDefault()
-        event.stopPropagation()
-        openFindBar()
-        return
-      }
-
-      const editableTarget = getEditableShortcutTarget(event.target)
-      if (editableTarget) {
-        if ((event.metaKey || event.ctrlKey) && key === 'a') {
-          event.preventDefault()
-          event.stopPropagation()
-          selectEditableContent(editableTarget)
+  async function runShortcut(shortcut: AetherShortcutId): Promise<void> {
+    switch (shortcut) {
+      case 'focus-address':
+        if (!dashboardOpen) {
+          addressInputRef.current?.focus()
+          addressInputRef.current?.select()
         }
         return
+      case 'new-tab':
+        await createTab()
+        return
+      case 'open-dashboard':
+        await openDashboard()
+        return
+      case 'open-ice':
+        await openCrystallizer()
+        return
+      case 'open-browser':
+        await openBrowser()
+        return
+      case 'toggle-aion':
+        await togglePanel()
+        return
+      case 'capture-page':
+        if (dashboardOpen || startPageActive) {
+          setNotice('Open a web page before capturing.')
+          return
+        }
+        await capturePage()
+        return
+      case 'find-page':
+        openFindBar()
+        return
+      default:
+        return
+    }
+  }
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent): void => {
+      if (isBlockedShellShortcut(event)) {
+        event.preventDefault()
+        event.stopPropagation()
+        return
       }
 
-      if ((event.metaKey || event.ctrlKey) && key === 'l') {
+      const shortcut = getShortcutFromKeyboardEvent(event)
+      if (shortcut) {
         event.preventDefault()
-        if (!dashboardOpen) addressInputRef.current?.select()
+        event.stopPropagation()
+        void runShortcut(shortcut)
+        return
       }
-      if ((event.metaKey || event.ctrlKey) && key === 't') {
-        event.preventDefault()
-        createTab()
-      }
+
+      if (getEditableShortcutTarget(event.target)) return
     }
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [createTab, dashboardOpen, openFindBar])
+  })
+
+  useEffect(() => {
+    return window.aether.events.onShortcut((shortcut) => {
+      void runShortcut(shortcut)
+    })
+  })
 
   const showToast = useCallback((input: StatusToastInput): void => {
     if (!input.message || /^starting\s+æ?ther$/i.test(input.message)) return
@@ -1180,7 +1239,7 @@ function App(): React.JSX.Element {
   return (
     <main className={`aether-shell ${panelCollapsed ? 'panel-collapsed' : ''}`}>
       {toast && <StatusToast toast={toast} />}
-      {findOpen && !dashboardOpen && activeTab?.id && (
+      {findOpen && !dashboardOpen && !isStartPage && activeTab?.id && (
         <FindBar
           inputRef={findInputRef}
           query={findQuery}
@@ -1601,6 +1660,22 @@ function SettingsModal({
                 <strong>{engine.name}</strong>
                 <span>{engine.description}</span>
               </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="settings-shortcuts" aria-label="Keyboard shortcuts">
+          <div>
+            <h2>Shortcuts</h2>
+            <p>Editing shortcuts like select all, copy, and paste stay native.</p>
+          </div>
+          <div className="settings-shortcut-grid">
+            {SHORTCUT_HELP.map((shortcut) => (
+              <div className="settings-shortcut-row" key={`${shortcut.keys}-${shortcut.action}`}>
+                <kbd>{shortcut.keys}</kbd>
+                <span>{shortcut.action}</span>
+                <small>{shortcut.scope}</small>
+              </div>
             ))}
           </div>
         </div>
