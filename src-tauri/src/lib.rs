@@ -2466,18 +2466,26 @@ async fn aether_chat_ask(
                 let tabs = lock_tabs(&state)?;
                 tabs.active_tab().cloned()
             };
-            if let Some(active_tab) = active_tab {
-                if let Ok(captured) = extract_readable_active_page(&state, &active_tab).await {
-                    citations.insert(
-                        0,
-                        current_page_citation(captured, &prompt, input.collection_id.as_deref()),
-                    );
-                }
-            } else if let Ok(captured) = extract_readable_page(&state.client, &active_url).await {
-                citations.insert(
-                    0,
-                    current_page_citation(captured, &prompt, input.collection_id.as_deref()),
-                );
+            let captured = if let Some(active_tab) = active_tab {
+                extract_readable_active_page(&state, &active_tab).await.ok()
+            } else {
+                extract_readable_page(&state.client, &active_url).await.ok()
+            };
+            if let Some(captured) = captured {
+                // Give the current page fewer slots when a hub is also in play so the
+                // hub still contributes; let it use the full budget on its own.
+                let page_limit = if input.collection_id.is_some() { 3 } else { 8 };
+                let page_citations = current_page_citations(
+                    &state,
+                    &settings,
+                    captured,
+                    &prompt,
+                    input.collection_id.as_deref(),
+                    page_limit,
+                )
+                .await;
+                // Prepend so the current page takes priority over hub matches.
+                citations.splice(0..0, page_citations);
             }
         }
     }
@@ -2771,23 +2779,13 @@ fn capture_chunk_settings(paths: &DataPaths, settings: &UserSettings) -> (usize,
     }
 }
 
-fn current_page_citation(
-    captured: CapturedPage,
-    prompt: &str,
+fn current_page_search_result(
+    captured: &CapturedPage,
     collection_id: Option<&str>,
+    chunk_index: usize,
+    score: f64,
+    text: String,
 ) -> SearchResult {
-    let chunks = split_text(&captured.text, 1600, 180);
-    let (chunk_index, text) = chunks
-        .iter()
-        .enumerate()
-        .max_by(|(_, left), (_, right)| {
-            lexical_relevance_score(left, prompt)
-                .partial_cmp(&lexical_relevance_score(right, prompt))
-                .unwrap_or(Ordering::Equal)
-        })
-        .map(|(index, text)| (index, text.clone()))
-        .unwrap_or_else(|| (0, captured.text.chars().take(1800).collect()));
-
     SearchResult {
         id: format!("current-{}", uuid()),
         collection_id: collection_id
@@ -2795,13 +2793,117 @@ fn current_page_citation(
             .unwrap_or_else(|| "current-page".to_string()),
         capture_id: "current-page".to_string(),
         app_id: "browser".to_string(),
-        title: captured.title,
-        url: captured.url,
+        title: captured.title.clone(),
+        url: captured.url.clone(),
         captured_at: now(),
         chunk_index,
         text,
-        score: 0.0,
+        score,
     }
+}
+
+// The current page isn't pre-indexed like a knowledge hub, so rank its chunks at
+// ask-time. We mirror the hub's semantic retrieval (embed the query + chunks, rank
+// by cosine distance, keep the best matches) and fall back to lexical scoring only
+// when no embedding model is available. Returning several chunks instead of the
+// single best is what lets the model actually answer: dedupe_citations later merges
+// these same-URL chunks into one context-dense citation, just like the hub.
+async fn current_page_citations(
+    state: &State<'_, Backend>,
+    settings: &UserSettings,
+    captured: CapturedPage,
+    prompt: &str,
+    collection_id: Option<&str>,
+    limit: usize,
+) -> Vec<SearchResult> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let (chunk_size, chunk_overlap) = capture_chunk_settings(&state.paths, settings);
+    let chunks = split_text(&captured.text, chunk_size, chunk_overlap);
+    if chunks.is_empty() {
+        return Vec::new();
+    }
+
+    if let Some(ranked) = semantic_rank_chunks(state, settings, &chunks, prompt, limit).await {
+        return ranked
+            .into_iter()
+            .map(|(index, distance)| {
+                current_page_search_result(
+                    &captured,
+                    collection_id,
+                    index,
+                    distance,
+                    chunks[index].clone(),
+                )
+            })
+            .collect();
+    }
+
+    // Lexical fallback (no embedding model): keep the highest-scoring chunks.
+    let mut scored = chunks
+        .iter()
+        .enumerate()
+        .map(|(index, text)| (lexical_relevance_score(text, prompt), index))
+        .filter(|(score, _)| *score > 0.0)
+        .collect::<Vec<_>>();
+    scored.sort_by(|left, right| right.0.partial_cmp(&left.0).unwrap_or(Ordering::Equal));
+
+    if scored.is_empty() {
+        // Nothing matched lexically — anchor on the start of the page rather than
+        // returning nothing.
+        let first = chunks.into_iter().next().unwrap_or_default();
+        return vec![current_page_search_result(
+            &captured,
+            collection_id,
+            0,
+            0.0,
+            first,
+        )];
+    }
+
+    scored
+        .into_iter()
+        .take(limit)
+        .map(|(score, index)| {
+            current_page_search_result(&captured, collection_id, index, score, chunks[index].clone())
+        })
+        .collect()
+}
+
+// Embed the query alongside the page chunks in one batch, then order chunk indices
+// by ascending cosine distance. Returns None when embedding is unavailable so the
+// caller can fall back to lexical scoring.
+async fn semantic_rank_chunks(
+    state: &State<'_, Backend>,
+    settings: &UserSettings,
+    chunks: &[String],
+    prompt: &str,
+    limit: usize,
+) -> Option<Vec<(usize, f64)>> {
+    let mut inputs = Vec::with_capacity(chunks.len() + 1);
+    inputs.push(prompt.to_string());
+    inputs.extend(chunks.iter().cloned());
+
+    let embeddings = local_embed(state, settings, inputs).await.ok()?;
+    if embeddings.len() != chunks.len() + 1 {
+        return None;
+    }
+
+    let query_vector = &embeddings[0];
+    let mut scored = embeddings[1..]
+        .iter()
+        .enumerate()
+        .map(|(index, vector)| (cosine_distance(query_vector, vector), index))
+        .collect::<Vec<_>>();
+    scored.sort_by(|left, right| left.0.partial_cmp(&right.0).unwrap_or(Ordering::Equal));
+    Some(
+        scored
+            .into_iter()
+            .take(limit)
+            .map(|(distance, index)| (index, distance))
+            .collect(),
+    )
 }
 
 fn lexical_relevance_score(text: &str, query: &str) -> f64 {
@@ -2817,8 +2919,12 @@ fn lexical_relevance_score(text: &str, query: &str) -> f64 {
 }
 
 fn lexical_term_score(haystack: &str, term: &str) -> f64 {
-    if haystack.contains(term) {
-        return 2.0 + (term.len() as f64 / 10.0);
+    let occurrences = haystack.matches(term).count();
+    if occurrences > 0 {
+        // Reward repeated mentions so a chunk that actually discusses the term beats
+        // one that merely name-drops it once. Without this, every matching chunk ties
+        // and the tie-break is arbitrary.
+        return 2.0 + (term.len() as f64 / 10.0) + (occurrences.saturating_sub(1) as f64) * 0.5;
     }
     let stem_len = term.len().min(6);
     if stem_len >= 5 && haystack.contains(&term[..stem_len]) {
