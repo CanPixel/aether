@@ -1216,11 +1216,15 @@ function App(): React.JSX.Element {
   async function runTask(label: string, task: () => Promise<void>): Promise<void> {
     setBusy(label)
     setNotice(null)
-    showToast({
-      message: label,
-      tone: 'info',
-      durationMs: label === 'Capturing page' ? 0 : 2600
-    })
+    // Skip the toast when asking ÆTHER — the user just triggered it themselves,
+    // and the intelligence panel already shows the in-progress state.
+    if (label !== 'Asking Æther') {
+      showToast({
+        message: label,
+        tone: 'info',
+        durationMs: label === 'Capturing page' ? 0 : 2600
+      })
+    }
 
     try {
       await task()
