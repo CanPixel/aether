@@ -26,7 +26,7 @@ use std::{
 };
 #[cfg(desktop)]
 use tauri::{
-    menu::{Menu, MenuItem, Submenu},
+    menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     webview::{NewWindowResponse, PageLoadEvent},
     Webview, WebviewBuilder, WebviewUrl, Window,
 };
@@ -1813,6 +1813,25 @@ pub fn run() {
                     &capture_page_item,
                 ],
             )?;
+            // Standard Edit submenu. Its predefined items carry the native key
+            // equivalents (Cmd/Ctrl+A/C/V/X and undo/redo), which is what wires up
+            // select-all/copy/paste in the address bar and other text fields. An
+            // empty Menu::new has no Edit menu, so those shortcuts would do nothing.
+            let edit_menu = Submenu::with_items(
+                app,
+                "Edit",
+                true,
+                &[
+                    &PredefinedMenuItem::undo(app, None)?,
+                    &PredefinedMenuItem::redo(app, None)?,
+                    &PredefinedMenuItem::separator(app)?,
+                    &PredefinedMenuItem::cut(app, None)?,
+                    &PredefinedMenuItem::copy(app, None)?,
+                    &PredefinedMenuItem::paste(app, None)?,
+                    &PredefinedMenuItem::select_all(app, None)?,
+                ],
+            )?;
+            menu.append(&edit_menu)?;
             menu.append(&shortcuts_menu)?;
             Ok(menu)
         })
@@ -4799,15 +4818,13 @@ fn dedupe_citations(citations: Vec<SearchResult>) -> Vec<SearchResult> {
         if let Some(existing_index) = indexes.get(&key).copied() {
             let existing = &mut unique[existing_index];
             if !existing.text.contains(&citation.text) {
-                existing.text = format!(
-                    "{}\n\nChunk {}:\n{}",
-                    existing.text,
-                    citation.chunk_index + 1,
-                    citation.text
-                )
-                .chars()
-                .take(9000)
-                .collect();
+                // Join non-contiguous excerpts from the same page with a neutral
+                // marker. A numbered "Chunk N" label here leaks into the model's
+                // context and gets echoed as an uncitable "[Chunk N]" reference.
+                existing.text = format!("{}\n\n[…]\n\n{}", existing.text, citation.text)
+                    .chars()
+                    .take(9000)
+                    .collect();
             }
             existing.score = existing.score.min(citation.score);
         } else {
