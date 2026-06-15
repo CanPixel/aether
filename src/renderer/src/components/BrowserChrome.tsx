@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, useState } from 'react'
+import { CSSProperties, FormEvent, MouseEvent, useEffect, useState } from 'react'
 import { BrowserTabSummary, CaptureResult, CollectionSummary } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
 import {
@@ -33,6 +33,8 @@ type BrowserChromeProps = {
   onAddressChange: (value: string) => void
   onAddressFocus: () => void
   onBack: () => Promise<void>
+  onCloseAllTabs: () => Promise<void>
+  onCloseOtherTabs: (tabId: string) => Promise<void>
   onCloseTab: (tabId: string) => Promise<void>
   onCreateTab: () => void
   onCapture: () => Promise<void>
@@ -43,6 +45,8 @@ type BrowserChromeProps = {
   onSavePortal: () => Promise<void>
   onSelectTab: (tabId: string) => Promise<void>
   onSelectCollection: (value: string) => Promise<void>
+  onTabMenuClose: () => void
+  onTabMenuOpen: () => void
 }
 
 export function BrowserChrome({
@@ -66,6 +70,8 @@ export function BrowserChrome({
   onAddressChange,
   onAddressFocus,
   onBack,
+  onCloseAllTabs,
+  onCloseOtherTabs,
   onCloseTab,
   onCreateTab,
   onCapture,
@@ -75,9 +81,60 @@ export function BrowserChrome({
   onQuickAction,
   onSavePortal,
   onSelectTab,
-  onSelectCollection
+  onSelectCollection,
+  onTabMenuClose,
+  onTabMenuOpen
 }: BrowserChromeProps): React.JSX.Element {
   const startPageActive = activeTab?.url === 'aether://start'
+  const [tabMenu, setTabMenu] = useState<{ tabId: string; x: number; y: number } | null>(null)
+  const menuTab = tabMenu ? tabs.find((tab) => tab.id === tabMenu.tabId) : undefined
+
+  useEffect(() => {
+    if (!tabMenu) return
+
+    function closeMenu(): void {
+      setTabMenu(null)
+      onTabMenuClose()
+    }
+
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') closeMenu()
+    }
+
+    window.addEventListener('click', closeMenu)
+    window.addEventListener('contextmenu', closeMenu)
+    window.addEventListener('resize', closeMenu)
+    window.addEventListener('scroll', closeMenu, true)
+    window.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      window.removeEventListener('click', closeMenu)
+      window.removeEventListener('contextmenu', closeMenu)
+      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener('scroll', closeMenu, true)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onTabMenuClose, tabMenu])
+
+  function openTabMenu(event: MouseEvent<HTMLButtonElement>, tabId: string): void {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const width = 172
+    const height = 132
+    onTabMenuOpen()
+    setTabMenu({
+      tabId,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8))
+    })
+  }
+
+  async function runTabMenuAction(action: () => Promise<void>): Promise<void> {
+    setTabMenu(null)
+    onTabMenuClose()
+    await action()
+  }
 
   return (
     <div className={`browser-chrome ${dashboardOpen ? 'dashboard-open' : ''}`}>
@@ -142,6 +199,7 @@ export function BrowserChrome({
             }`}
             key={tab.id}
             onClick={() => onSelectTab(tab.id)}
+            onContextMenu={(event) => openTabMenu(event, tab.id)}
             style={getTabStyle(tab)}
             title={tab.title}
             type="button"
@@ -179,6 +237,36 @@ export function BrowserChrome({
           <PlusIcon />
         </button>
       </div>
+      {tabMenu && menuTab && (
+        <div
+          className="tab-context-menu"
+          role="menu"
+          style={{ left: tabMenu.x, top: tabMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <div className="tab-context-menu-title">{menuTab.title || menuTab.host || 'New tab'}</div>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={tabs.length <= 1}
+            onClick={() => runTabMenuAction(() => onCloseTab(menuTab.id))}
+          >
+            Close tab
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={tabs.length <= 1}
+            onClick={() => runTabMenuAction(() => onCloseOtherTabs(menuTab.id))}
+          >
+            Close others
+          </button>
+          <button type="button" role="menuitem" onClick={() => runTabMenuAction(onCloseAllTabs)}>
+            Close all
+          </button>
+        </div>
+      )}
       {!dashboardOpen && (
         <div className="quick-action-row" aria-label="AI quick actions">
           {quickActions.map((action) => (

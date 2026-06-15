@@ -768,6 +768,51 @@ function App(): React.JSX.Element {
     }
   }
 
+  async function closeOtherTabs(tabId: string): Promise<void> {
+    setNotice(null)
+
+    try {
+      await window.aether.tabs.activate(tabId)
+      for (const tab of tabs) {
+        if (tab.id !== tabId) {
+          await window.aether.tabs.close(tab.id)
+        }
+      }
+      setActiveTabId(tabId)
+      setWorkspaceMode('dashboard')
+      setDashboardOpen(false)
+      await refreshShell()
+    } catch (error) {
+      setNotice(getErrorMessage(error))
+    }
+  }
+
+  async function closeAllTabs(): Promise<void> {
+    setNotice(null)
+
+    try {
+      const tabIds = tabs.map((tab) => tab.id)
+      const blankTab = await window.aether.tabs.create()
+      for (const tabId of tabIds) {
+        await window.aether.tabs.close(tabId)
+      }
+      setActiveTabId(blankTab.id)
+      setWorkspaceMode('dashboard')
+      setDashboardOpen(false)
+      await refreshShell()
+    } catch (error) {
+      setNotice(getErrorMessage(error))
+    }
+  }
+
+  function openTabMenuOverlay(): void {
+    void window.aether.layout.setModalOverlayOpen(true).catch(() => undefined)
+  }
+
+  function closeTabMenuOverlay(): void {
+    void window.aether.layout.setModalOverlayOpen(false).catch(() => undefined)
+  }
+
   async function navigate(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
     if (!activeTab) return
@@ -1342,6 +1387,8 @@ function App(): React.JSX.Element {
             setAddressFocused(true)
           }}
           onBack={goBack}
+          onCloseAllTabs={closeAllTabs}
+          onCloseOtherTabs={closeOtherTabs}
           onCloseTab={closeTab}
           onCreateTab={() => createTab()}
           onCapture={capturePage}
@@ -1354,6 +1401,8 @@ function App(): React.JSX.Element {
           onSavePortal={saveActiveTabToHub}
           onSelectTab={activateTab}
           onSelectCollection={selectCollection}
+          onTabMenuClose={closeTabMenuOverlay}
+          onTabMenuOpen={openTabMenuOverlay}
         />
 
         {crystallizerOpen ? (
