@@ -304,7 +304,7 @@ export function Dashboard({
                     }}
                     type="button"
                   >
-                    <span>{iceberg.itemCount} frozen fragments</span>
+                    <span>{iceberg.itemCount} fragments</span>
                     <strong>{iceberg.title}</strong>
                     <small>
                       {formatDate(iceberg.savedAt)}{' '}
@@ -616,5 +616,5 @@ function IcebergFlairIcon({ icon }: { icon: string }): React.JSX.Element {
   }
   const Icon = icons[icon] ?? Snowflake
 
-  return <Icon size={24} strokeWidth={1.9} />
+  return <Icon size={20} strokeWidth={1.9} />
 }

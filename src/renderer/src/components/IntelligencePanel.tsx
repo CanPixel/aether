@@ -103,12 +103,12 @@ export function IntelligencePanel({
         </span>
         <button
           className="panel-icon-toggle tooltip-host crystal-button"
-          data-tooltip={showTooltips ? 'Open sidepanel' : undefined}
+          data-tooltip={showTooltips ? 'AiON' : undefined}
           data-tooltip-side={showTooltips ? 'left' : undefined}
           aria-hidden={!panelCollapsed}
           onClick={onTogglePanel}
           tabIndex={panelCollapsed ? 0 : -1}
-          title="Open sidepanel"
+          title="AiON"
           type="button"
         >
           <AetherSigilIcon />

@@ -1234,7 +1234,6 @@ function App(): React.JSX.Element {
     }
   }
 
-  const showAppTooltips = dashboardOpen
   const crystallizerOpen = dashboardOpen && workspaceMode === 'crystallizer'
   const dashboardHomeOpen = dashboardOpen && workspaceMode === 'dashboard'
   const startPageActive = !dashboardOpen && isStartPage
@@ -1274,11 +1273,11 @@ function App(): React.JSX.Element {
         </button>
         <nav className="app-list" aria-label="Apps">
           <button
-            className={`app-button tooltip-host ${crystallizerOpen ? 'active' : ''}`}
-            data-tooltip={showAppTooltips ? 'iCE' : undefined}
-            data-tooltip-side={showAppTooltips ? 'right' : undefined}
+            className={`app-button ice-button tooltip-host ${crystallizerOpen ? 'active' : ''}`}
+            data-tooltip='iCE'
+            data-tooltip-side='right'
             onClick={openCrystallizer}
-            title={showAppTooltips ? 'iCE' : undefined}
+            title='iCE'
             type="button"
           >
             <SnowflakeIcon />
@@ -1286,12 +1285,10 @@ function App(): React.JSX.Element {
           </button>
           <button
             className={`app-button tooltip-host ${!dashboardOpen ? 'active' : ''}`}
-            data-tooltip={showAppTooltips ? 'Web View' : undefined}
-            data-tooltip-side={showAppTooltips ? 'right' : undefined}
+            data-tooltip='Discover'
+            data-tooltip-side='right'
             onClick={openBrowser}
-            title={
-              showAppTooltips ? (activeApp ? `${activeApp.name} view` : 'Web view') : undefined
-            }
+            title={activeApp ? `${activeApp.name} view` : 'Discover'}
             type="button"
           >
             <GlobeIcon />
@@ -1299,12 +1296,10 @@ function App(): React.JSX.Element {
           </button>
         </nav>
         <button
-          className="app-button settings-button tooltip-host"
+          className="app-button settings-button"
           aria-label="Open Æther settings"
-          data-tooltip={showAppTooltips ? 'Settings' : undefined}
-          data-tooltip-side={showAppTooltips ? 'right' : undefined}
           onClick={openSettings}
-          title={showAppTooltips ? 'Settings' : undefined}
+          title='Settings'
           type="button"
         >
           <GearIcon />
