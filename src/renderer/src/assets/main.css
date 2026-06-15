@@ -5250,7 +5250,7 @@ button {
 }
 
 .settings-modal {
-  width: min(560px, calc(100vw - 56px));
+  width: min(740px, calc(100vw - 56px));
   max-height: calc(100vh - 56px);
   overflow: auto;
   border: 1px solid rgba(101, 145, 190, 0.24);

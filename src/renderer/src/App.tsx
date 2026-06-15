@@ -966,7 +966,6 @@ function App(): React.JSX.Element {
 
         setChatResult(result)
         setAskPanelOpen(false)
-        setNotice(`Answered with ${formatLocalModelName(result.model) ?? result.model}.`)
       } finally {
         askRequestIdRef.current = null
         if (streamFlushRef.current !== null) {
