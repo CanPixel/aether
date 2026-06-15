@@ -38,14 +38,14 @@ import { SearchIcon, ChevronUp, ChevronDown } from 'lucide-react'
 const START_PAGE_URL = 'aether://start'
 
 const SHORTCUT_HELP: Array<{ keys: string; action: string; scope: string }> = [
-  { keys: 'Cmd/Ctrl L', action: 'Focus address bar', scope: 'Browser' },
-  { keys: 'Cmd/Ctrl T', action: 'Open new tab', scope: 'Global' },
-  { keys: 'Cmd/Ctrl F', action: 'Find on page', scope: 'Browser' },
-  { keys: 'Cmd/Ctrl 1', action: 'Open Dashboard', scope: 'Global' },
-  { keys: 'Cmd/Ctrl 2', action: 'Open iCE', scope: 'Global' },
-  { keys: 'Cmd/Ctrl 3', action: 'Open Browser', scope: 'Global' },
-  { keys: 'Cmd/Ctrl Shift A', action: 'Toggle AiON', scope: 'Global' },
-  { keys: 'Cmd/Ctrl Shift C', action: 'Capture current page', scope: 'Browser' }
+  { keys: 'Cmd/Ctrl + L', action: 'Focus address bar', scope: 'Browser' },
+  { keys: 'Cmd/Ctrl + T', action: 'Open new tab', scope: 'Global' },
+  { keys: 'Cmd/Ctrl + F', action: 'Find on page', scope: 'Browser' },
+  { keys: 'Cmd/Ctrl + 1', action: 'Open Dashboard', scope: 'Global' },
+  { keys: 'Cmd/Ctrl + 2', action: 'Open iCE', scope: 'Global' },
+  { keys: 'Cmd/Ctrl + 3', action: 'Open Browser', scope: 'Global' },
+  { keys: 'Cmd/Ctrl + Shift + A', action: 'Toggle AiON', scope: 'Global' },
+  { keys: 'Cmd/Ctrl + Shift + C', action: 'Capture current page', scope: 'Browser' }
 ]
 
 function getShortcutFromKeyboardEvent(event: KeyboardEvent): AetherShortcutId | null {
@@ -1599,6 +1599,7 @@ function SettingsModal({
         aria-labelledby="settings-title"
         onClick={(event) => event.stopPropagation()}
       >
+        <div className="settings-modal-body">
         <header>
           <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: '18px' }}>
             <GearIcon
@@ -1667,15 +1668,25 @@ function SettingsModal({
             <h2>Shortcuts</h2>
             <p>Editing shortcuts like select all, copy, and paste stay native.</p>
           </div>
-          <div className="settings-shortcut-grid">
-            {SHORTCUT_HELP.map((shortcut) => (
-              <div className="settings-shortcut-row" key={`${shortcut.keys}-${shortcut.action}`}>
-                <kbd>{shortcut.keys}</kbd>
-                <span>{shortcut.action}</span>
-                <small>{shortcut.scope}</small>
+          <div className="settings-shortcut-columns">
+            {(['Browser', 'Global'] as const).map((scope) => (
+              <div className="settings-shortcut-column" key={scope}>
+                <h3>{scope}</h3>
+                <div className="settings-shortcut-list">
+                  {SHORTCUT_HELP.filter((shortcut) => shortcut.scope === scope).map((shortcut) => (
+                    <div
+                      className="settings-shortcut-row"
+                      key={`${shortcut.keys}-${shortcut.action}`}
+                    >
+                      <kbd>{shortcut.keys}</kbd>
+                      <span>{shortcut.action}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
+        </div>
         </div>
       </section>
     </div>

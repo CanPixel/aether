@@ -1493,6 +1493,16 @@ button {
   transform: scale(0.985);
 }
 
+/* Insertion highlight when reordering a source within its own hub. Scoped to the
+   capture list so it overrides the list's flatter card style. */
+.collection-capture-list .recent-card.reorder-target {
+  border-color: rgba(116, 145, 218, 0.5);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.7),
+    0 12px 26px rgba(86, 111, 178, 0.16);
+  transform: translateY(-2px);
+}
+
 .recent-source,
 .recent-card .data-badges {
   display: flex;
@@ -3377,10 +3387,13 @@ button {
   line-height: 1.4;
 }
 
+/* A single comfortably-capped column. Collapsed and expanded hubs share the same
+   width, so opening one grows it in place instead of hopping to a full-width row. */
 .knowledge-band .collection-list {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(250px, 1fr));
-  align-items: start;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 100%;
   max-height: none;
 }
 
@@ -3388,10 +3401,21 @@ button {
   min-width: 0;
 }
 
-/* An expanded hub takes the full row instead of stretching one grid cell — this keeps
-   collapsed siblings tidy (no phantom gaps) and gives capture cards room to breathe. */
-.knowledge-band .collection-accordion.open {
-  grid-column: 1 / -1;
+/* Soft reveal for the captures drawer so the in-place expansion feels calm. */
+.knowledge-band .collection-captures:not([hidden]) {
+  animation: capturesReveal 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes capturesReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .knowledge-band .collection-row {
@@ -5341,10 +5365,10 @@ button {
 .settings-modal {
   width: min(740px, calc(100vw - 56px));
   max-height: calc(100vh - 56px);
-  overflow: auto;
+  /* Clip the inner scroll body so its scrollbar stays inside the rounded corners. */
+  overflow: hidden;
   border: 1px solid rgba(101, 145, 190, 0.24);
   border-radius: 28px;
-  padding: 20px;
   background:
     radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.96), transparent 42%),
     linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(232, 246, 255, 0.88));
@@ -5353,6 +5377,14 @@ button {
     inset 0 1px 0 rgba(255, 255, 255, 0.8);
   transform-origin: center;
   animation: settings-modal-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* The actual scroll surface. Scrolling happens here, one step inside the modal's
+   rounded border, so the scrollbar is clipped by the parent's border-radius. */
+.settings-modal-body {
+  max-height: calc(100vh - 58px);
+  overflow-y: auto;
+  padding: 20px;
 }
 
 @keyframes settings-overlay-in {
@@ -5509,27 +5541,48 @@ button {
   font-size: 11px;
 }
 
-.settings-shortcut-grid {
+.settings-shortcut-columns {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.settings-shortcut-column {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.settings-shortcut-column h3 {
+  margin: 0 0 1px;
+  color: var(--accent-strong);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.settings-shortcut-list {
+  display: grid;
   gap: 7px;
 }
 
 .settings-shortcut-row {
   display: grid;
-  grid-template-columns: minmax(92px, auto) minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
   border: 1px solid rgba(125, 158, 205, 0.16);
   border-radius: 12px;
-  padding: 7px 8px;
+  padding: 7px 10px;
   background: rgba(255, 255, 255, 0.56);
 }
 
 .settings-shortcut-row kbd {
   display: inline-flex;
-  min-width: 0;
+  width: 135px;
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(105, 181, 216, 0.28);
@@ -5545,25 +5598,14 @@ button {
   white-space: nowrap;
 }
 
-.settings-shortcut-row span,
-.settings-shortcut-row small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .settings-shortcut-row span {
+  overflow: hidden;
   color: #24384f;
   font-size: 11px;
   font-weight: 780;
-}
-
-.settings-shortcut-row small {
-  color: #7890a7;
-  font-size: 9px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .empty-state button {
