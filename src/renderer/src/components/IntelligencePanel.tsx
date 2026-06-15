@@ -457,6 +457,24 @@ function LocalModelSettings({
   )
 }
 
+// Build the clipboard text: drop the inline [n] / [1, 2] citation markers from the
+// prose and move the sources to a footnote list, matching the on-screen citation chips.
+function buildAnswerClipboardText(result: ChatResult): string {
+  const body = result.answer
+    .replace(/ ?\[(?:\d+\s*,\s*)*\d+\]/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .trim()
+
+  if (result.citations.length === 0) return body
+
+  const sources = result.citations
+    .map((citation, index) => `[${index + 1}] ${citation.title} - ${getCaptureHost(citation.url)}`)
+    .join('\n')
+
+  return `${body}\n\nSources:\n${sources}`
+}
+
 function AnswerCard({
   result,
   onOpenCitation
@@ -467,7 +485,7 @@ function AnswerCard({
   const [copied, setCopied] = useState(false)
 
   async function copyAnswer(): Promise<void> {
-    await navigator.clipboard.writeText(result.answer)
+    await navigator.clipboard.writeText(buildAnswerClipboardText(result))
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1400)
   }

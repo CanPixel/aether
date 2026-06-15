@@ -1,4 +1,4 @@
-import { CSSProperties, DragEvent, useState, type ComponentType } from 'react'
+import { CSSProperties, DragEvent, useRef, useState, type ComponentType } from 'react'
 import {
   Atom,
   BookOpen,
@@ -96,9 +96,11 @@ export function Dashboard({
   const [dragOverIcebergId, setDragOverIcebergId] = useState('')
   const [draggedCollectionId, setDraggedCollectionId] = useState('')
   const [draggedCapture, setDraggedCapture] = useState<CaptureSummary | null>(null)
-  const [draggedCaptureFrom, setDraggedCaptureFrom] = useState('')
   const [dragOverCaptureId, setDragOverCaptureId] = useState('')
   const [captureOrder, setCaptureOrder] = useState<Record<string, string[]>>({})
+  // Source of an in-flight capture drag. A ref (not state) so the drag handlers read
+  // a synchronously-correct value mid-drag, the way the cross-hub move reads dataTransfer.
+  const captureDragRef = useRef<{ id: string; from: string } | null>(null)
   const [dragOverCollectionId, setDragOverCollectionId] = useState('')
   const aetherMarkSrc = new URL('aether-mark.svg', window.location.href).toString()
   const wavyLinesSrc = new URL('wavy-lines.svg', window.location.href).toString()
@@ -178,19 +180,20 @@ export function Dashboard({
   function reorderCaptureWithin(
     collectionId: string,
     captures: CaptureSummary[],
+    draggedId: string,
     targetId: string
   ): void {
-    if (!draggedCapture || draggedCaptureFrom !== collectionId) return
-    if (draggedCapture.id === targetId) return
+    if (!draggedId || draggedId === targetId) return
 
     const currentIds = orderedCaptures(collectionId, captures).map((capture) => capture.id)
-    const fromIndex = currentIds.indexOf(draggedCapture.id)
-    const toIndex = currentIds.indexOf(targetId)
-    if (fromIndex === -1 || toIndex === -1) return
+    const fromIndex = currentIds.indexOf(draggedId)
+    if (fromIndex === -1) return
 
     const nextIds = [...currentIds]
     const [movedId] = nextIds.splice(fromIndex, 1)
-    nextIds.splice(toIndex, 0, movedId)
+    const targetIndex = targetId ? nextIds.indexOf(targetId) : -1
+    if (targetIndex === -1) nextIds.push(movedId)
+    else nextIds.splice(targetIndex, 0, movedId)
     setCaptureOrder((prev) => ({ ...prev, [collectionId]: nextIds }))
   }
 
@@ -537,59 +540,56 @@ export function Dashboard({
                     {collectionCaptures.length === 0 ? (
                       <div className="empty-row">No captures in this hub yet.</div>
                     ) : (
-                      <div className="collection-capture-list">
+                      <div
+                        className="collection-capture-list"
+                        onDragOver={(event) => {
+                          const info = captureDragRef.current
+                          if (!info || info.from !== collection.id) return
+                          event.preventDefault()
+                          event.dataTransfer.dropEffect = 'move'
+                        }}
+                        onDrop={(event) => {
+                          const info = captureDragRef.current
+                          if (!info || info.from !== collection.id) return
+                          event.preventDefault()
+                          event.stopPropagation()
+                          reorderCaptureWithin(
+                            collection.id,
+                            collectionCaptures,
+                            info.id,
+                            dragOverCaptureId
+                          )
+                          setDragOverCaptureId('')
+                        }}
+                      >
                         {orderedCaptures(collection.id, collectionCaptures).map((capture) => (
                           <CaptureCard
                             capture={capture}
                             collections={getCaptureCollections(capture)}
                             deleteCapture={deleteCapture}
                             dragging={draggedCapture?.id === capture.id}
-                            reorderTarget={
-                              dragOverCaptureId === capture.id &&
-                              draggedCaptureFrom === collection.id &&
-                              draggedCapture?.id !== capture.id
-                            }
+                            reorderTarget={dragOverCaptureId === capture.id}
                             key={capture.id}
                             openCapture={openCapture}
                             onDragEnd={() => {
+                              captureDragRef.current = null
                               setDraggedCapture(null)
-                              setDraggedCaptureFrom('')
                               setDragOverCaptureId('')
                               setDragOverCollectionId('')
                             }}
                             onDragStart={(event) => {
+                              captureDragRef.current = { id: capture.id, from: collection.id }
                               setDraggedCapture(capture)
-                              setDraggedCaptureFrom(collection.id)
                               event.dataTransfer.effectAllowed = 'move'
                               event.dataTransfer.setData('application/x-aether-capture', capture.id)
                               event.dataTransfer.setData('text/plain', capture.title)
                             }}
-                            onReorderEnter={(event) => {
-                              if (
-                                draggedCaptureFrom !== collection.id ||
-                                draggedCapture?.id === capture.id
-                              ) {
+                            onReorderEnter={() => {
+                              const info = captureDragRef.current
+                              if (!info || info.from !== collection.id || info.id === capture.id) {
                                 return
                               }
-                              event.preventDefault()
                               setDragOverCaptureId(capture.id)
-                            }}
-                            onReorderOver={(event) => {
-                              if (
-                                draggedCaptureFrom !== collection.id ||
-                                draggedCapture?.id === capture.id
-                              ) {
-                                return
-                              }
-                              event.preventDefault()
-                              event.dataTransfer.dropEffect = 'move'
-                            }}
-                            onReorderDrop={(event) => {
-                              if (draggedCaptureFrom !== collection.id) return
-                              event.preventDefault()
-                              event.stopPropagation()
-                              reorderCaptureWithin(collection.id, collectionCaptures, capture.id)
-                              setDragOverCaptureId('')
                             }}
                           />
                         ))}
@@ -615,8 +615,6 @@ function CaptureCard({
   onDragEnd,
   onDragStart,
   onReorderEnter,
-  onReorderOver,
-  onReorderDrop,
   openCapture
 }: {
   capture: CaptureSummary
@@ -627,8 +625,6 @@ function CaptureCard({
   onDragEnd: () => void
   onDragStart: (event: DragEvent<HTMLElement>) => void
   onReorderEnter: (event: DragEvent<HTMLElement>) => void
-  onReorderOver: (event: DragEvent<HTMLElement>) => void
-  onReorderDrop: (event: DragEvent<HTMLElement>) => void
   openCapture: (capture: CaptureSummary) => Promise<void>
 }): React.JSX.Element {
   return (
@@ -639,8 +635,6 @@ function CaptureCard({
       draggable
       onDragEnd={onDragEnd}
       onDragEnter={onReorderEnter}
-      onDragOver={onReorderOver}
-      onDrop={onReorderDrop}
       onDragStart={onDragStart}
     >
       <div className="recent-source">
