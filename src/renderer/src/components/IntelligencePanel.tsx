@@ -551,6 +551,14 @@ function renderAnswerMarkdown(
       return
     }
 
+    // A line of 3+ repeated *, -, or _ (optionally spaced) is a thematic break.
+    // Checked before bullets so "* * *" becomes a divider rather than a list item.
+    if (/^(\*{3,}|-{3,}|_{3,})$/.test(trimmed.replace(/\s+/g, ''))) {
+      flushLists()
+      blocks.push(<hr key={`hr-${index}`} className="answer-divider" />)
+      return
+    }
+
     const bullet = /^[-*]\s+(.+)$/.exec(trimmed)
     if (bullet) {
       orderedItems = []
@@ -583,7 +591,7 @@ function renderAnswerMarkdown(
 // is what we hand to the citation anchor to locate the exact span in the source.
 function stripInlineMarkup(text: string): string {
   return text
-    .replace(/\*\*/g, '')
+    .replace(/\*+/g, '')
     .replace(/\[(?:\d+\s*,\s*)*\d+\]/g, ' ')
     .replace(/\\\(|\\\)|\$/g, ' ')
     .replace(/\s+/g, ' ')
@@ -600,7 +608,10 @@ function renderInlineMarkdown(
   // bold spans) inherit it so a citation always carries its full sentence.
   const claim = claimText ?? stripInlineMarkup(text)
   const nodes: React.ReactNode[] = []
-  const pattern = /(\*\*[^*]+\*\*|\$[^$]+\$|\\\([^)]*\\\)|\[(?:\d+\s*,\s*)*\d+\])/g
+  // Bold is matched before italic so ** wins over a single *. The italic arm forbids
+  // a leading space (`*x*`, not `a * b`) to avoid italicising stray multiplication.
+  const pattern =
+    /(\*\*[^*]+\*\*|\*(?!\s)[^*\n]+?\*|\$[^$]+\$|\\\([^)]*\\\)|\[(?:\d+\s*,\s*)*\d+\])/g
   let cursor = 0
   let match: RegExpExecArray | null
 
@@ -615,6 +626,12 @@ function renderInlineMarkdown(
         <strong key={nodes.length}>
           {renderInlineMarkdown(token.slice(2, -2), citations, onOpenCitation, claim)}
         </strong>
+      )
+    } else if (token.startsWith('*') && token.endsWith('*')) {
+      nodes.push(
+        <em key={nodes.length}>
+          {renderInlineMarkdown(token.slice(1, -1), citations, onOpenCitation, claim)}
+        </em>
       )
     } else if (/^\[(?:\d+\s*,\s*)*\d+\]$/.test(token)) {
       const citationNodes = renderCitationToken(
