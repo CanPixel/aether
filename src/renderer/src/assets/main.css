@@ -28,6 +28,7 @@
   --soft-shadow: 0 10px 30px rgba(62, 132, 163, 0.11);
 
   --font-ice: 'Cinzel', 'Cormorant Garamond', Georgia, serif;
+  --font-display: 'Cormorant Garamond', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
 }
 
 html,
@@ -788,6 +789,26 @@ button {
   text-shadow:
     0 0 10px rgba(255, 255, 255, 0.6),
     /* Crisp white core */ 0 0 25px rgba(126, 215, 237, 0.5),
+    /* Mid-tone icy blue mist */ 0 0 50px rgba(58, 146, 196, 0.3); /* Deep ambient arctic haze */
+}
+
+.start-page-hero-copy h1 {
+  font-family: var(--font-display);
+  font-size: 3rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: #000;
+
+  /* Icy Gradient Fill */
+  background: linear-gradient(180deg, #000000 15%, #bbf1fa 90%, #7ed7ed 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+
+  /* Layered Text Glow (Chilled Haze) */
+  text-shadow:
+    0 0 10px rgba(255, 255, 255, 0.2),
+    /* Crisp white core */ 0 0 25px rgba(126, 215, 237, 0.9),
     /* Mid-tone icy blue mist */ 0 0 50px rgba(58, 146, 196, 0.3); /* Deep ambient arctic haze */
 }
 
@@ -3702,6 +3723,7 @@ button {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  user-select: none;
 }
 
 .start-search {

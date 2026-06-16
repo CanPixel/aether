@@ -26,6 +26,9 @@ export function StartPage({
 
   return (
     <div className="start-page">
+      <div className="start-page-hero-copy">
+        <h1>DiSCOVER</h1>
+      </div>
       <div className="start-page-inner">
         <img
           className="wavy-lines-start-page"
