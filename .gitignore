@@ -5,7 +5,7 @@ src-tauri/gen/*
 !src-tauri/gen/android/**
 src-tauri/gen/schemas/
 src-tauri/target
-src-tauri/target-linux-arm64
+src-tauri/target-linux-*
 aether-models/
 .DS_Store
 .eslintcache

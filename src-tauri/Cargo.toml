@@ -16,7 +16,9 @@ tauri-build = { version = "2.5", features = [] }
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
 encoding_rs = "0.8"
-llama-cpp-2 = { version = "0.1.146", default-features = false, features = ["metal", "sampler"] }
+# Metal is added only in the macOS target block below; it is Apple-only and would
+# break Windows/Linux/Android compiles. Off macOS, llama.cpp runs CPU-only.
+llama-cpp-2 = { version = "0.1.146", default-features = false, features = ["sampler"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 scraper = "0.24"
 serde = { version = "1", features = ["derive"] }
@@ -32,6 +34,8 @@ uuid = { version = "1", features = ["v4", "serde"] }
 candle = { package = "candle-core", version = "0.10.2", features = ["accelerate"] }
 candle-nn = { version = "0.10.2", features = ["accelerate"] }
 candle-transformers = { version = "0.10.2", features = ["accelerate"] }
+# Cargo unions features across target tables, so on macOS llama.cpp gets metal + sampler.
+llama-cpp-2 = { version = "0.1.146", default-features = false, features = ["metal"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 candle = { package = "candle-core", version = "0.10.2" }
