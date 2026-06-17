@@ -73,6 +73,18 @@ const DEFAULT_CAPTURE_CHUNK_SIZE: usize = 2200;
 const DEFAULT_CAPTURE_CHUNK_OVERLAP: usize = 240;
 const DEFAULT_SEMANTIC_TRAIL_LIMIT: usize = 12;
 const MAX_SEMANTIC_TRAIL_LIMIT: usize = 24;
+const DEFAULT_FLOW_GRAPH_SOURCE_LIMIT: usize = 140;
+const MAX_FLOW_GRAPH_SOURCE_LIMIT: usize = 260;
+const FLOW_GRAPH_MIN_EDGE_SCORE: f64 = 42.0;
+const FLOW_GRAPH_NEIGHBORS_PER_SOURCE: usize = 4;
+const FLOW_GRAPH_MAX_SEMANTIC_EDGES: usize = 260;
+const FLOW_GRAPH_QUERY_MATCH_LIMIT: usize = 18;
+// Below this semantic score (0-100) a captured chunk is too unrelated to surface in Flow.
+// Keeps weak matches out instead of padding the list with noise.
+const SEMANTIC_TRAIL_MIN_SCORE: f64 = 35.0;
+// Minimum semantic score before we silently pre-select a hub at capture time. Below this we
+// leave the user's manual choice alone rather than risk auto-misfiling the page.
+const CAPTURE_SUGGEST_MIN_SCORE: f64 = 50.0;
 // Sentinel URL for a blank tab that shows the Æther start page in the renderer instead
 // of loading a remote page. Must match START_PAGE_URL in src/renderer/src/App.tsx.
 const START_PAGE_URL: &str = "aether://start";
@@ -424,7 +436,6 @@ struct SemanticTrailRoot {
 enum SemanticTrailReason {
     SemanticMatch,
     RecentCapture,
-    SameHost,
     SameCollection,
 }
 
@@ -442,7 +453,6 @@ struct SemanticTrailScoreBreakdown {
     total: f64,
     semantic: f64,
     recency: f64,
-    host_affinity: f64,
 }
 
 #[derive(Clone, Serialize)]
@@ -474,12 +484,85 @@ struct SemanticTrailEdge {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct CaptureHubSuggestion {
+    collection_id: String,
+    collection_name: String,
+    confidence: f64,
+    sample_title: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SemanticTrailResult {
     query: String,
     generated_at: String,
     root: SemanticTrailRoot,
     items: Vec<SemanticTrailItem>,
     edges: Vec<SemanticTrailEdge>,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FlowGraphNodeKind {
+    Query,
+    Hub,
+    Source,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FlowGraphEdgeKind {
+    Contains,
+    Semantic,
+    QueryMatch,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlowGraphNode {
+    id: String,
+    kind: FlowGraphNodeKind,
+    title: String,
+    subtitle: String,
+    weight: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    collection_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    collection_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    captured_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    excerpt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    score: Option<f64>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlowGraphEdge {
+    id: String,
+    from: String,
+    to: String,
+    kind: FlowGraphEdgeKind,
+    weight: f64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlowGraphResult {
+    query: String,
+    generated_at: String,
+    nodes: Vec<FlowGraphNode>,
+    edges: Vec<FlowGraphEdge>,
+    hub_count: usize,
+    source_count: usize,
+    omitted_source_count: usize,
 }
 
 #[derive(Clone, Serialize)]
@@ -684,6 +767,13 @@ struct SearchCollectionInput {
 struct SemanticTrailInput {
     query: Option<String>,
     limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FlowGraphInput {
+    query: Option<String>,
+    source_limit: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -2013,8 +2103,10 @@ pub fn run() {
             aether_capture_current_page,
             aether_capture_move,
             aether_capture_delete,
+            aether_capture_suggest_hub,
             aether_search_collection,
             aether_semantic_trail_generate,
+            aether_flow_graph,
             aether_chat_ask,
             aether_chat_cancel,
             aether_crystallizer_generate,
@@ -2758,11 +2850,36 @@ async fn aether_semantic_trail_generate(
     state: State<'_, Backend>,
     input: Option<SemanticTrailInput>,
 ) -> Cmd<SemanticTrailResult> {
-    semantic_trail_generate(&state, input.unwrap_or(SemanticTrailInput {
-        query: None,
-        limit: None,
-    }))
+    semantic_trail_generate(
+        &state,
+        input.unwrap_or(SemanticTrailInput {
+            query: None,
+            limit: None,
+        }),
+    )
     .await
+}
+
+#[tauri::command]
+async fn aether_flow_graph(
+    state: State<'_, Backend>,
+    input: Option<FlowGraphInput>,
+) -> Cmd<FlowGraphResult> {
+    flow_graph_generate(
+        &state,
+        input.unwrap_or(FlowGraphInput {
+            query: None,
+            source_limit: None,
+        }),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn aether_capture_suggest_hub(
+    state: State<'_, Backend>,
+) -> Cmd<Option<CaptureHubSuggestion>> {
+    suggest_capture_hub(&state).await
 }
 
 #[tauri::command]
@@ -3115,6 +3232,20 @@ struct SemanticTrailChunkCandidate {
     reasons: Vec<SemanticTrailReason>,
 }
 
+#[derive(Clone)]
+struct FlowSourceCandidate {
+    capture: CaptureSummary,
+    collection_name: String,
+    vector: Vec<f32>,
+    excerpt: String,
+}
+
+struct FlowEdgeCandidate {
+    from: String,
+    to: String,
+    weight: f64,
+}
+
 async fn semantic_trail_generate(
     state: &State<'_, Backend>,
     input: SemanticTrailInput,
@@ -3191,10 +3322,11 @@ async fn semantic_trail_generate(
             if !distance.is_finite() {
                 return None;
             }
-            let chunk_host = get_tab_host(&chunk.url);
             let same_collection = root_collection_ids.contains(&chunk.collection_id);
-            let score =
-                semantic_trail_score_breakdown(distance, &chunk.captured_at, &root_host, &chunk_host);
+            let score = semantic_trail_score_breakdown(distance, &chunk.captured_at);
+            if score.semantic < SEMANTIC_TRAIL_MIN_SCORE {
+                return None;
+            }
             let reasons = semantic_trail_reasons(&score, same_collection);
             let collection_name = collection_names
                 .get(&chunk.collection_id)
@@ -3234,6 +3366,378 @@ async fn semantic_trail_generate(
         items,
         edges,
     })
+}
+
+// Rank the user's hubs against the active page so capture can silently pre-select the best
+// home for it. Best-effort: any reason we cannot produce a confident match returns Ok(None)
+// rather than an error, so a failed suggestion never blocks or interrupts capturing.
+async fn suggest_capture_hub(
+    state: &State<'_, Backend>,
+) -> Cmd<Option<CaptureHubSuggestion>> {
+    let active_tab = {
+        let tabs = lock_tabs(state)?;
+        if tabs.dashboard_open {
+            return Ok(None);
+        }
+        match tabs.active_tab().cloned() {
+            Some(tab) => tab,
+            None => return Ok(None),
+        }
+    };
+
+    let captured = match extract_readable_active_page(state, &active_tab).await {
+        Ok(page) => page,
+        Err(_) => return Ok(None),
+    };
+
+    let library = load_library(&state.paths.library_path).await?;
+    if library.collections.is_empty() {
+        return Ok(None);
+    }
+    let chunks = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
+    if chunks.is_empty() {
+        return Ok(None);
+    }
+
+    let settings = load_settings(&state.paths.settings_path).await?;
+    let embedding_query = semantic_trail_default_query(&captured);
+    let query_vector = match local_embed(state, &settings, vec![embedding_query]).await {
+        Ok(vectors) => match vectors.into_iter().next() {
+            Some(vector) => vector,
+            None => return Ok(None),
+        },
+        Err(_) => return Ok(None),
+    };
+
+    // A hub is a strong home for this page if it already holds a source whose meaning is
+    // close to it, so score each hub by its single closest chunk.
+    let mut best_by_collection: HashMap<String, (f64, String)> = HashMap::new();
+    for chunk in &chunks {
+        let distance = cosine_distance(&query_vector, &chunk.vector);
+        if !distance.is_finite() {
+            continue;
+        }
+        let semantic = semantic_score_from_distance(distance);
+        let entry = best_by_collection
+            .entry(chunk.collection_id.clone())
+            .or_insert((0.0, String::new()));
+        if semantic > entry.0 {
+            entry.0 = semantic;
+            entry.1 = chunk.title.clone();
+        }
+    }
+
+    let Some((collection_id, (confidence, sample_title))) =
+        best_by_collection.into_iter().max_by(|left, right| {
+            left.1.0.partial_cmp(&right.1.0).unwrap_or(Ordering::Equal)
+        })
+    else {
+        return Ok(None);
+    };
+
+    if confidence < CAPTURE_SUGGEST_MIN_SCORE {
+        return Ok(None);
+    }
+
+    let collection_name = library
+        .collections
+        .iter()
+        .find(|collection| collection.id == collection_id)
+        .map(|collection| collection.name.clone())
+        .unwrap_or_else(|| "Knowledge Hub".to_string());
+
+    Ok(Some(CaptureHubSuggestion {
+        collection_id,
+        collection_name,
+        confidence: round_score(confidence),
+        sample_title,
+    }))
+}
+
+async fn flow_graph_generate(
+    state: &State<'_, Backend>,
+    input: FlowGraphInput,
+) -> Cmd<FlowGraphResult> {
+    let query = input.query.unwrap_or_default().trim().to_string();
+    let source_limit = input
+        .source_limit
+        .unwrap_or(DEFAULT_FLOW_GRAPH_SOURCE_LIMIT)
+        .clamp(1, MAX_FLOW_GRAPH_SOURCE_LIMIT);
+    let library = load_library(&state.paths.library_path).await?;
+    let collection_names = library
+        .collections
+        .iter()
+        .map(|collection| (collection.id.clone(), collection.name.clone()))
+        .collect::<HashMap<_, _>>();
+    let chunks = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
+    let mut chunks_by_capture = HashMap::<String, Vec<ChunkRecord>>::new();
+    for chunk in chunks {
+        chunks_by_capture
+            .entry(chunk.capture_id.clone())
+            .or_default()
+            .push(chunk);
+    }
+
+    let mut captures = library.captures.clone();
+    captures.sort_by(|left, right| right.captured_at.cmp(&left.captured_at));
+    let indexed_source_count = captures
+        .iter()
+        .filter(|capture| chunks_by_capture.contains_key(&capture.id))
+        .count();
+    let mut sources = Vec::<FlowSourceCandidate>::new();
+    for capture in captures {
+        if sources.len() >= source_limit {
+            break;
+        }
+        let Some(chunks) = chunks_by_capture.get(&capture.id) else {
+            continue;
+        };
+        let Some(vector) = average_flow_source_vector(chunks) else {
+            continue;
+        };
+        let collection_name = collection_names
+            .get(&capture.collection_id)
+            .cloned()
+            .unwrap_or_else(|| "Knowledge Hub".to_string());
+        let excerpt = chunks
+            .iter()
+            .max_by_key(|chunk| chunk.text.chars().count())
+            .map(|chunk| semantic_trail_excerpt(&chunk.text, 300))
+            .unwrap_or_default();
+        sources.push(FlowSourceCandidate {
+            capture,
+            collection_name,
+            vector,
+            excerpt,
+        });
+    }
+
+    let query_scores = if query.is_empty() || sources.is_empty() {
+        HashMap::new()
+    } else {
+        let settings = load_settings(&state.paths.settings_path).await?;
+        let query_vector = local_embed(state, &settings, vec![query.clone()])
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "Local embedding model returned no embedding.".to_string())?;
+        sources
+            .iter()
+            .map(|source| {
+                let distance = cosine_distance(&query_vector, &source.vector);
+                (
+                    flow_source_node_id(&source.capture.id),
+                    semantic_score_from_distance(distance),
+                )
+            })
+            .filter(|(_, score)| score.is_finite())
+            .collect::<HashMap<_, _>>()
+    };
+
+    let mut nodes = Vec::<FlowGraphNode>::new();
+    if !query.is_empty() {
+        nodes.push(FlowGraphNode {
+            id: "query".to_string(),
+            kind: FlowGraphNodeKind::Query,
+            title: query.clone(),
+            subtitle: "Semantic search lens".to_string(),
+            weight: 72.0,
+            collection_id: None,
+            collection_name: None,
+            capture_id: None,
+            url: None,
+            host: None,
+            captured_at: None,
+            excerpt: None,
+            score: None,
+        });
+    }
+
+    for collection in &library.collections {
+        nodes.push(FlowGraphNode {
+            id: flow_hub_node_id(&collection.id),
+            kind: FlowGraphNodeKind::Hub,
+            title: collection.name.clone(),
+            subtitle: format!(
+                "{} sources · {} chunks",
+                collection.capture_count, collection.chunk_count
+            ),
+            weight: (42.0 + (collection.capture_count as f64 * 7.0)).min(92.0),
+            collection_id: Some(collection.id.clone()),
+            collection_name: Some(collection.name.clone()),
+            capture_id: None,
+            url: None,
+            host: None,
+            captured_at: Some(collection.updated_at.clone()),
+            excerpt: Some(collection.description.clone())
+                .filter(|description| !description.is_empty()),
+            score: None,
+        });
+    }
+
+    for source in &sources {
+        let node_id = flow_source_node_id(&source.capture.id);
+        nodes.push(FlowGraphNode {
+            id: node_id.clone(),
+            kind: FlowGraphNodeKind::Source,
+            title: source.capture.title.clone(),
+            subtitle: source.collection_name.clone(),
+            weight: (24.0 + (source.capture.chunk_count as f64 * 2.0)).min(58.0),
+            collection_id: Some(source.capture.collection_id.clone()),
+            collection_name: Some(source.collection_name.clone()),
+            capture_id: Some(source.capture.id.clone()),
+            url: Some(source.capture.url.clone()),
+            host: Some(get_tab_host(&source.capture.url)),
+            captured_at: Some(source.capture.captured_at.clone()),
+            excerpt: Some(source.excerpt.clone()).filter(|excerpt| !excerpt.is_empty()),
+            score: query_scores.get(&node_id).copied().map(round_score),
+        });
+    }
+
+    let mut edges = Vec::<FlowGraphEdge>::new();
+    for source in &sources {
+        push_flow_graph_edge(
+            &mut edges,
+            &flow_hub_node_id(&source.capture.collection_id),
+            &flow_source_node_id(&source.capture.id),
+            FlowGraphEdgeKind::Contains,
+            36.0,
+        );
+    }
+
+    if !query_scores.is_empty() {
+        let mut matches = query_scores.iter().collect::<Vec<_>>();
+        matches.sort_by(|left, right| right.1.partial_cmp(left.1).unwrap_or(Ordering::Equal));
+        for (node_id, score) in matches.into_iter().take(FLOW_GRAPH_QUERY_MATCH_LIMIT) {
+            if *score >= FLOW_GRAPH_MIN_EDGE_SCORE {
+                push_flow_graph_edge(
+                    &mut edges,
+                    "query",
+                    node_id,
+                    FlowGraphEdgeKind::QueryMatch,
+                    *score,
+                );
+            }
+        }
+    }
+
+    let mut semantic_edges = Vec::<FlowEdgeCandidate>::new();
+    for left_index in 0..sources.len() {
+        for right_index in (left_index + 1)..sources.len() {
+            let left = &sources[left_index];
+            let right = &sources[right_index];
+            let distance = cosine_distance(&left.vector, &right.vector);
+            let weight = semantic_score_from_distance(distance);
+            if weight >= FLOW_GRAPH_MIN_EDGE_SCORE {
+                semantic_edges.push(FlowEdgeCandidate {
+                    from: flow_source_node_id(&left.capture.id),
+                    to: flow_source_node_id(&right.capture.id),
+                    weight,
+                });
+            }
+        }
+    }
+    semantic_edges.sort_by(|left, right| {
+        right
+            .weight
+            .partial_cmp(&left.weight)
+            .unwrap_or(Ordering::Equal)
+    });
+    let mut neighbor_counts = HashMap::<String, usize>::new();
+    let mut semantic_edge_count = 0_usize;
+    for candidate in semantic_edges {
+        if semantic_edge_count >= FLOW_GRAPH_MAX_SEMANTIC_EDGES {
+            break;
+        }
+        let left_count = *neighbor_counts.get(&candidate.from).unwrap_or(&0);
+        let right_count = *neighbor_counts.get(&candidate.to).unwrap_or(&0);
+        if left_count >= FLOW_GRAPH_NEIGHBORS_PER_SOURCE
+            || right_count >= FLOW_GRAPH_NEIGHBORS_PER_SOURCE
+        {
+            continue;
+        }
+        push_flow_graph_edge(
+            &mut edges,
+            &candidate.from,
+            &candidate.to,
+            FlowGraphEdgeKind::Semantic,
+            candidate.weight,
+        );
+        semantic_edge_count += 1;
+        *neighbor_counts.entry(candidate.from).or_insert(0) += 1;
+        *neighbor_counts.entry(candidate.to).or_insert(0) += 1;
+    }
+
+    Ok(FlowGraphResult {
+        query,
+        generated_at: now(),
+        nodes,
+        edges,
+        hub_count: library.collections.len(),
+        source_count: sources.len(),
+        omitted_source_count: indexed_source_count.saturating_sub(sources.len()),
+    })
+}
+
+fn average_flow_source_vector(chunks: &[ChunkRecord]) -> Option<Vec<f32>> {
+    let first = chunks.first()?;
+    let dimensions = first.vector.len();
+    if dimensions == 0 {
+        return None;
+    }
+    let mut total = vec![0.0_f32; dimensions];
+    let mut count = 0.0_f32;
+    for chunk in chunks {
+        if chunk.vector.len() != dimensions {
+            continue;
+        }
+        for (index, value) in chunk.vector.iter().enumerate() {
+            total[index] += *value;
+        }
+        count += 1.0;
+    }
+    if count == 0.0 {
+        return None;
+    }
+    for value in &mut total {
+        *value /= count;
+    }
+    Some(normalize_embedding(&total))
+}
+
+fn flow_hub_node_id(collection_id: &str) -> String {
+    format!("hub-{collection_id}")
+}
+
+fn flow_source_node_id(capture_id: &str) -> String {
+    format!("source-{capture_id}")
+}
+
+fn push_flow_graph_edge(
+    edges: &mut Vec<FlowGraphEdge>,
+    from: &str,
+    to: &str,
+    kind: FlowGraphEdgeKind,
+    weight: f64,
+) {
+    if from == to {
+        return;
+    }
+    edges.push(FlowGraphEdge {
+        id: format!("{}-{from}-{to}", flow_edge_kind_label(kind)),
+        from: from.to_string(),
+        to: to.to_string(),
+        kind,
+        weight: round_score(weight),
+    });
+}
+
+fn flow_edge_kind_label(kind: FlowGraphEdgeKind) -> &'static str {
+    match kind {
+        FlowGraphEdgeKind::Contains => "contains",
+        FlowGraphEdgeKind::Semantic => "semantic",
+        FlowGraphEdgeKind::QueryMatch => "query",
+    }
 }
 
 fn semantic_trail_default_query(captured: &CapturedPage) -> String {
@@ -3290,19 +3794,17 @@ fn semantic_trail_items(
 fn semantic_trail_score_breakdown(
     distance: f64,
     captured_at: &str,
-    root_host: &str,
-    source_host: &str,
 ) -> SemanticTrailScoreBreakdown {
+    // Relatedness is about meaning across the whole library, regardless of where a source
+    // came from. Semantic similarity dominates; recency is only a gentle tiebreaker.
     let semantic = semantic_score_from_distance(distance);
     let recency = semantic_trail_recency_score(captured_at);
-    let host_affinity = semantic_trail_host_affinity(root_host, source_host);
-    let total = round_score((semantic * 0.78) + (recency * 0.14) + (host_affinity * 0.08));
+    let total = round_score((semantic * 0.92) + (recency * 0.08));
 
     SemanticTrailScoreBreakdown {
         total,
         semantic,
         recency,
-        host_affinity,
     }
 }
 
@@ -3331,14 +3833,6 @@ fn semantic_trail_recency_score(captured_at: &str) -> f64 {
     }
 }
 
-fn semantic_trail_host_affinity(root_host: &str, source_host: &str) -> f64 {
-    if !root_host.is_empty() && root_host == source_host {
-        100.0
-    } else {
-        0.0
-    }
-}
-
 fn semantic_trail_reasons(
     score: &SemanticTrailScoreBreakdown,
     same_collection: bool,
@@ -3349,9 +3843,6 @@ fn semantic_trail_reasons(
     }
     if score.recency >= 80.0 {
         reasons.push(SemanticTrailReason::RecentCapture);
-    }
-    if score.host_affinity > 0.0 {
-        reasons.push(SemanticTrailReason::SameHost);
     }
     if same_collection {
         reasons.push(SemanticTrailReason::SameCollection);
@@ -3381,7 +3872,7 @@ fn semantic_trail_edges(
                 "root",
                 &item.id,
                 SemanticTrailEdgeKind::SameHost,
-                item.score.host_affinity,
+                item.score.total,
             );
         }
     }
@@ -5684,7 +6175,6 @@ mod tests {
             total: 88.0,
             semantic: 70.0,
             recency: 80.0,
-            host_affinity: 100.0,
         };
 
         assert_eq!(
@@ -5692,7 +6182,6 @@ mod tests {
             vec![
                 SemanticTrailReason::SemanticMatch,
                 SemanticTrailReason::RecentCapture,
-                SemanticTrailReason::SameHost,
                 SemanticTrailReason::SameCollection,
             ]
         );
@@ -5722,7 +6211,6 @@ mod tests {
                 total,
                 semantic: total,
                 recency: 50.0,
-                host_affinity: 0.0,
             },
             reasons,
         }

@@ -7,6 +7,7 @@ import {
   AppSettings,
   AppSummary,
   BrowserTabSummary,
+  CaptureHubSuggestion,
   CaptureProgress,
   CaptureResult,
   CaptureSummary,
@@ -14,6 +15,7 @@ import {
   ChatStreamEvent,
   CollectionSummary,
   FindResult,
+  FlowGraphResult,
   HubShortcutSummary,
   IcebergResult,
   SaveIcebergInput,
@@ -72,13 +74,17 @@ if (isTauri) {
     capture: {
       currentPage: (input) => call<CaptureResult>('aether_capture_current_page', { input }),
       move: (input) => call<CaptureSummary>('aether_capture_move', { input }),
-      delete: (captureId) => call<void>('aether_capture_delete', { captureId })
+      delete: (captureId) => call<void>('aether_capture_delete', { captureId }),
+      suggestHub: () => call<CaptureHubSuggestion | null>('aether_capture_suggest_hub')
     },
     search: {
       collection: (input) => call<SearchResult[]>('aether_search_collection', { input })
     },
     semanticTrail: {
       generate: (input) => call<SemanticTrailResult>('aether_semantic_trail_generate', { input })
+    },
+    flow: {
+      graph: (input) => call<FlowGraphResult>('aether_flow_graph', { input })
     },
     chat: {
       ask: (input) => call<ChatResult>('aether_chat_ask', { input }),
