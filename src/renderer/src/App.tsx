@@ -1498,17 +1498,6 @@ function App(): React.JSX.Element {
             <span className="app-dot" aria-hidden="true" />
           </button>
           <button
-            className={`app-button flow-button tooltip-host ${flowOpen ? 'active' : ''}`}
-            data-tooltip="Flow"
-            data-tooltip-side="right"
-            onClick={openFlow}
-            title="Flow"
-            type="button"
-          >
-            <Waves />
-            <span className="app-dot" aria-hidden="true" />
-          </button>
-          <button
             className={`app-button tooltip-host ${!dashboardOpen ? 'active' : ''}`}
             data-tooltip='Discover'
             data-tooltip-side='right'
@@ -1517,6 +1506,17 @@ function App(): React.JSX.Element {
             type="button"
           >
             <GlobeIcon />
+            <span className="app-dot" aria-hidden="true" />
+          </button>
+          <button
+            className={`app-button flow-button tooltip-host ${flowOpen ? 'active' : ''}`}
+            data-tooltip="Flow"
+            data-tooltip-side="right"
+            onClick={openFlow}
+            title="Flow"
+            type="button"
+          >
+            <Waves />
             <span className="app-dot" aria-hidden="true" />
           </button>
         </nav>
@@ -1544,7 +1544,7 @@ function App(): React.JSX.Element {
             crystallizerOpen
               ? 'Info Crystallizer Engine'
               : flowOpen
-                ? 'Semantic Relationship Graph'
+                ? 'Semantic Relation Flow'
                 : 'Knowledge Gatherer'
           }
           dashboardTitle={crystallizerOpen ? 'iCE' : flowOpen ? 'Flow' : 'ÆTHER'}

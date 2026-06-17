@@ -1,4 +1,12 @@
-import { CSSProperties, FormEvent, useMemo, useState } from 'react'
+import {
+  CSSProperties,
+  FormEvent,
+  PointerEvent as ReactPointerEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 import {
   CollectionSummary,
   FlowGraphEdge,
@@ -13,21 +21,39 @@ const CANVAS_WIDTH = 1120
 const CANVAS_HEIGHT = 640
 const CENTER_X = CANVAS_WIDTH / 2
 const CENTER_Y = CANVAS_HEIGHT / 2
+const MATCH_LIST_LIMIT = 8
 
-type PositionedFlowNode = FlowGraphNode & {
+// Force-simulation tuning. Velocity is hard-capped (MAX_VELOCITY) so the system can never
+// explode regardless of constants; ALPHA_FLOOR keeps a little perpetual energy so the graph
+// breathes like water rather than freezing solid once it settles.
+const REPULSION = 2400
+const REPULSION_CAP = 5
+const DAMPING = 0.84
+const MAX_VELOCITY = 6
+const ALPHA_DECAY = 0.99
+const ALPHA_FLOOR = 0.06
+const AMBIENT = 0.016
+
+type SimNode = {
+  id: string
+  radius: number
   x: number
   y: number
-  radius: number
+  vx: number
+  vy: number
+  fx: number | null
+  fy: number | null
+  phase: number
+  isQuery: boolean
 }
 
-type PositionedFlowEdge = FlowGraphEdge & {
-  fromNode?: PositionedFlowNode
-  toNode?: PositionedFlowNode
-}
-
-type FlowLayout = {
-  nodes: PositionedFlowNode[]
-  edges: PositionedFlowEdge[]
+type SimEdge = {
+  id: string
+  from: string
+  to: string
+  rest: number
+  strength: number
+  bend: number
 }
 
 type FlowViewProps = {
@@ -54,23 +80,140 @@ export function FlowView({
   onQueryChange
 }: FlowViewProps): React.JSX.Element {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const layout = useMemo(() => buildFlowLayout(result), [result])
+
+  const svgRef = useRef<SVGSVGElement | null>(null)
+  const simNodesRef = useRef<SimNode[]>([])
+  const simIndexRef = useRef<Map<string, SimNode>>(new Map())
+  const simEdgesRef = useRef<SimEdge[]>([])
+  const nodeElsRef = useRef<Map<string, SVGGElement>>(new Map())
+  const edgeElsRef = useRef<Map<string, SVGPathElement>>(new Map())
+  const alphaRef = useRef(1)
+  const rafRef = useRef<number | null>(null)
+  const draggingRef = useRef<string | null>(null)
+
   const selectedNode =
-    layout.nodes.find((node) => node.id === selectedNodeId) ??
-    layout.nodes.find((node) => node.kind === 'query') ??
-    layout.nodes.find((node) => node.kind === 'hub') ??
-    layout.nodes[0]
+    result?.nodes.find((node) => node.id === selectedNodeId) ??
+    result?.nodes.find((node) => node.kind === 'query') ??
+    result?.nodes.find((node) => node.kind === 'hub') ??
+    result?.nodes[0]
+
   const connectedNodeIds = useMemo(() => {
-    if (!selectedNode) return new Set<string>()
+    if (!selectedNode || !result) return new Set<string>()
     const ids = new Set<string>([selectedNode.id])
-    for (const edge of layout.edges) {
+    for (const edge of result.edges) {
       if (edge.from === selectedNode.id) ids.add(edge.to)
       if (edge.to === selectedNode.id) ids.add(edge.from)
     }
     return ids
-  }, [layout.edges, selectedNode])
-  const indexedSources = result?.sourceCount ?? collections.reduce((sum, item) => sum + item.captureCount, 0)
+  }, [result, selectedNode])
+
+  // Sources ranked by how closely they match the typed query — the sidebar Flow's "matched
+  // results", surfaced here as a readable, comprehensive list rather than just nudged dots.
+  const matchedSources = useMemo(() => {
+    if (!result || result.query.trim().length === 0) return []
+    return result.nodes
+      .filter((node) => node.kind === 'source' && typeof node.score === 'number')
+      .sort((left, right) => (right.score ?? 0) - (left.score ?? 0))
+      .slice(0, MATCH_LIST_LIMIT)
+  }, [result])
+  const matchedIds = useMemo(() => new Set(matchedSources.map((node) => node.id)), [matchedSources])
+
+  const indexedSources =
+    result?.sourceCount ?? collections.reduce((sum, item) => sum + item.captureCount, 0)
   const graphBlocked = Boolean(busy) || (!status?.embeddingModel && query.trim().length > 0)
+
+  // Build (or rebuild) the physics model whenever the graph data changes, carrying over the
+  // positions of nodes that persist so re-querying glides instead of snapping, then run the
+  // animation loop for as long as this view is mounted.
+  useLayoutEffect(() => {
+    if (!result) {
+      simNodesRef.current = []
+      simIndexRef.current = new Map()
+      simEdgesRef.current = []
+      return
+    }
+
+    const previous = new Map(simNodesRef.current.map((node) => [node.id, node]))
+    const { nodes, edges } = buildSimulation(result, previous)
+    simNodesRef.current = nodes
+    simIndexRef.current = new Map(nodes.map((node) => [node.id, node]))
+    simEdgesRef.current = edges
+    alphaRef.current = 1
+    writeNodePositions(nodes, nodeElsRef.current)
+    writeEdgePaths(edges, simIndexRef.current, edgeElsRef.current)
+
+    const reduceMotion =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+    function tick(now: number): void {
+      stepSimulation(simNodesRef.current, simEdgesRef.current, simIndexRef.current, alphaRef, now, Boolean(reduceMotion))
+      writeNodePositions(simNodesRef.current, nodeElsRef.current)
+      writeEdgePaths(simEdgesRef.current, simIndexRef.current, edgeElsRef.current)
+      if (reduceMotion && alphaRef.current <= ALPHA_FLOOR + 0.001 && draggingRef.current === null) {
+        rafRef.current = null
+        return
+      }
+      rafRef.current = requestAnimationFrame(tick)
+    }
+
+    rafRef.current = requestAnimationFrame(tick)
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      rafRef.current = null
+    }
+  }, [result])
+
+  function toSvgPoint(clientX: number, clientY: number): { x: number; y: number } {
+    const svg = svgRef.current
+    if (!svg) return { x: CENTER_X, y: CENTER_Y }
+    const point = svg.createSVGPoint()
+    point.x = clientX
+    point.y = clientY
+    const ctm = svg.getScreenCTM()
+    if (!ctm) return { x: CENTER_X, y: CENTER_Y }
+    const mapped = point.matrixTransform(ctm.inverse())
+    return { x: mapped.x, y: mapped.y }
+  }
+
+  function reheat(value: number): void {
+    alphaRef.current = Math.max(alphaRef.current, value)
+  }
+
+  function handleNodePointerDown(event: ReactPointerEvent<SVGGElement>, id: string): void {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    draggingRef.current = id
+    setSelectedNodeId(id)
+    const node = simIndexRef.current.get(id)
+    if (node) {
+      node.fx = node.x
+      node.fy = node.y
+    }
+    reheat(0.7)
+  }
+
+  function handleNodePointerMove(event: ReactPointerEvent<SVGGElement>, id: string): void {
+    if (draggingRef.current !== id) return
+    const node = simIndexRef.current.get(id)
+    if (!node) return
+    const point = toSvgPoint(event.clientX, event.clientY)
+    node.fx = point.x
+    node.fy = point.y
+    reheat(0.6)
+  }
+
+  function handleNodePointerUp(event: ReactPointerEvent<SVGGElement>, id: string): void {
+    if (draggingRef.current !== id) return
+    const node = simIndexRef.current.get(id)
+    if (node) {
+      node.fx = null
+      node.fy = null
+    }
+    draggingRef.current = null
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    reheat(0.5)
+  }
 
   async function submitSearch(event: FormEvent): Promise<void> {
     event.preventDefault()
@@ -81,6 +224,21 @@ export function FlowView({
     const nextQuery = node.kind === 'hub' ? node.title : node.title || node.subtitle
     onQueryChange(nextQuery)
     await onBuildGraph(nextQuery)
+  }
+
+  const registerNode = (id: string) => (element: SVGGElement | null): void => {
+    if (element) {
+      nodeElsRef.current.set(id, element)
+      const node = simIndexRef.current.get(id)
+      if (node) element.setAttribute('transform', `translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})`)
+    } else {
+      nodeElsRef.current.delete(id)
+    }
+  }
+
+  const registerEdge = (id: string) => (element: SVGPathElement | null): void => {
+    if (element) edgeElsRef.current.set(id, element)
+    else edgeElsRef.current.delete(id)
   }
 
   return (
@@ -111,9 +269,10 @@ export function FlowView({
 
       <section className="flow-stage" aria-label="Semantic Flow graph">
         <div className="flow-canvas">
-          {result && layout.nodes.length > 0 ? (
+          {result && result.nodes.length > 0 ? (
             <svg
               className="flow-graph"
+              ref={svgRef}
               role="img"
               viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
               aria-label={`${result.sourceCount} captured sources across ${result.hubCount} hubs`}
@@ -148,33 +307,36 @@ export function FlowView({
                 ))}
               </g>
               <g className="flow-edges">
-                {layout.edges.map((edge, index) => {
-                  if (!edge.fromNode || !edge.toNode) return null
+                {result.edges.map((edge) => {
                   const selected = selectedNode
                     ? edge.from === selectedNode.id || edge.to === selectedNode.id
                     : false
                   return (
                     <path
                       className={`flow-edge ${edge.kind} ${selected ? 'selected' : ''}`}
-                      d={edgePath(edge.fromNode, edge.toNode, index)}
                       key={edge.id}
+                      ref={registerEdge(edge.id)}
                       style={{ '--edge-strength': edge.weight / 100 } as CSSProperties}
                     />
                   )
                 })}
               </g>
               <g className="flow-nodes">
-                {layout.nodes.map((node) => {
+                {result.nodes.map((node) => {
                   const selected = selectedNode?.id === node.id
                   const muted = selectedNode ? !connectedNodeIds.has(node.id) : false
+                  const matched = node.kind === 'source' && matchedIds.has(node.id)
+                  const radius = nodeRadius(node)
                   return (
                     <g
-                      className={`flow-node ${node.kind} ${selected ? 'selected' : ''} ${muted ? 'muted' : ''}`}
+                      className={`flow-node ${node.kind} ${selected ? 'selected' : ''} ${muted ? 'muted' : ''} ${matched ? 'matched' : ''}`}
                       key={node.id}
+                      ref={registerNode(node.id)}
                       role="button"
                       tabIndex={0}
-                      transform={`translate(${node.x} ${node.y})`}
-                      onClick={() => setSelectedNodeId(node.id)}
+                      onPointerDown={(event) => handleNodePointerDown(event, node.id)}
+                      onPointerMove={(event) => handleNodePointerMove(event, node.id)}
+                      onPointerUp={(event) => handleNodePointerUp(event, node.id)}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
@@ -182,10 +344,10 @@ export function FlowView({
                         }
                       }}
                     >
-                      <circle className="flow-node-aura" r={node.radius + 10} />
-                      <circle className="flow-node-core" r={node.radius} />
-                      {node.kind !== 'source' && (
-                        <text className="flow-node-label" y={node.radius + 18}>
+                      <circle className="flow-node-aura" r={radius + 10} />
+                      <circle className="flow-node-core" r={radius} />
+                      {(node.kind !== 'source' || matched) && (
+                        <text className="flow-node-label" y={radius + 18}>
                           {shortenNodeTitle(node.title)}
                         </text>
                       )}
@@ -244,18 +406,34 @@ export function FlowView({
             </div>
           )}
 
-          <div className="flow-recommendations">
-            <strong>Click options</strong>
-            <button disabled type="button">
-              Open a source
-            </button>
-            <button disabled type="button">
-              Focus the graph from this node
-            </button>
-            <button disabled type="button">
-              Ask AiON from this neighborhood
-            </button>
-          </div>
+          {matchedSources.length > 0 ? (
+            <div className="flow-matches">
+              <strong>
+                {matchedSources.length} {matchedSources.length === 1 ? 'match' : 'matches'} for “
+                {result?.query}”
+              </strong>
+              <div className="flow-match-list">
+                {matchedSources.map((node) => (
+                  <FlowMatchCard
+                    active={selectedNode?.id === node.id}
+                    key={node.id}
+                    node={node}
+                    onOpen={() => onOpenSource(node)}
+                    onSelect={() => setSelectedNodeId(node.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flow-recommendations">
+              <strong>Connect concepts</strong>
+              <span className="flow-hint">
+                {result?.query
+                  ? 'No strong matches yet — try a broader topic, or capture more sources.'
+                  : 'Type a topic and Map to rank every source by how closely it matches.'}
+              </span>
+            </div>
+          )}
 
           {result?.omittedSourceCount ? (
             <div className="flow-omitted">
@@ -265,6 +443,70 @@ export function FlowView({
         </aside>
       </section>
     </div>
+  )
+}
+
+function FlowMatchCard({
+  active,
+  node,
+  onOpen,
+  onSelect
+}: {
+  active: boolean
+  node: FlowGraphNode
+  onOpen: () => Promise<void>
+  onSelect: () => void
+}): React.JSX.Element {
+  const score = node.score ?? 0
+  const host = node.host || (node.url ? getCaptureHost(node.url) : '')
+
+  return (
+    <button
+      className={`flow-match ${active ? 'active' : ''}`}
+      onClick={onSelect}
+      onDoubleClick={() => {
+        void onOpen()
+      }}
+      title={node.title}
+      type="button"
+    >
+      <span className="flow-match-score" aria-hidden="true">
+        {Math.round(score)}
+      </span>
+      <span className="flow-match-copy">
+        <span className="flow-match-meta">
+          {node.collectionName ?? node.subtitle}
+          {node.capturedAt ? ` · ${formatDate(node.capturedAt)}` : ''}
+          {host ? ` · ${host}` : ''}
+        </span>
+        <strong>{node.title}</strong>
+        {node.excerpt && <span className="flow-match-excerpt">{node.excerpt}</span>}
+        <span className="flow-match-tags">
+          <span className="flow-match-strength">{flowMatchLabel(score)}</span>
+          {node.url && (
+            <span
+              className="flow-match-open"
+              role="button"
+              tabIndex={0}
+              onClick={(event) => {
+                event.stopPropagation()
+                void onOpen()
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  void onOpen()
+                }
+              }}
+            >
+              <ExternalLink size={12} />
+              Open
+            </span>
+          )}
+        </span>
+      </span>
+    </button>
   )
 }
 
@@ -324,38 +566,51 @@ function FlowNodeDetail({
   )
 }
 
-function buildFlowLayout(result: FlowGraphResult | null): FlowLayout {
-  if (!result) return { nodes: [], edges: [] }
+function nodeRadius(node: FlowGraphNode): number {
+  if (node.kind === 'query') return 32
+  if (node.kind === 'hub') return clamp(node.weight / 2.4, 24, 38)
+  return clamp(9 + node.weight / 7 + (node.score ?? 0) / 55, 10, 19)
+}
 
+// Seed each node from a tidy radial layout (so the first frame is legible), then let the
+// force loop relax it. Positions of nodes that survived a previous build are carried over.
+function buildSimulation(
+  result: FlowGraphResult,
+  previous: Map<string, SimNode>
+): { nodes: SimNode[]; edges: SimEdge[] } {
   const hubNodes = result.nodes.filter((node) => node.kind === 'hub')
   const sourceNodes = result.nodes.filter((node) => node.kind === 'source')
   const queryNode = result.nodes.find((node) => node.kind === 'query')
-  const hubAngles = new Map<string, number>()
-  const hubPositions = new Map<string, { x: number; y: number }>()
-  const positionedNodes = new Map<string, PositionedFlowNode>()
   const hubRadius = queryNode ? 218 : 174
+  const hubPositions = new Map<string, { x: number; y: number }>()
+  const hubAngles = new Map<string, number>()
+  const nodes: SimNode[] = []
 
-  if (queryNode) {
-    positionedNodes.set(queryNode.id, {
-      ...queryNode,
-      x: CENTER_X,
-      y: CENTER_Y,
-      radius: 32
+  const make = (node: FlowGraphNode, x: number, y: number): void => {
+    const carried = previous.get(node.id)
+    nodes.push({
+      id: node.id,
+      radius: nodeRadius(node),
+      x: carried?.x ?? x,
+      y: carried?.y ?? y,
+      vx: carried?.vx ?? 0,
+      vy: carried?.vy ?? 0,
+      fx: null,
+      fy: null,
+      phase: hashUnit(node.id) * Math.PI * 2,
+      isQuery: node.kind === 'query'
     })
   }
+
+  if (queryNode) make(queryNode, CENTER_X, CENTER_Y)
 
   hubNodes.forEach((node, index) => {
     const angle = (Math.PI * 2 * index) / Math.max(1, hubNodes.length) - Math.PI / 2
     const x = CENTER_X + Math.cos(angle) * hubRadius
     const y = CENTER_Y + Math.sin(angle) * (hubRadius * 0.72)
-    hubAngles.set(node.collectionId ?? node.id, angle)
     hubPositions.set(node.collectionId ?? node.id, { x, y })
-    positionedNodes.set(node.id, {
-      ...node,
-      x,
-      y,
-      radius: Math.max(24, Math.min(38, node.weight / 2.4))
-    })
+    hubAngles.set(node.collectionId ?? node.id, angle)
+    make(node, x, y)
   })
 
   const sourcesByHub = new Map<string, FlowGraphNode[]>()
@@ -363,56 +618,159 @@ function buildFlowLayout(result: FlowGraphResult | null): FlowLayout {
     const key = node.collectionId ?? 'unfiled'
     sourcesByHub.set(key, [...(sourcesByHub.get(key) ?? []), node])
   }
-
-  for (const [collectionId, nodes] of sourcesByHub) {
+  for (const [collectionId, list] of sourcesByHub) {
     const hubPosition = hubPositions.get(collectionId) ?? { x: CENTER_X, y: CENTER_Y }
     const hubAngle = hubAngles.get(collectionId) ?? 0
-    nodes.forEach((node, index) => {
-      const localIndex = index - (nodes.length - 1) / 2
-      const spread = Math.min(1.35, 0.28 + nodes.length * 0.045)
+    list.forEach((node, index) => {
+      const localIndex = index - (list.length - 1) / 2
+      const spread = Math.min(1.35, 0.28 + list.length * 0.045)
       const angle = hubAngle + localIndex * spread + hashUnit(node.id) * 0.24
       const radius = 72 + (index % 4) * 19 + hashUnit(`${node.id}-r`) * 16
-      let x = hubPosition.x + Math.cos(angle) * radius
-      let y = hubPosition.y + Math.sin(angle) * radius * 0.78
-      if (queryNode && node.score) {
-        const pull = Math.min(0.34, Math.max(0, (node.score - 42) / 170))
-        x = x * (1 - pull) + CENTER_X * pull
-        y = y * (1 - pull) + CENTER_Y * pull
-      }
-      positionedNodes.set(node.id, {
-        ...node,
-        x: clamp(x, 46, CANVAS_WIDTH - 46),
-        y: clamp(y, 46, CANVAS_HEIGHT - 46),
-        radius: Math.max(10, Math.min(19, 9 + node.weight / 7 + (node.score ?? 0) / 55))
-      })
+      make(node, hubPosition.x + Math.cos(angle) * radius, hubPosition.y + Math.sin(angle) * radius * 0.78)
     })
   }
 
-  const nodes = Array.from(positionedNodes.values())
-  const edges = result.edges.map((edge) => ({
-    ...edge,
-    fromNode: positionedNodes.get(edge.from),
-    toNode: positionedNodes.get(edge.to)
-  }))
+  const edges: SimEdge[] = result.edges.map((edge) => {
+    const [rest, strength] = restAndStrength(edge)
+    return {
+      id: edge.id,
+      from: edge.from,
+      to: edge.to,
+      rest,
+      strength,
+      bend: (hashUnit(edge.id) - 0.5) * 2
+    }
+  })
+
   return { nodes, edges }
 }
 
-function edgePath(from: PositionedFlowNode, to: PositionedFlowNode, index: number): string {
-  const midX = (from.x + to.x) / 2
-  const midY = (from.y + to.y) / 2
-  const dx = to.x - from.x
-  const dy = to.y - from.y
+function restAndStrength(edge: FlowGraphEdge): [number, number] {
+  if (edge.kind === 'query-match') return [150, 0.022]
+  if (edge.kind === 'semantic') return [96, 0.012]
+  return [64, 0.02]
+}
+
+function stepSimulation(
+  nodes: SimNode[],
+  edges: SimEdge[],
+  index: Map<string, SimNode>,
+  alphaRef: { current: number },
+  now: number,
+  reduceMotion: boolean
+): void {
+  const alpha = alphaRef.current
+
+  // Repulsion: every node pushes every other apart (n is small, so all-pairs is cheap).
+  for (let i = 0; i < nodes.length; i += 1) {
+    for (let j = i + 1; j < nodes.length; j += 1) {
+      const a = nodes[i]
+      const b = nodes[j]
+      let dx = b.x - a.x
+      let dy = b.y - a.y
+      let distanceSq = dx * dx + dy * dy
+      if (distanceSq < 1) {
+        dx = (hashUnit(a.id + b.id) - 0.5) * 2
+        dy = (hashUnit(b.id + a.id) - 0.5) * 2
+        distanceSq = 1
+      }
+      const distance = Math.sqrt(distanceSq)
+      const force = Math.min(REPULSION / distanceSq, REPULSION_CAP) * alpha
+      const ux = dx / distance
+      const uy = dy / distance
+      a.vx -= ux * force
+      a.vy -= uy * force
+      b.vx += ux * force
+      b.vy += uy * force
+    }
+  }
+
+  // Springs: edges pull their endpoints toward a rest length.
+  for (const edge of edges) {
+    const a = index.get(edge.from)
+    const b = index.get(edge.to)
+    if (!a || !b) continue
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const distance = Math.max(0.01, Math.hypot(dx, dy))
+    const force = (distance - edge.rest) * edge.strength * alpha
+    const ux = dx / distance
+    const uy = dy / distance
+    a.vx += ux * force
+    a.vy += uy * force
+    b.vx -= ux * force
+    b.vy -= uy * force
+  }
+
+  for (const node of nodes) {
+    if (node.fx !== null && node.fy !== null) {
+      node.x = node.fx
+      node.y = node.fy
+      node.vx = 0
+      node.vy = 0
+      continue
+    }
+    // Gravity toward center keeps the graph from drifting away; the query lens is held tight.
+    const gravity = (node.isQuery ? 0.02 : 0.0016) * alpha
+    node.vx += (CENTER_X - node.x) * gravity
+    node.vy += (CENTER_Y - node.y) * gravity
+    // Ambient buoyancy: a slow per-node drift so the surface keeps breathing once settled.
+    if (!reduceMotion) {
+      node.vx += Math.cos(now * 0.0005 + node.phase) * AMBIENT
+      node.vy += Math.sin(now * 0.0006 + node.phase) * AMBIENT
+    }
+    node.vx = clamp(node.vx * DAMPING, -MAX_VELOCITY, MAX_VELOCITY)
+    node.vy = clamp(node.vy * DAMPING, -MAX_VELOCITY, MAX_VELOCITY)
+    node.x = clamp(node.x + node.vx, node.radius + 8, CANVAS_WIDTH - node.radius - 8)
+    node.y = clamp(node.y + node.vy, node.radius + 8, CANVAS_HEIGHT - node.radius - 8)
+  }
+
+  const floor = reduceMotion ? 0 : ALPHA_FLOOR
+  alphaRef.current = Math.max(floor, alpha * ALPHA_DECAY)
+}
+
+function writeNodePositions(nodes: SimNode[], elements: Map<string, SVGGElement>): void {
+  for (const node of nodes) {
+    const element = elements.get(node.id)
+    if (element) element.setAttribute('transform', `translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})`)
+  }
+}
+
+function writeEdgePaths(
+  edges: SimEdge[],
+  index: Map<string, SimNode>,
+  elements: Map<string, SVGPathElement>
+): void {
+  for (const edge of edges) {
+    const a = index.get(edge.from)
+    const b = index.get(edge.to)
+    const element = elements.get(edge.id)
+    if (a && b && element) element.setAttribute('d', curvePath(a.x, a.y, b.x, b.y, edge.bend))
+  }
+}
+
+function curvePath(ax: number, ay: number, bx: number, by: number, bend: number): string {
+  const midX = (ax + bx) / 2
+  const midY = (ay + by) / 2
+  const dx = bx - ax
+  const dy = by - ay
   const length = Math.max(1, Math.hypot(dx, dy))
-  const bend = ((index % 2 === 0 ? 1 : -1) * Math.min(72, length * 0.18)) / length
-  const controlX = midX - dy * bend
-  const controlY = midY + dx * bend * 0.82
-  return `M ${from.x.toFixed(1)} ${from.y.toFixed(1)} Q ${controlX.toFixed(1)} ${controlY.toFixed(1)} ${to.x.toFixed(1)} ${to.y.toFixed(1)}`
+  const offset = bend * Math.min(70, length * 0.16)
+  const controlX = midX - (dy / length) * offset
+  const controlY = midY + (dx / length) * offset
+  return `M ${ax.toFixed(1)} ${ay.toFixed(1)} Q ${controlX.toFixed(1)} ${controlY.toFixed(1)} ${bx.toFixed(1)} ${by.toFixed(1)}`
 }
 
 function currentPath(index: number): string {
   const y = 92 + index * 58
   const lift = index % 2 === 0 ? 42 : -34
   return `M 42 ${y} C 252 ${y + lift}, 348 ${y - lift}, 548 ${y + lift * 0.4} S 874 ${y - lift * 0.8}, 1078 ${y + lift * 0.2}`
+}
+
+function flowMatchLabel(score: number): string {
+  if (score >= 70) return 'Strong match'
+  if (score >= 55) return 'Related'
+  return 'Loose match'
 }
 
 function hashUnit(value: string): number {

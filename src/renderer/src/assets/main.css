@@ -906,11 +906,18 @@ button {
 }
 
 .flow-node {
-  cursor: pointer;
+  cursor: grab;
   outline: none;
-  transition:
-    opacity 160ms ease,
-    transform 160ms ease;
+  transition: opacity 160ms ease;
+}
+
+.flow-node:active {
+  cursor: grabbing;
+}
+
+.flow-node:hover .flow-node-aura {
+  fill: rgba(78, 195, 218, 0.22);
+  stroke: rgba(45, 148, 190, 0.4);
 }
 
 .flow-node.muted {
@@ -950,6 +957,18 @@ button {
 .flow-node:focus-visible .flow-node-aura {
   stroke: rgba(34, 129, 192, 0.72);
   stroke-width: 3;
+}
+
+/* Sources that matched the typed query: a teal ring ties them to the query node's current. */
+.flow-node.matched .flow-node-aura {
+  fill: rgba(46, 166, 135, 0.2);
+  stroke: rgba(46, 166, 135, 0.46);
+  stroke-width: 2;
+}
+
+.flow-node.matched .flow-node-core {
+  stroke: rgba(204, 246, 232, 0.92);
+  stroke-width: 2;
 }
 
 .flow-node-label {
@@ -1003,9 +1022,10 @@ button {
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-rows: auto minmax(0, auto) auto auto;
-  align-content: start;
+  max-height: 100%;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 12px;
+  overflow: hidden;
 }
 
 .flow-stats {
@@ -1040,6 +1060,7 @@ button {
 
 .flow-node-detail,
 .flow-recommendations,
+.flow-matches,
 .flow-omitted {
   border: 1px solid rgba(87, 150, 184, 0.18);
   border-radius: 8px;
@@ -1053,6 +1074,7 @@ button {
 
 .flow-node-detail {
   min-height: 0;
+  overflow: hidden;
   padding: 14px;
 }
 
@@ -1106,7 +1128,8 @@ button {
   font-weight: 620;
   line-height: 1.45;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 7;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
 }
 
 .flow-node-meta {
@@ -1135,7 +1158,7 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 .flow-node-detail footer button {
@@ -1191,6 +1214,168 @@ button {
   color: #52728c;
   font-size: 11px;
   box-shadow: none;
+}
+
+.flow-hint {
+  color: #5c7c93;
+  font-size: 12px;
+  font-weight: 640;
+  line-height: 1.4;
+}
+
+.flow-matches {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+  padding: 14px;
+}
+
+.flow-matches > strong {
+  overflow: hidden;
+  color: #173f5a;
+  font-size: 12px;
+  font-weight: 860;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-match-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  margin: -4px;
+  padding: 4px 6px 4px 4px;
+  overflow-y: auto;
+  scrollbar-color: rgba(82, 178, 219, 0.38) transparent;
+  scrollbar-width: thin;
+}
+
+.flow-match {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 96px;
+  height: 96px;
+  overflow: hidden;
+  border: 1px solid rgba(87, 150, 184, 0.16);
+  border-radius: 11px;
+  padding: 10px 12px 10px 10px;
+  background: rgba(255, 255, 255, 0.62);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease;
+}
+
+.flow-match:hover {
+  border-color: rgba(46, 166, 135, 0.4);
+  background: rgba(232, 251, 246, 0.82);
+}
+
+.flow-match.active {
+  border-color: rgba(46, 166, 135, 0.64);
+  background: rgba(224, 248, 240, 0.92);
+}
+
+.flow-match-score {
+  display: grid;
+  align-self: center;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(46, 166, 135, 0.28);
+  background:
+    radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.95), transparent 52%),
+    rgba(46, 166, 135, 0.14);
+  color: #1b7259;
+  font-size: 13px;
+  font-weight: 880;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-match-copy {
+  display: grid;
+  min-width: 0;
+  max-height: 76px;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.flow-match-meta {
+  overflow: hidden;
+  color: #5e7d94;
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-match-copy strong {
+  display: block;
+  overflow: hidden;
+  color: #173f5a;
+  font-size: 13px;
+  font-weight: 840;
+  line-height: 1.18;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-match-excerpt {
+  display: block;
+  overflow: hidden;
+  margin-top: 1px;
+  color: #41566c;
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-match-tags {
+  display: flex;
+  min-width: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  margin-top: 1px;
+}
+
+.flow-match-strength {
+  border: 1px solid rgba(46, 166, 135, 0.22);
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: rgba(224, 248, 240, 0.8);
+  color: #1b7259;
+  font-size: 9.5px;
+  font-weight: 820;
+}
+
+.flow-match-open {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #2f7591;
+  font-size: 9.5px;
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.flow-match-open:hover {
+  background: rgba(228, 245, 252, 0.9);
 }
 
 .flow-omitted {
