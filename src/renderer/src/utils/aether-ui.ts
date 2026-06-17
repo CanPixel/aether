@@ -102,6 +102,40 @@ export function formatLocalModelName(model?: string | null): string | null {
     .trim()
 }
 
+export function formatBrandedModelName(
+  model?: string | null,
+  role: 'chat' | 'embedding' = 'chat'
+): string | null {
+  if (!model) return null
+
+  const filename = model.split(/[\\/]/).pop() ?? model
+  const normalized = filename.replace(/\.gguf$/i, '').toLowerCase()
+  const fullModel = model.toLowerCase()
+  const isCommunity = /q4_k_m|lmstudio|community/.test(fullModel)
+
+  if (
+    role === 'embedding' ||
+    normalized.includes('embeddinggemma') ||
+    normalized.includes('nomic-embed-text')
+  ) {
+    return 'AiON FRiDGE' //AiON Embedder
+  }
+  if (normalized.includes('gemma-4-e2b')) return isCommunity ? 'AiON Compact' : 'AiON LiTE'
+  if (normalized.includes('gemma-4-e4b')) return 'AiON WiSE'
+  if (normalized.includes('gemma-4-12b')) return 'AiON PRiME'
+
+  return 'AiON'
+}
+
+export function formatVisibleModelName(
+  model?: string | null,
+  options: { developerMode?: boolean; role?: 'chat' | 'embedding' } = {}
+): string | null {
+  return options.developerMode
+    ? formatLocalModelName(model)
+    : formatBrandedModelName(model, options.role ?? 'chat')
+}
+
 export function inferIcebergIcon(
   source: Pick<SavedIcebergSummary, 'keyword'> & { title?: string; items?: IcebergItem[] }
 ): string {

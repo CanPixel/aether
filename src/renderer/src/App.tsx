@@ -16,6 +16,8 @@ import {
   IcebergResult,
   SearchEngineId,
   SearchResult,
+  SemanticTrailItem,
+  SemanticTrailResult,
   SaveIcebergInput,
   SavedIceberg,
   SavedIcebergSummary,
@@ -326,7 +328,8 @@ function App(): React.JSX.Element {
   >({})
   const [status, setStatus] = useState<SystemStatus | null>(null)
   const [settings, setSettings] = useState<AppSettings>({
-    browser: { defaultSearchEngine: 'google' }
+    browser: { defaultSearchEngine: 'google' },
+    developerMode: false
   })
   const [dashboardOpen, setDashboardOpen] = useState(true)
   const [workspaceMode, setWorkspaceMode] = useState<'dashboard' | 'crystallizer'>('dashboard')
@@ -345,6 +348,8 @@ function App(): React.JSX.Element {
   const [chatResult, setChatResult] = useState<ChatResult | null>(null)
   const [streamingAnswer, setStreamingAnswer] = useState('')
   const [streamingCitations, setStreamingCitations] = useState<SearchResult[]>([])
+  const [semanticTrailQuery, setSemanticTrailQuery] = useState('')
+  const [semanticTrailResult, setSemanticTrailResult] = useState<SemanticTrailResult | null>(null)
   const [askPhase, setAskPhase] = useState<string | null>(null)
   const askRequestIdRef = useRef<string | null>(null)
   const streamBufferRef = useRef('')
@@ -415,6 +420,12 @@ function App(): React.JSX.Element {
     ((!activeTabHubShortcut.themeColor && activeTab?.themeColor) ||
       (!activeTabHubShortcut.favicon && activeTab?.favicon))
   )
+  const activeSemanticTrailResult = useMemo(() => {
+    if (!semanticTrailResult || !activeTabUrl) return null
+    return normalizeComparableUrl(semanticTrailResult.root.url) === normalizeComparableUrl(activeTabUrl)
+      ? semanticTrailResult
+      : null
+  }, [activeTabUrl, semanticTrailResult])
 
   const openFindBar = useCallback((): void => {
     if (dashboardOpen || isStartPage || !activeTab?.id) {
@@ -892,6 +903,7 @@ function App(): React.JSX.Element {
       await window.aether.collections.delete(collectionDialog.collection.id)
       await closeCollectionDialog()
       setChatResult(null)
+      setSemanticTrailResult(null)
       await refreshCollections()
       setStatus(await window.aether.system.status())
       setNotice('Collection deleted.')
@@ -935,6 +947,7 @@ function App(): React.JSX.Element {
       setAskCurrentPageOnly(false)
       setAskIncludeCurrentPage(false)
       setAskCollectionId(result.collectionId)
+      setSemanticTrailResult(null)
       setNotice(`Saved ${result.chunkCount} chunks into ${result.collectionName}.`)
     })
   }
@@ -943,6 +956,7 @@ function App(): React.JSX.Element {
     await runTask('Deleting capture', async () => {
       await window.aether.capture.delete(captureId)
       await refreshCollections(selectedCollection?.id)
+      setSemanticTrailResult(null)
       setNotice('Capture deleted.')
     })
   }
@@ -952,6 +966,7 @@ function App(): React.JSX.Element {
       const capture = await window.aether.capture.move({ captureId, collectionId })
       await refreshCollections(collectionId)
       setChatResult(null)
+      setSemanticTrailResult(null)
       setNotice(`Moved ${capture.title}.`)
     })
   }
@@ -1098,6 +1113,48 @@ function App(): React.JSX.Element {
     setDashboardOpen(false)
   }
 
+  async function buildSemanticTrail(): Promise<void> {
+    if (dashboardOpen || !canUseCurrentPage) {
+      setNotice('Open a web page before building Flow.')
+      return
+    }
+    if (!status?.embeddingModel) {
+      setNotice('Select a local embedding model before building Flow.')
+      return
+    }
+
+    await runTask('Building Flow', async () => {
+      const result = await window.aether.semanticTrail.generate({
+        query: semanticTrailQuery.trim() || undefined,
+        limit: 12
+      })
+      setSemanticTrailResult(result)
+      setNotice(
+        result.items.length > 0
+          ? `Mapped ${result.items.length} sources into Flow.`
+          : 'No captured sources matched this page yet.'
+      )
+    })
+  }
+
+  async function openSemanticTrailItem(item: SemanticTrailItem): Promise<void> {
+    await openCitation(
+      {
+        id: item.id,
+        collectionId: item.collectionId,
+        captureId: item.captureId,
+        appId: item.appId,
+        title: item.title,
+        url: item.url,
+        capturedAt: item.capturedAt,
+        chunkIndex: item.chunkIndex,
+        text: item.excerpt,
+        score: item.score.total
+      },
+      item.excerpt
+    )
+  }
+
   async function generateIceberg(keyword: string): Promise<IcebergResult> {
     setBusy('Crystallizing topic')
     setNotice(null)
@@ -1237,6 +1294,14 @@ function App(): React.JSX.Element {
       })
       setSettings(nextSettings)
       setNotice('Default search engine updated.')
+    })
+  }
+
+  async function updateDeveloperMode(developerMode: boolean): Promise<void> {
+    await runTask('Updating settings', async () => {
+      const nextSettings = await window.aether.system.updateSettings({ developerMode })
+      setSettings(nextSettings)
+      setNotice(developerMode ? 'Developer Mode enabled.' : 'Developer Mode disabled.')
     })
   }
 
@@ -1467,17 +1532,23 @@ function App(): React.JSX.Element {
         askPhase={askPhase}
         streamingAnswer={streamingAnswer}
         streamingCitations={streamingCitations}
+        semanticTrailQuery={semanticTrailQuery}
+        semanticTrailResult={activeSemanticTrailResult}
+        developerMode={settings.developerMode}
         status={status}
         onAsk={ask}
         onAskPanelOpenChange={setAskPanelOpen}
+        onBuildSemanticTrail={buildSemanticTrail}
         onCancelAsk={cancelAsk}
         onTogglePanel={togglePanel}
         onChatPromptChange={setChatPrompt}
+        onSemanticTrailQueryChange={setSemanticTrailQuery}
         onAskCollectionChange={setAskCollectionId}
         onAskCurrentPageOnlyChange={setAskCurrentPageOnly}
         onAskIncludeCurrentPageChange={setAskIncludeCurrentPage}
         onUpdateModels={updateLocalModels}
         onOpenCitation={openCitation}
+        onOpenSemanticTrailItem={openSemanticTrailItem}
       />
 
       {collectionDialog && (
@@ -1498,6 +1569,7 @@ function App(): React.JSX.Element {
           settings={settings}
           onClose={closeSettings}
           onDefaultSearchEngineChange={updateDefaultSearchEngine}
+          onDeveloperModeChange={updateDeveloperMode}
         />
       )}
     </main>
@@ -1618,12 +1690,14 @@ function SettingsModal({
   busy,
   settings,
   onClose,
-  onDefaultSearchEngineChange
+  onDefaultSearchEngineChange,
+  onDeveloperModeChange
 }: {
   busy: string | null
   settings: AppSettings
   onClose: () => Promise<void>
   onDefaultSearchEngineChange: (value: SearchEngineId) => Promise<void>
+  onDeveloperModeChange: (value: boolean) => Promise<void>
 }): React.JSX.Element {
   const searchEngines: Array<{ id: SearchEngineId; name: string; description: string }> = [
     { id: 'google', name: 'Google', description: 'Broad default web search.' },
@@ -1710,6 +1784,23 @@ function SettingsModal({
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="settings-field developer-mode-field">
+          <label className="settings-checkbox-row">
+            <input
+              checked={settings.developerMode}
+              disabled={Boolean(busy)}
+              onChange={(event) => {
+                void onDeveloperModeChange(event.currentTarget.checked)
+              }}
+              type="checkbox"
+            />
+            <span>
+              <strong>Developer Mode</strong>
+              <small>Show technical model names and implementation details in AiON.</small>
+            </span>
+          </label>
         </div>
 
         <div className="settings-shortcuts" aria-label="Keyboard shortcuts">

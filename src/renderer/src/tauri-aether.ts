@@ -20,6 +20,7 @@ import {
   SavedIceberg,
   SavedIcebergSummary,
   SearchResult,
+  SemanticTrailResult,
   StatusToastInput,
   SystemStatus
 } from '../../shared/aether'
@@ -75,6 +76,9 @@ if (isTauri) {
     },
     search: {
       collection: (input) => call<SearchResult[]>('aether_search_collection', { input })
+    },
+    semanticTrail: {
+      generate: (input) => call<SemanticTrailResult>('aether_semantic_trail_generate', { input })
     },
     chat: {
       ask: (input) => call<ChatResult>('aether_chat_ask', { input }),

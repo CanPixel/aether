@@ -26,19 +26,28 @@ export function StartPage({
 
   return (
     <div className="start-page">
-      <div className="start-page-hero-copy">
-        <h1>DiSCOVER</h1>
-      </div>
+      <img
+        className="wavy-lines-start-page"
+        src={wavyLinesSrc}
+        alt="Wavy lines"
+        draggable={false}
+      />
       <div className="start-page-inner">
-        <img
-          className="wavy-lines-start-page"
-          src={wavyLinesSrc}
-          alt="Wavy lines"
-          draggable={false}
-        />
+        <div className="start-page-hero-copy">
+          <h1 aria-label="Discover">
+            <span>Di</span>
+            <span>SCOVER</span>
+          </h1>
+        </div>
         <div className="start-mark" aria-hidden="true">
           <div className="start-orb">
+            <span className="start-orb-bloom" />
+            <span className="start-orb-rays" />
             <span className="start-orb-aura" />
+            <span className="start-orb-spark start-orb-spark-1" />
+            <span className="start-orb-spark start-orb-spark-2" />
+            <span className="start-orb-spark start-orb-spark-3" />
+            <span className="start-orb-spark start-orb-spark-4" />
             <img src={aetherMarkSrc} alt="" draggable={false} />
           </div>
         </div>

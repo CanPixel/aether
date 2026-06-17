@@ -1,6 +1,6 @@
 mod embeddinggemma;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use encoding_rs::UTF_8;
 use llama_cpp_2::{
     context::params::{LlamaContextParams, LlamaPoolingType},
@@ -71,6 +71,8 @@ const DEFAULT_EMBEDDING_BATCH_SIZE: usize = 8;
 const DEFAULT_EMBEDDING_BATCH_TOKENS: usize = 2048;
 const DEFAULT_CAPTURE_CHUNK_SIZE: usize = 2200;
 const DEFAULT_CAPTURE_CHUNK_OVERLAP: usize = 240;
+const DEFAULT_SEMANTIC_TRAIL_LIMIT: usize = 12;
+const MAX_SEMANTIC_TRAIL_LIMIT: usize = 24;
 // Sentinel URL for a blank tab that shows the Æther start page in the renderer instead
 // of loading a remote page. Must match START_PAGE_URL in src/renderer/src/App.tsx.
 const START_PAGE_URL: &str = "aether://start";
@@ -333,6 +335,7 @@ struct BrowserSettings {
 #[serde(rename_all = "camelCase")]
 struct AppSettings {
     browser: BrowserSettings,
+    developer_mode: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -405,6 +408,78 @@ struct SearchResult {
     chunk_index: usize,
     text: String,
     score: f64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SemanticTrailRoot {
+    title: String,
+    url: String,
+    host: String,
+    excerpt: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum SemanticTrailReason {
+    SemanticMatch,
+    RecentCapture,
+    SameHost,
+    SameCollection,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum SemanticTrailEdgeKind {
+    SemanticMatch,
+    SameHost,
+    SameCollection,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SemanticTrailScoreBreakdown {
+    total: f64,
+    semantic: f64,
+    recency: f64,
+    host_affinity: f64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SemanticTrailItem {
+    id: String,
+    collection_id: String,
+    collection_name: String,
+    capture_id: String,
+    app_id: String,
+    title: String,
+    url: String,
+    host: String,
+    captured_at: String,
+    chunk_index: usize,
+    excerpt: String,
+    score: SemanticTrailScoreBreakdown,
+    reasons: Vec<SemanticTrailReason>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SemanticTrailEdge {
+    from: String,
+    to: String,
+    kind: SemanticTrailEdgeKind,
+    weight: f64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SemanticTrailResult {
+    query: String,
+    generated_at: String,
+    root: SemanticTrailRoot,
+    items: Vec<SemanticTrailItem>,
+    edges: Vec<SemanticTrailEdge>,
 }
 
 #[derive(Clone, Serialize)]
@@ -606,6 +681,13 @@ struct SearchCollectionInput {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SemanticTrailInput {
+    query: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AskChatInput {
     collection_id: Option<String>,
     prompt: String,
@@ -630,8 +712,10 @@ struct SaveIcebergInput {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct UpdateSettingsInput {
     browser: Option<PartialBrowserSettings>,
+    developer_mode: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -684,6 +768,8 @@ struct UserSettings {
     version: u8,
     #[serde(default)]
     browser: BrowserSettings,
+    #[serde(default)]
+    developer_mode: bool,
     #[serde(default, alias = "ollama")]
     local_model: LocalModelSettings,
 }
@@ -708,6 +794,7 @@ impl Default for UserSettings {
         Self {
             version: default_settings_version(),
             browser: BrowserSettings::default(),
+            developer_mode: false,
             local_model: LocalModelSettings::default(),
         }
     }
@@ -1927,6 +2014,7 @@ pub fn run() {
             aether_capture_move,
             aether_capture_delete,
             aether_search_collection,
+            aether_semantic_trail_generate,
             aether_chat_ask,
             aether_chat_cancel,
             aether_crystallizer_generate,
@@ -2666,6 +2754,18 @@ async fn aether_search_collection(
 }
 
 #[tauri::command]
+async fn aether_semantic_trail_generate(
+    state: State<'_, Backend>,
+    input: Option<SemanticTrailInput>,
+) -> Cmd<SemanticTrailResult> {
+    semantic_trail_generate(&state, input.unwrap_or(SemanticTrailInput {
+        query: None,
+        limit: None,
+    }))
+    .await
+}
+
+#[tauri::command]
 async fn aether_chat_ask(
     app: AppHandle,
     state: State<'_, Backend>,
@@ -2855,6 +2955,7 @@ async fn aether_system_settings(state: State<'_, Backend>) -> Cmd<AppSettings> {
     let settings = load_settings(&state.paths.settings_path).await?;
     Ok(AppSettings {
         browser: settings.browser,
+        developer_mode: settings.developer_mode,
     })
 }
 
@@ -2870,9 +2971,13 @@ async fn aether_system_update_settings(
                 normalize_search_engine_id(&default_search_engine);
         }
     }
+    if let Some(developer_mode) = input.developer_mode {
+        settings.developer_mode = developer_mode;
+    }
     save_json(&state.paths.settings_path, &settings).await?;
     Ok(AppSettings {
         browser: settings.browser,
+        developer_mode: settings.developer_mode,
     })
 }
 
@@ -3000,6 +3105,362 @@ async fn search_collection(
             .collect::<Vec<_>>()
     })
     .await
+}
+
+#[derive(Clone)]
+struct SemanticTrailChunkCandidate {
+    chunk: ChunkRecord,
+    collection_name: String,
+    score: SemanticTrailScoreBreakdown,
+    reasons: Vec<SemanticTrailReason>,
+}
+
+async fn semantic_trail_generate(
+    state: &State<'_, Backend>,
+    input: SemanticTrailInput,
+) -> Cmd<SemanticTrailResult> {
+    let limit = input
+        .limit
+        .unwrap_or(DEFAULT_SEMANTIC_TRAIL_LIMIT)
+        .clamp(1, MAX_SEMANTIC_TRAIL_LIMIT);
+    let active_tab = {
+        let tabs = lock_tabs(state)?;
+        if tabs.dashboard_open {
+            return Err("Open a web page before building Flow.".to_string());
+        }
+        tabs.active_tab()
+            .cloned()
+            .ok_or_else(|| "No active browser tab.".to_string())?
+    };
+    let captured = extract_readable_active_page(state, &active_tab).await?;
+    let root_host = get_tab_host(&captured.url);
+    let root = SemanticTrailRoot {
+        title: captured.title.clone(),
+        url: captured.url.clone(),
+        host: root_host.clone(),
+        excerpt: semantic_trail_excerpt(&captured.text, 420),
+    };
+    let explicit_query = input
+        .query
+        .as_deref()
+        .map(str::trim)
+        .filter(|query| !query.is_empty());
+    let visible_query = explicit_query
+        .map(ToString::to_string)
+        .unwrap_or_else(|| captured.title.clone());
+    let embedding_query = explicit_query
+        .map(ToString::to_string)
+        .unwrap_or_else(|| semantic_trail_default_query(&captured));
+
+    let library = load_library(&state.paths.library_path).await?;
+    let collection_names = library
+        .collections
+        .iter()
+        .map(|collection| (collection.id.clone(), collection.name.clone()))
+        .collect::<HashMap<_, _>>();
+    let root_url_key = normalize_capture_url_key(&captured.url);
+    let root_collection_ids = library
+        .captures
+        .iter()
+        .filter(|capture| normalize_capture_url_key(&capture.url) == root_url_key)
+        .map(|capture| capture.collection_id.clone())
+        .collect::<HashSet<_>>();
+    let chunks = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
+
+    if chunks.is_empty() {
+        return Ok(SemanticTrailResult {
+            query: visible_query,
+            generated_at: now(),
+            root,
+            items: Vec::new(),
+            edges: Vec::new(),
+        });
+    }
+
+    let settings = load_settings(&state.paths.settings_path).await?;
+    let query_vector = local_embed(state, &settings, vec![embedding_query])
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "Local embedding model returned no embedding.".to_string())?;
+
+    let mut candidates = chunks
+        .into_iter()
+        .filter_map(|chunk| {
+            let distance = cosine_distance(&query_vector, &chunk.vector);
+            if !distance.is_finite() {
+                return None;
+            }
+            let chunk_host = get_tab_host(&chunk.url);
+            let same_collection = root_collection_ids.contains(&chunk.collection_id);
+            let score =
+                semantic_trail_score_breakdown(distance, &chunk.captured_at, &root_host, &chunk_host);
+            let reasons = semantic_trail_reasons(&score, same_collection);
+            let collection_name = collection_names
+                .get(&chunk.collection_id)
+                .cloned()
+                .unwrap_or_else(|| "Knowledge Hub".to_string());
+            Some(SemanticTrailChunkCandidate {
+                chunk,
+                collection_name,
+                score,
+                reasons,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    candidates.sort_by(|left, right| {
+        right
+            .score
+            .total
+            .partial_cmp(&left.score.total)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| {
+                right
+                    .score
+                    .semantic
+                    .partial_cmp(&left.score.semantic)
+                    .unwrap_or(Ordering::Equal)
+            })
+    });
+
+    let items = semantic_trail_items(candidates, limit);
+    let edges = semantic_trail_edges(&root, &items);
+
+    Ok(SemanticTrailResult {
+        query: visible_query,
+        generated_at: now(),
+        root,
+        items,
+        edges,
+    })
+}
+
+fn semantic_trail_default_query(captured: &CapturedPage) -> String {
+    normalize_captured_text(&format!(
+        "{}\n\n{}",
+        captured.title,
+        semantic_trail_excerpt(&captured.text, 1600)
+    ))
+}
+
+fn semantic_trail_items(
+    candidates: Vec<SemanticTrailChunkCandidate>,
+    limit: usize,
+) -> Vec<SemanticTrailItem> {
+    let mut items = Vec::<SemanticTrailItem>::new();
+    let mut indexes = HashMap::<String, usize>::new();
+
+    for candidate in candidates {
+        let key = normalize_capture_url_key(&candidate.chunk.url);
+        if let Some(index) = indexes.get(&key).copied() {
+            let item = &mut items[index];
+            item.excerpt = merge_semantic_trail_excerpts(&item.excerpt, &candidate.chunk.text);
+            for reason in candidate.reasons {
+                add_semantic_trail_reason(&mut item.reasons, reason);
+            }
+            continue;
+        }
+
+        if items.len() >= limit {
+            continue;
+        }
+
+        indexes.insert(key, items.len());
+        items.push(SemanticTrailItem {
+            id: candidate.chunk.capture_id.clone(),
+            collection_id: candidate.chunk.collection_id.clone(),
+            collection_name: candidate.collection_name,
+            capture_id: candidate.chunk.capture_id,
+            app_id: candidate.chunk.app_id,
+            title: candidate.chunk.title,
+            url: candidate.chunk.url.clone(),
+            host: get_tab_host(&candidate.chunk.url),
+            captured_at: candidate.chunk.captured_at,
+            chunk_index: candidate.chunk.chunk_index,
+            excerpt: semantic_trail_excerpt(&candidate.chunk.text, 520),
+            score: candidate.score,
+            reasons: candidate.reasons,
+        });
+    }
+
+    items
+}
+
+fn semantic_trail_score_breakdown(
+    distance: f64,
+    captured_at: &str,
+    root_host: &str,
+    source_host: &str,
+) -> SemanticTrailScoreBreakdown {
+    let semantic = semantic_score_from_distance(distance);
+    let recency = semantic_trail_recency_score(captured_at);
+    let host_affinity = semantic_trail_host_affinity(root_host, source_host);
+    let total = round_score((semantic * 0.78) + (recency * 0.14) + (host_affinity * 0.08));
+
+    SemanticTrailScoreBreakdown {
+        total,
+        semantic,
+        recency,
+        host_affinity,
+    }
+}
+
+fn semantic_score_from_distance(distance: f64) -> f64 {
+    if !distance.is_finite() {
+        return 0.0;
+    }
+    round_score((1.0 - (distance / 1.2)).clamp(0.0, 1.0) * 100.0)
+}
+
+fn semantic_trail_recency_score(captured_at: &str) -> f64 {
+    let Ok(parsed) = DateTime::parse_from_rfc3339(captured_at) else {
+        return 0.0;
+    };
+    let days = Utc::now()
+        .signed_duration_since(parsed.with_timezone(&Utc))
+        .num_days()
+        .max(0);
+    match days {
+        0..=7 => 100.0,
+        8..=30 => 80.0,
+        31..=90 => 60.0,
+        91..=180 => 40.0,
+        181..=365 => 25.0,
+        _ => 10.0,
+    }
+}
+
+fn semantic_trail_host_affinity(root_host: &str, source_host: &str) -> f64 {
+    if !root_host.is_empty() && root_host == source_host {
+        100.0
+    } else {
+        0.0
+    }
+}
+
+fn semantic_trail_reasons(
+    score: &SemanticTrailScoreBreakdown,
+    same_collection: bool,
+) -> Vec<SemanticTrailReason> {
+    let mut reasons = Vec::new();
+    if score.semantic >= 55.0 {
+        reasons.push(SemanticTrailReason::SemanticMatch);
+    }
+    if score.recency >= 80.0 {
+        reasons.push(SemanticTrailReason::RecentCapture);
+    }
+    if score.host_affinity > 0.0 {
+        reasons.push(SemanticTrailReason::SameHost);
+    }
+    if same_collection {
+        reasons.push(SemanticTrailReason::SameCollection);
+    }
+    if reasons.is_empty() {
+        reasons.push(SemanticTrailReason::SemanticMatch);
+    }
+    reasons
+}
+
+fn semantic_trail_edges(
+    root: &SemanticTrailRoot,
+    items: &[SemanticTrailItem],
+) -> Vec<SemanticTrailEdge> {
+    let mut edges = Vec::new();
+    for item in items.iter().take(12) {
+        push_semantic_trail_edge(
+            &mut edges,
+            "root",
+            &item.id,
+            SemanticTrailEdgeKind::SemanticMatch,
+            item.score.total,
+        );
+        if !root.host.is_empty() && root.host == item.host {
+            push_semantic_trail_edge(
+                &mut edges,
+                "root",
+                &item.id,
+                SemanticTrailEdgeKind::SameHost,
+                item.score.host_affinity,
+            );
+        }
+    }
+
+    for left_index in 0..items.len().min(8) {
+        for right_index in (left_index + 1)..items.len().min(8) {
+            let left = &items[left_index];
+            let right = &items[right_index];
+            let weight = left.score.total.min(right.score.total);
+            if left.collection_id == right.collection_id {
+                push_semantic_trail_edge(
+                    &mut edges,
+                    &left.id,
+                    &right.id,
+                    SemanticTrailEdgeKind::SameCollection,
+                    weight,
+                );
+            } else if !left.host.is_empty() && left.host == right.host {
+                push_semantic_trail_edge(
+                    &mut edges,
+                    &left.id,
+                    &right.id,
+                    SemanticTrailEdgeKind::SameHost,
+                    weight,
+                );
+            }
+        }
+    }
+
+    edges
+}
+
+fn push_semantic_trail_edge(
+    edges: &mut Vec<SemanticTrailEdge>,
+    from: &str,
+    to: &str,
+    kind: SemanticTrailEdgeKind,
+    weight: f64,
+) {
+    if edges.len() >= 36 || from == to {
+        return;
+    }
+    edges.push(SemanticTrailEdge {
+        from: from.to_string(),
+        to: to.to_string(),
+        kind,
+        weight: round_score(weight),
+    });
+}
+
+fn add_semantic_trail_reason(
+    reasons: &mut Vec<SemanticTrailReason>,
+    reason: SemanticTrailReason,
+) {
+    if !reasons.contains(&reason) {
+        reasons.push(reason);
+    }
+}
+
+fn merge_semantic_trail_excerpts(existing: &str, next: &str) -> String {
+    let next = semantic_trail_excerpt(next, 360);
+    if next.is_empty() || existing.contains(&next) {
+        return existing.to_string();
+    }
+    semantic_trail_excerpt(&format!("{existing}\n\n[…]\n\n{next}"), 920)
+}
+
+fn semantic_trail_excerpt(text: &str, limit: usize) -> String {
+    let normalized = normalize_captured_text(text);
+    if normalized.chars().count() <= limit {
+        return normalized;
+    }
+    let mut excerpt = normalized.chars().take(limit).collect::<String>();
+    excerpt.push('…');
+    excerpt
+}
+
+fn round_score(value: f64) -> f64 {
+    (value * 10.0).round() / 10.0
 }
 
 fn capture_chunk_settings(paths: &DataPaths, settings: &UserSettings) -> (usize, usize) {
@@ -5183,5 +5644,87 @@ mod tests {
         let safe = stream_safe_len(text);
         assert!(text.is_char_boundary(safe));
         assert_eq!(&text[safe..], "<eö");
+    }
+
+    #[test]
+    fn semantic_trail_score_normalizer_maps_cosine_distance_to_display_score() {
+        assert_eq!(semantic_score_from_distance(0.0), 100.0);
+        assert_eq!(semantic_score_from_distance(0.3), 75.0);
+        assert_eq!(semantic_score_from_distance(1.2), 0.0);
+        assert_eq!(semantic_score_from_distance(f64::INFINITY), 0.0);
+    }
+
+    #[test]
+    fn semantic_trail_items_dedupe_urls_and_merge_excerpts() {
+        let first = semantic_trail_candidate(
+            "https://example.com/a#intro",
+            "First source passage about local semantic browsing.",
+            92.0,
+            vec![SemanticTrailReason::SemanticMatch],
+        );
+        let second = semantic_trail_candidate(
+            "https://example.com/a#details",
+            "Second source passage with more implementation detail.",
+            84.0,
+            vec![SemanticTrailReason::RecentCapture],
+        );
+
+        let items = semantic_trail_items(vec![first, second], 12);
+
+        assert_eq!(items.len(), 1);
+        assert!(items[0].excerpt.contains("First source passage"));
+        assert!(items[0].excerpt.contains("Second source passage"));
+        assert!(items[0].reasons.contains(&SemanticTrailReason::SemanticMatch));
+        assert!(items[0].reasons.contains(&SemanticTrailReason::RecentCapture));
+    }
+
+    #[test]
+    fn semantic_trail_reason_generation_is_deterministic() {
+        let score = SemanticTrailScoreBreakdown {
+            total: 88.0,
+            semantic: 70.0,
+            recency: 80.0,
+            host_affinity: 100.0,
+        };
+
+        assert_eq!(
+            semantic_trail_reasons(&score, true),
+            vec![
+                SemanticTrailReason::SemanticMatch,
+                SemanticTrailReason::RecentCapture,
+                SemanticTrailReason::SameHost,
+                SemanticTrailReason::SameCollection,
+            ]
+        );
+    }
+
+    fn semantic_trail_candidate(
+        url: &str,
+        text: &str,
+        total: f64,
+        reasons: Vec<SemanticTrailReason>,
+    ) -> SemanticTrailChunkCandidate {
+        SemanticTrailChunkCandidate {
+            chunk: ChunkRecord {
+                id: uuid(),
+                vector: vec![1.0, 0.0],
+                text: text.to_string(),
+                collection_id: "collection".to_string(),
+                capture_id: "capture".to_string(),
+                title: "Example".to_string(),
+                url: url.to_string(),
+                app_id: "browser".to_string(),
+                captured_at: "2026-01-01T00:00:00.000Z".to_string(),
+                chunk_index: 0,
+            },
+            collection_name: "Research".to_string(),
+            score: SemanticTrailScoreBreakdown {
+                total,
+                semantic: total,
+                recency: 50.0,
+                host_affinity: 0.0,
+            },
+            reasons,
+        }
     }
 }

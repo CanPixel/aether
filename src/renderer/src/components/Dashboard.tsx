@@ -37,8 +37,9 @@ import {
   getRootDomainLetter,
   inferIcebergIcon
 } from '../utils/aether-ui'
-import { ChevronRightIcon, CloseIcon, CubeIcon, GridIcon, SnowflakeIcon } from './icons'
-import { Sparkles, SquarePen, Trash2 as TrashIcon } from 'lucide-react'
+import { ChevronRightIcon, AetherSigilIcon, CloseIcon, CubeIcon, SnowflakeIcon } from './icons'
+import { SquarePen, Trash2 as TrashIcon } from 'lucide-react'
+import { portals } from "../constants/Features"
 
 type CollectionDialogState =
   | { mode: 'create' }
@@ -216,7 +217,9 @@ export function Dashboard({
         <section className="hub-row">
           <div className="section-title compact">
             <span className="section-symbol">
-              <GridIcon />
+              <span style={{ margin: '4px 2px 0 0' }}>
+                {portals.icon}
+              </span>
             </span>
             <div>
               <h2>Portals</h2>
@@ -513,7 +516,7 @@ export function Dashboard({
                         title={`Ask ${collection.name}`}
                         type="button"
                       >
-                        <Sparkles size={13} />
+                        <AetherSigilIcon/>
                         <span>Ask</span>
                       </button>
                       <button

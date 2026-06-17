@@ -43,6 +43,7 @@ export interface BrowserSettings {
 
 export interface AppSettings {
   browser: BrowserSettings
+  developerMode: boolean
 }
 
 export interface CollectionSummary {
@@ -92,6 +93,64 @@ export interface SearchResult {
   chunkIndex: number
   text: string
   score: number
+}
+
+export interface SemanticTrailInput {
+  query?: string
+  limit?: number
+}
+
+export interface SemanticTrailRoot {
+  title: string
+  url: string
+  host: string
+  excerpt: string
+}
+
+export interface SemanticTrailScoreBreakdown {
+  total: number
+  semantic: number
+  recency: number
+  hostAffinity: number
+}
+
+export type SemanticTrailReason =
+  | 'semantic-match'
+  | 'recent-capture'
+  | 'same-host'
+  | 'same-collection'
+
+export interface SemanticTrailItem {
+  id: string
+  collectionId: string
+  collectionName: string
+  captureId: string
+  appId: string
+  title: string
+  url: string
+  host: string
+  capturedAt: string
+  chunkIndex: number
+  excerpt: string
+  score: SemanticTrailScoreBreakdown
+  reasons: SemanticTrailReason[]
+}
+
+export type SemanticTrailEdgeKind = 'semantic-match' | 'same-host' | 'same-collection'
+
+export interface SemanticTrailEdge {
+  from: string
+  to: string
+  kind: SemanticTrailEdgeKind
+  weight: number
+}
+
+export interface SemanticTrailResult {
+  query: string
+  generatedAt: string
+  root: SemanticTrailRoot
+  items: SemanticTrailItem[]
+  edges: SemanticTrailEdge[]
 }
 
 export interface ChatResult {
@@ -251,6 +310,9 @@ export interface AetherApi {
       query: string
       limit?: number
     }): Promise<SearchResult[]>
+  }
+  semanticTrail: {
+    generate(input?: SemanticTrailInput): Promise<SemanticTrailResult>
   }
   chat: {
     ask(input: {

@@ -1,8 +1,25 @@
-import { CSSProperties, FormEvent, useEffect, useRef, useState } from 'react'
-import { ChatResult, CollectionSummary, SearchResult, SystemStatus } from '../../../shared/aether'
+import {
+  CSSProperties,
+  FormEvent,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+  type WheelEvent
+} from 'react'
+import {
+  ChatResult,
+  CollectionSummary,
+  SearchResult,
+  SemanticTrailItem,
+  SemanticTrailReason,
+  SemanticTrailResult,
+  SystemStatus
+} from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
-import { formatLocalModelName, getCaptureHost } from '../utils/aether-ui'
-import { AetherSigilIcon, ChevronRightIcon } from './icons'
+import { formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aether-ui'
+import { AetherSigilIcon, ChevronRightIcon, GearIcon } from './icons'
+import { WavesArrowDown } from "lucide-react"
 
 type IntelligencePanelProps = {
   busy: string | null
@@ -22,15 +39,21 @@ type IntelligencePanelProps = {
   status: SystemStatus | null
   streamingAnswer: string
   streamingCitations: SearchResult[]
+  semanticTrailQuery: string
+  semanticTrailResult: SemanticTrailResult | null
+  developerMode: boolean
   onAsk: (event: FormEvent) => Promise<void>
   onAskPanelOpenChange: (value: boolean) => void
+  onBuildSemanticTrail: () => Promise<void>
   onCancelAsk: () => void
   onTogglePanel: () => Promise<void>
   onChatPromptChange: (value: string) => void
+  onSemanticTrailQueryChange: (value: string) => void
   onAskCollectionChange: (collectionId: string) => void
   onAskCurrentPageOnlyChange: (value: boolean) => void
   onAskIncludeCurrentPageChange: (value: boolean) => void
   onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>
+  onOpenSemanticTrailItem: (item: SemanticTrailItem) => Promise<void>
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
 }
 
@@ -52,19 +75,29 @@ export function IntelligencePanel({
   status,
   streamingAnswer,
   streamingCitations,
+  semanticTrailQuery,
+  semanticTrailResult,
+  developerMode,
   onAsk,
   onAskPanelOpenChange,
+  onBuildSemanticTrail,
   onCancelAsk,
   onTogglePanel,
   onChatPromptChange,
+  onSemanticTrailQueryChange,
   onAskCollectionChange,
   onAskCurrentPageOnlyChange,
   onAskIncludeCurrentPageChange,
   onOpenCitation,
+  onOpenSemanticTrailItem,
   onUpdateModels
 }: IntelligencePanelProps): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [trailPanelOpen, setTrailPanelOpen] = useState(true)
   const showTooltips = dashboardOpen
+  const panelRef = useRef<HTMLElement>(null)
+  const modelSettingsButtonRef = useRef<HTMLButtonElement>(null)
+  const modelSettingsRef = useRef<HTMLElement>(null)
   const askCollections = collections.filter((collection) => collection.captureCount > 0)
   const hasKnowledgeHubs = askCollections.length > 0
   const hasAskContext = !hasKnowledgeHubs
@@ -72,9 +105,58 @@ export function IntelligencePanel({
     : askCurrentPageOnly
       ? canUseCurrentPage
       : Boolean(askCollectionId) || (askIncludeCurrentPage && canUseCurrentPage)
+  const trailBlocked = dashboardOpen || !canUseCurrentPage || !status?.embeddingModel
+  const trailBlockReason = dashboardOpen || !canUseCurrentPage
+    ? 'Open a web page first'
+    : !status?.embeddingModel
+      ? 'No embedding model'
+      : 'Ready'
+
+  useEffect(() => {
+    if (!settingsOpen) return undefined
+
+    function handlePointerDown(event: PointerEvent): void {
+      const target = event.target instanceof Node ? event.target : null
+      if (!target) return
+      if (modelSettingsRef.current?.contains(target)) return
+      if (modelSettingsButtonRef.current?.contains(target)) return
+
+      setSettingsOpen(false)
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown, true)
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true)
+  }, [settingsOpen])
+
+  function handlePanelWheel(event: WheelEvent<HTMLElement>): void {
+    const target = event.target instanceof HTMLElement ? event.target : null
+    if (target?.closest('textarea, select')) return
+
+    const panel = panelRef.current
+    if (!panel || panelCollapsed) return
+
+    const maxScroll = panel.scrollHeight - panel.clientHeight
+    if (maxScroll <= 0) return
+
+    const delta =
+      event.deltaMode === 1
+        ? event.deltaY * 16
+        : event.deltaMode === 2
+          ? event.deltaY * panel.clientHeight
+          : event.deltaY
+    const nextScroll = Math.min(maxScroll, Math.max(0, panel.scrollTop + delta))
+    if (nextScroll === panel.scrollTop) return
+
+    event.preventDefault()
+    panel.scrollTop = nextScroll
+  }
 
   return (
-    <aside className={`intelligence-panel ${panelCollapsed ? 'collapsed' : ''}`}>
+    <aside
+      className={`intelligence-panel ${panelCollapsed ? 'collapsed' : ''}`}
+      ref={panelRef}
+      onWheelCapture={handlePanelWheel}
+    >
       <div
         style={
           panelCollapsed
@@ -117,7 +199,7 @@ export function IntelligencePanel({
       <div className="panel-content" aria-hidden={panelCollapsed} inert={panelCollapsed}>
         <header className="panel-header">
           <div>
-            <p>AiON • Local AI</p>
+            <p>AiON • Local Knowledge</p>
             <h1>Talk to the web you explored.</h1>
           </div>
           <div className="panel-header-actions">
@@ -142,9 +224,13 @@ export function IntelligencePanel({
             aria-expanded={askPanelOpen}
             onClick={() => onAskPanelOpenChange(!askPanelOpen)}
             type="button"
+            style={{ marginBottom: askPanelOpen ? '10px' : '0' }}
           >
             <h2>Ask</h2>
-            <span>{formatLocalModelName(status?.chatModel) ?? 'No model'}</span>
+            <span>
+              {formatVisibleModelName(status?.chatModel, { developerMode, role: 'chat' }) ??
+                'No model'}
+            </span>
             <ChevronRightIcon />
           </button>
 
@@ -169,6 +255,7 @@ export function IntelligencePanel({
                 event.preventDefault()
 
                 onAskPanelOpenChange(false)
+                setTrailPanelOpen(false)
                 await onAsk(event)
               }}
             >
@@ -197,12 +284,73 @@ export function IntelligencePanel({
           </div>
         </section>
 
+        <section
+          className={`panel-section mode-section trail-section ${trailPanelOpen ? 'open' : 'collapsed'}`}
+        >
+          <button
+            className="section-heading accordion-heading"
+            aria-expanded={trailPanelOpen}
+            onClick={() => setTrailPanelOpen((current) => !current)}
+            type="button"
+            style={{ marginBottom: trailPanelOpen ? '10px' : '0' }}
+          >
+            <h2>Flow</h2>
+            <span style={{ color: 'var(--accent-strong)' }}>
+              <WavesArrowDown size={20} />
+            </span>
+            <ChevronRightIcon />
+          </button>
+
+          <div className="semantic-trail-empty">
+            Build an ephemeral source flow from this page across all captured hubs.
+          </div>
+
+          <div
+            className={`trail-panel-body ${trailPanelOpen ? 'is-open' : 'is-closed'}`}
+            aria-hidden={!trailPanelOpen}
+            style={!trailPanelOpen ? { pointerEvents: 'none' } : undefined}
+          >
+            <form
+              className="semantic-trail-form"
+              onSubmit={async (event) => {
+                event.preventDefault()
+                await onBuildSemanticTrail()
+              }}
+            >
+              <input
+                aria-label="Flow query"
+                value={semanticTrailQuery}
+                onChange={(event) => onSemanticTrailQueryChange(event.target.value)}
+                placeholder="Use current page as seed"
+              />
+              <button disabled={Boolean(busy) || trailBlocked} type="submit">
+                Build Flow
+              </button>
+            </form>
+            {busy === 'Building Flow' ? (
+              <div className="semantic-trail-loading" role="status">
+                <strong>Ranking local sources</strong>
+                <span>Reading the active page and comparing captured hubs.</span>
+              </div>
+            ) : semanticTrailResult ? (
+              <SemanticTrailView result={semanticTrailResult} onOpenItem={onOpenSemanticTrailItem} />
+            ) : (
+              <div className="semantic-trail-empty">
+                No result. {trailBlocked && ` ${trailBlockReason}.`}
+              </div>
+            )}
+          </div>
+        </section>
+
         {busy === 'Asking Æther' &&
           (streamingAnswer ? (
             <section className="panel-section mode-section answer-section">
               <div className="section-heading">
                 <h2>Answer</h2>
-                <span>{formatLocalModelName(status?.chatModel) ?? 'Local model'}</span>
+                <span>
+                  {formatVisibleModelName(status?.chatModel, { developerMode, role: 'chat' }) ??
+                    'Local model'}
+                </span>
               </div>
               <StreamingAnswerCard
                 citations={streamingCitations}
@@ -219,7 +367,10 @@ export function IntelligencePanel({
           <section className="panel-section mode-section answer-section">
             <div className="section-heading">
               <h2>Answer</h2>
-              <span>{formatLocalModelName(chatResult.model) ?? chatResult.model}</span>
+              <span>
+                {formatVisibleModelName(chatResult.model, { developerMode, role: 'chat' }) ??
+                  chatResult.model}
+              </span>
             </div>
             <AnswerCard result={chatResult} onOpenCitation={onOpenCitation} />
           </section>
@@ -227,23 +378,179 @@ export function IntelligencePanel({
 
         <footer className="panel-footer">
           <span>{busy ?? notice ?? ''}</span>
-          <button
-            className="model-settings-button tooltip-host"
-            data-tooltip={showTooltips ? 'Model Settings' : undefined}
-            data-tooltip-side={showTooltips ? 'left' : undefined}
-            onClick={() => setSettingsOpen((current) => !current)}
-            title="Model settings"
-            type="button"
-          >
-            {status?.chatModel ? `${formatLocalModelName(status.chatModel)}` : 'Model settings'}
-          </button>
+          {developerMode ? (
+            <button
+              className="model-settings-button tooltip-host"
+              ref={modelSettingsButtonRef}
+              data-tooltip={showTooltips ? 'Model Settings' : undefined}
+              data-tooltip-side={showTooltips ? 'left' : undefined}
+              onClick={() => setSettingsOpen((current) => !current)}
+              title="Model settings"
+              type="button"
+            >
+              <GearIcon />
+              <span>
+                {status?.chatModel
+                  ? formatVisibleModelName(status.chatModel, { developerMode, role: 'chat' })
+                  : 'Model settings'}
+              </span>
+            </button>
+          ) : (
+            <label className="inline-model-selector">
+              <span>Model:</span>
+              <select
+                disabled={Boolean(busy) || !status || status.chatModels.length === 0}
+                value={status?.chatModel ?? ''}
+                onChange={(event) => onUpdateModels({ chatModel: event.target.value })}
+              >
+                <option value="" disabled>
+                  No model
+                </option>
+                {(status?.chatModels ?? []).map((model) => (
+                  <option key={model} value={model}>
+                    {formatVisibleModelName(model, { developerMode, role: 'chat' }) ?? model}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
         </footer>
-        {settingsOpen && (
-          <LocalModelSettings busy={busy} status={status} onUpdateModels={onUpdateModels} />
+        {developerMode && settingsOpen && (
+          <LocalModelSettings
+            busy={busy}
+            developerMode={developerMode}
+            settingsRef={modelSettingsRef}
+            status={status}
+            onUpdateModels={onUpdateModels}
+          />
         )}
       </div>
     </aside>
   )
+}
+
+function SemanticTrailView({
+  result,
+  onOpenItem
+}: {
+  result: SemanticTrailResult
+  onOpenItem: (item: SemanticTrailItem) => Promise<void>
+}): React.JSX.Element {
+  return (
+    <article className="semantic-trail-card">
+      <header className="semantic-trail-root">
+        <div>
+          <span>Root page</span>
+          <strong>{result.root.title}</strong>
+          <small>{result.root.host || getCaptureHost(result.root.url)}</small>
+        </div>
+        <p>{result.root.excerpt}</p>
+      </header>
+
+      <SemanticTrailGraph result={result} />
+
+      {result.items.length === 0 ? (
+        <div className="semantic-trail-empty">
+          No captured hub sources are close enough yet. Capture related pages, then rebuild.
+        </div>
+      ) : (
+        <div className="semantic-trail-list">
+          {result.items.map((item) => (
+            <button
+              className="semantic-trail-item"
+              key={item.id}
+              onClick={() => {
+                void onOpenItem(item)
+              }}
+              title={item.url}
+              type="button"
+            >
+              <span className="semantic-trail-score">{Math.round(item.score.total)}</span>
+              <span className="semantic-trail-item-copy">
+                <span className="semantic-trail-item-meta">
+                  {item.collectionName} · {formatDate(item.capturedAt)}
+                </span>
+                <strong>{item.title}</strong>
+                <small>{item.host || getCaptureHost(item.url)}</small>
+                <span className="semantic-trail-excerpt">{item.excerpt}</span>
+                <span className="semantic-trail-reasons">
+                  {item.reasons.map((reason) => (
+                    <span key={reason}>{semanticTrailReasonLabel(reason)}</span>
+                  ))}
+                </span>
+                <span className="semantic-trail-breakdown">
+                  Semantic {Math.round(item.score.semantic)} · Fresh{' '}
+                  {Math.round(item.score.recency)} · Host {Math.round(item.score.hostAffinity)}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </article>
+  )
+}
+
+function SemanticTrailGraph({ result }: { result: SemanticTrailResult }): React.JSX.Element {
+  const nodes = result.items.slice(0, 5)
+  const edges = result.edges
+    .filter((edge) => edge.from === 'root' || edge.kind !== 'semantic-match')
+    .slice(0, 8)
+
+  return (
+    <section className="semantic-trail-graph" aria-label="Flow graph">
+      <div className="semantic-trail-graph-nodes">
+        <span className="root-node">Page</span>
+        {nodes.map((item, index) => (
+          <span
+            className="source-node"
+            key={item.id}
+            style={{ '--node-index': index } as CSSProperties}
+            title={item.title}
+          >
+            {Math.round(item.score.total)}
+          </span>
+        ))}
+      </div>
+      <div className="semantic-trail-graph-edges">
+        {edges.length === 0 ? (
+          <span>Builds from local semantic similarity.</span>
+        ) : (
+          edges.map((edge, index) => (
+            <span key={`${edge.from}-${edge.to}-${edge.kind}-${index}`}>
+              {semanticTrailEdgeLabel(edge.kind)}
+            </span>
+          ))
+        )}
+      </div>
+    </section>
+  )
+}
+
+function semanticTrailReasonLabel(reason: SemanticTrailReason): string {
+  switch (reason) {
+    case 'recent-capture':
+      return 'Recent'
+    case 'same-host':
+      return 'Same host'
+    case 'same-collection':
+      return 'Same hub'
+    case 'semantic-match':
+    default:
+      return 'Semantic'
+  }
+}
+
+function semanticTrailEdgeLabel(kind: string): string {
+  switch (kind) {
+    case 'same-host':
+      return 'Host link'
+    case 'same-collection':
+      return 'Hub link'
+    case 'semantic-match':
+    default:
+      return 'Semantic link'
+  }
 }
 
 function AnswerLoading({
@@ -398,23 +705,56 @@ function AskContextControls({
 
 function LocalModelSettings({
   busy,
+  developerMode,
+  settingsRef,
   status,
   onUpdateModels
 }: {
   busy: string | null
+  developerMode: boolean
+  settingsRef: RefObject<HTMLElement | null>
   status: SystemStatus | null
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
 }): React.JSX.Element {
   const models = status?.availableModels ?? []
   const chatModels = status?.chatModels ?? []
   const embeddingModels = status?.embeddingModels ?? []
-  const modelLabel = formatLocalModelName(status?.chatModel) ?? 'No chat model'
+  const modelLabel =
+    formatVisibleModelName(status?.chatModel, { developerMode, role: 'chat' }) ?? 'No chat model'
+
+  if (!developerMode) {
+    return (
+      <section
+        className="model-island compact-model-island"
+        ref={settingsRef}
+        aria-label="AiON model"
+      >
+        <label>
+          AiON model
+          <select
+            disabled={Boolean(busy) || chatModels.length === 0}
+            value={status?.chatModel ?? ''}
+            onChange={(event) => onUpdateModels({ chatModel: event.target.value })}
+          >
+            <option value="" disabled>
+              No model
+            </option>
+            {chatModels.map((model) => (
+              <option key={model} value={model}>
+                {formatVisibleModelName(model, { developerMode, role: 'chat' }) ?? model}
+              </option>
+            ))}
+          </select>
+        </label>
+      </section>
+    )
+  }
 
   return (
-    <section className="model-island" aria-label="Local model settings">
+    <section className="model-island" ref={settingsRef} aria-label="Built-in model settings">
       <div className="model-heading">
         <div>
-          <h2>Local models</h2>
+          <h2>Built-in Models</h2>
           <p>{status?.runtimeReady ? `${models.length} local models` : 'No local model'}</p>
         </div>
         <span>{modelLabel}</span>
@@ -431,7 +771,7 @@ function LocalModelSettings({
           </option>
           {chatModels.map((model) => (
             <option key={model} value={model}>
-              {formatLocalModelName(model) ?? model}
+              {formatVisibleModelName(model, { developerMode, role: 'chat' }) ?? model}
             </option>
           ))}
         </select>
@@ -448,7 +788,7 @@ function LocalModelSettings({
           </option>
           {embeddingModels.map((model) => (
             <option key={model} value={model}>
-              {formatLocalModelName(model) ?? model}
+              {formatVisibleModelName(model, { developerMode, role: 'embedding' }) ?? model}
             </option>
           ))}
         </select>
