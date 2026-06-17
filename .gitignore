@@ -20,5 +20,6 @@ src-tauri
 aether-web
 
 .claude
+.codex
 
 .env
