@@ -811,16 +811,16 @@ button {
 }
 
 .start-page-hero-copy::before {
-  inset: -22px -42px;
+  inset: -28px -66px;
   z-index: -1;
   border-radius: 999px;
-  background: radial-gradient(
-    circle,
-    rgba(255, 255, 255, 0.72),
-    rgba(172, 236, 255, 0.16) 58%,
-    transparent 72%
-  );
-  filter: blur(7px);
+  background:
+    radial-gradient(circle at 24% 50%, rgba(103, 232, 249, 0.28), transparent 34%),
+    radial-gradient(circle at 52% 42%, rgba(255, 255, 255, 0.64), transparent 36%),
+    radial-gradient(circle at 78% 54%, rgba(143, 114, 207, 0.2), transparent 34%);
+  filter: blur(14px);
+  opacity: 0.7;
+  animation: discoverGlow 18s ease-in-out infinite alternate;
 }
 
 .start-page-hero-copy::after {
@@ -832,35 +832,69 @@ button {
 }
 
 .start-page-hero-copy h1 {
-  font-family: var(--font-display);
-  margin: 0;
-  font-size: clamp(38px, min(5.2vw, 9vh), 76px);
-  font-weight: 760;
-  line-height: 0.92;
-  letter-spacing: 0.08em;
-  color: #000;
+  --discover-gradient: linear-gradient(
+    105deg,
+    #071121 0%,
+    #102846 20%,
+    #1f7f9a 38%,
+    #e9fbff 50%,
+    #5eddec 60%,
+    #6657c8 76%,
+    #102846 90%,
+    #071121 100%
+  );
 
-  /* Icy Gradient Fill */
-  background: linear-gradient(180deg, #14233c 8%, #5f9fba 54%, #f4fdff 92%);
+  font-family: var(--font-ice);
+  margin: 0;
+  font-size: clamp(48px, min(6.1vw, 10vh), 92px);
+  font-weight: 760;
+  line-height: 0.9;
+  letter-spacing: 0.095em;
+  color: #0a172b;
+
+  background: var(--discover-gradient);
+  background-size: 260% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
+  animation: discoverTextFlow 24s cubic-bezier(0.45, 0, 0.2, 1) infinite;
 
-  /* Layered Text Glow (Chilled Haze) */
-  text-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.92),
-    0 14px 30px rgba(73, 146, 176, 0.18),
-    0 0 34px rgba(172, 236, 255, 0.34);
+  filter:
+    drop-shadow(0 1px 0 rgba(255, 255, 255, 0.76))
+    drop-shadow(0 12px 22px rgba(8, 25, 49, 0.24))
+    drop-shadow(0 0 22px rgba(103, 232, 249, 0.22));
 }
 
-.start-page-hero-copy h1 span:first-child {
-  font-style: italic;
-  font-weight: 540;
-  letter-spacing: 0.04em;
+@keyframes discoverTextFlow {
+  0%,
+  100% {
+    background-position: 6% 50%;
+  }
+
+  50% {
+    background-position: 94% 50%;
+  }
+
+  72% {
+    background-position: 72% 50%;
+  }
 }
 
-.start-page-hero-copy h1 span:last-child {
-  font-weight: 820;
+@keyframes discoverGlow {
+  0% {
+    opacity: 0.48;
+    transform: translate3d(-4px, 1px, 0) scale(0.98);
+  }
+
+  50% {
+    opacity: 0.82;
+    transform: translate3d(3px, -1px, 0) scale(1.02);
+  }
+
+  100% {
+    opacity: 0.62;
+    transform: translate3d(5px, 2px, 0) scale(1);
+  }
 }
 
 .custom-font {
@@ -1047,6 +1081,47 @@ button {
   animation: startOrbFloat 7.5s ease-in-out infinite;
 }
 
+.start-orb-bloom,
+.start-orb-rays,
+.start-orb-spark {
+  position: absolute;
+  pointer-events: none;
+  content: '';
+}
+
+.start-orb-bloom {
+  inset: -40%;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(255, 255, 255, 0.78), transparent 21%),
+    radial-gradient(circle at 42% 52%, rgba(125, 211, 252, 0.44), transparent 38%),
+    radial-gradient(circle at 62% 60%, rgba(45, 212, 191, 0.24), transparent 52%),
+    radial-gradient(circle, rgba(120, 119, 255, 0.12), transparent 66%);
+  filter: blur(10px);
+  opacity: 0.95;
+  animation: startOrbBloom 6.8s ease-in-out infinite;
+}
+
+.start-orb-rays {
+  inset: -30%;
+  border-radius: 999px;
+  background:
+    conic-gradient(
+      from 24deg,
+      transparent 0deg,
+      rgba(255, 255, 255, 0.46) 20deg,
+      rgba(125, 211, 252, 0.22) 48deg,
+      transparent 84deg,
+      transparent 132deg,
+      rgba(186, 230, 253, 0.24) 164deg,
+      transparent 206deg,
+      transparent 360deg
+    );
+  filter: blur(3px);
+  opacity: 0.5;
+  animation: startOrbRays 24s linear infinite;
+}
+
 .start-orb img {
   position: relative;
   z-index: 2;
@@ -1063,7 +1138,7 @@ button {
 
 .start-orb-aura {
   position: absolute;
-  inset: 16%;
+  inset: 13%;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 999px;
@@ -1079,6 +1154,39 @@ button {
     /* Vivid icy cyan mid-glow */ 0 0 120px rgba(58, 146, 196, 0.63),
     /* Deep arctic blue wide haze */ 0 30px 80px rgba(0, 0, 0, 0.15); /* Subtle grounding shadow */
   animation: startOrbBreath 6.5s ease-in-out infinite;
+}
+
+.start-orb-spark {
+  z-index: 3;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: radial-gradient(circle, #ffffff 0 24%, rgba(125, 211, 252, 0.8) 38%, transparent 72%);
+  filter: drop-shadow(0 0 10px rgba(125, 211, 252, 0.9));
+  animation: startOrbSpark 4.8s ease-in-out infinite;
+}
+
+.start-orb-spark-1 {
+  top: 18%;
+  left: 21%;
+}
+
+.start-orb-spark-2 {
+  top: 29%;
+  right: 15%;
+  animation-delay: -1.1s;
+}
+
+.start-orb-spark-3 {
+  right: 25%;
+  bottom: 20%;
+  animation-delay: -2.2s;
+}
+
+.start-orb-spark-4 {
+  bottom: 32%;
+  left: 14%;
+  animation-delay: -3.3s;
 }
 
 /* Two slowly rotating layers give the orb life: an orbiting inner glimmer and a
@@ -1121,6 +1229,38 @@ button {
   }
 }
 
+@keyframes startOrbBloom {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.95);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes startOrbRays {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes startOrbSpark {
+  0%,
+  100% {
+    opacity: 0.28;
+    transform: translateY(0) scale(0.72);
+  }
+
+  45% {
+    opacity: 1;
+    transform: translateY(-7px) scale(1.2);
+  }
+}
+
 @keyframes startOrbOrbit {
   to {
     transform: rotate(360deg);
@@ -1154,7 +1294,12 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .start-page-hero-copy::before,
+  .start-page-hero-copy h1,
   .start-orb,
+  .start-orb-bloom,
+  .start-orb-rays,
+  .start-orb-spark,
   .start-orb-aura,
   .start-orb-aura::before,
   .start-orb-aura::after {
@@ -2243,6 +2388,29 @@ button {
   transform: rotate(90deg);
 }
 
+.flow-heading-icon {
+  display: inline-grid;
+  width: 30px;
+  height: 24px;
+  place-items: center;
+  margin-left: auto;
+  border: 1px solid rgba(90, 185, 224, 0.18);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background:
+    radial-gradient(circle at 35% 22%, rgba(255, 255, 255, 0.9), transparent 42%),
+    linear-gradient(180deg, rgba(235, 251, 255, 0.86), rgba(182, 234, 250, 0.42));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.86),
+    0 6px 16px rgba(64, 154, 205, 0.12);
+}
+
+.flow-heading-icon svg {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.35;
+}
+
 .ask-panel-body {
   display: grid;
   min-height: 0;
@@ -2486,7 +2654,7 @@ button {
 .semantic-trail-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 7px;
+  gap: 6px;
 }
 
 .semantic-trail-form input {
@@ -2502,6 +2670,14 @@ button {
   font-weight: 720;
   outline: none;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.semantic-trail-help {
+  margin-top: -2px;
+  color: #66809a;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 .semantic-trail-form input:focus {
@@ -2624,74 +2800,192 @@ button {
 
 .semantic-trail-graph {
   display: grid;
-  gap: 7px;
-  border: 1px solid rgba(126, 199, 232, 0.2);
-  border-radius: 10px;
-  padding: 8px;
+  gap: 10px;
+  border: 1px solid rgba(126, 199, 232, 0.24);
+  border-radius: 14px;
+  padding: 10px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(229, 248, 255, 0.42)),
-    rgba(240, 250, 255, 0.58);
+    radial-gradient(circle at 10% 12%, rgba(255, 255, 255, 0.96), transparent 36%),
+    linear-gradient(180deg, rgba(246, 253, 255, 0.92), rgba(227, 247, 255, 0.56)),
+    rgba(240, 250, 255, 0.7);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.84),
+    0 10px 28px rgba(84, 160, 199, 0.08);
 }
 
-.semantic-trail-graph-nodes {
-  display: flex;
+.semantic-trail-graph-header {
+  display: grid;
+  gap: 2px;
+}
+
+.semantic-trail-graph-header span,
+.semantic-trail-graph-root span,
+.semantic-trail-graph-root small,
+.semantic-trail-graph-source small,
+.semantic-trail-graph-legend span {
+  color: var(--muted);
+  font-size: 9.5px;
+  font-weight: 780;
+}
+
+.semantic-trail-graph-header strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 860;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.semantic-trail-graph-flow {
+  display: grid;
   position: relative;
+  grid-template-columns: minmax(0, 0.82fr) 18px minmax(0, 1.18fr);
+  align-items: stretch;
+  gap: 8px;
+}
+
+.semantic-trail-graph-root {
+  display: grid;
+  align-content: center;
+  min-width: 0;
+  border: 1px solid rgba(92, 170, 218, 0.2);
+  border-radius: 12px;
+  padding: 9px;
+  background:
+    radial-gradient(circle at 28% 16%, rgba(255, 255, 255, 0.96), transparent 38%),
+    rgba(255, 255, 255, 0.68);
+}
+
+.semantic-trail-graph-root strong {
+  overflow: hidden;
+  color: #17314c;
+  font-size: 11px;
+  font-weight: 880;
+  line-height: 1.24;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.semantic-trail-graph-stream {
+  position: relative;
+  align-self: stretch;
+  overflow: hidden;
+  border-radius: 999px;
+  background:
+    radial-gradient(ellipse at 50% 12%, rgba(255, 255, 255, 0.95), transparent 32%),
+    linear-gradient(
+      180deg,
+      rgba(219, 249, 255, 0.2),
+      rgba(88, 199, 232, 0.52) 28%,
+      rgba(118, 213, 239, 0.42) 68%,
+      rgba(255, 255, 255, 0.18)
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.52),
+    0 0 18px rgba(78, 169, 214, 0.24);
+}
+
+.semantic-trail-graph-stream::before,
+.semantic-trail-graph-stream::after {
+  position: absolute;
+  inset: -18px 3px;
+  border-radius: inherit;
+  pointer-events: none;
+  content: '';
+}
+
+.semantic-trail-graph-stream::before {
+  background:
+    radial-gradient(ellipse at 50% 8%, rgba(255, 255, 255, 0.9) 0 14%, transparent 36%),
+    radial-gradient(ellipse at 55% 42%, rgba(255, 255, 255, 0.56) 0 10%, transparent 32%),
+    radial-gradient(ellipse at 44% 76%, rgba(255, 255, 255, 0.54) 0 12%, transparent 34%);
+  filter: blur(0.5px);
+  opacity: 0.78;
+  animation: flowMapCurrent 5.6s ease-in-out infinite;
+}
+
+.semantic-trail-graph-stream::after {
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.82), transparent);
+  opacity: 0.5;
+  transform: translateY(-70%);
+  animation: flowStream 3.8s ease-in-out infinite;
+}
+
+.semantic-trail-graph-sources {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.semantic-trail-graph-source {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   min-width: 0;
+  border: 1px solid rgba(119, 174, 213, 0.18);
+  border-radius: 11px;
+  padding: 6px 7px;
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: 0 5px 14px rgba(77, 142, 190, 0.08);
 }
 
-.semantic-trail-graph-nodes::before {
-  position: absolute;
-  top: 50%;
-  right: 38px;
-  left: 42px;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(78, 169, 214, 0.3), rgba(154, 219, 247, 0.08));
-  content: '';
-  transform: translateY(-50%);
-}
-
-.root-node,
-.source-node {
-  position: relative;
-  z-index: 1;
+.semantic-trail-graph-source > span {
   display: grid;
+  grid-row: span 2;
   place-items: center;
-  border: 1px solid rgba(116, 188, 226, 0.34);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.84);
-  color: #2b7198;
-  font-size: 10px;
-  font-weight: 900;
-  box-shadow: 0 5px 13px rgba(77, 142, 190, 0.12);
-}
-
-.root-node {
-  width: 42px;
+  width: 26px;
   height: 26px;
-  border-radius: 8px;
+  border: 1px solid rgba(78, 169, 214, 0.26);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 34% 24%, rgba(255, 255, 255, 0.94), transparent 40%),
+    rgba(211, 242, 255, 0.84);
+  color: #1d668f;
+  font-size: 10px;
+  font-weight: 920;
+  font-variant-numeric: tabular-nums;
 }
 
-.source-node {
-  width: 25px;
-  height: 25px;
+.semantic-trail-graph-source strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 10.5px;
+  font-weight: 820;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.semantic-trail-graph-edges {
+.semantic-trail-graph-source small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.semantic-trail-graph-empty {
+  display: grid;
+  min-height: 74px;
+  place-items: center;
+  border: 1px dashed rgba(119, 174, 213, 0.22);
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 760;
+}
+
+.semantic-trail-graph-legend {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
 }
 
-.semantic-trail-graph-edges span {
+.semantic-trail-graph-legend span {
   border: 1px solid rgba(119, 174, 213, 0.18);
   border-radius: 999px;
   padding: 2px 6px;
   background: rgba(255, 255, 255, 0.56);
-  color: #54708d;
-  font-size: 9px;
-  font-weight: 760;
 }
 
 .semantic-trail-list {
@@ -2705,39 +2999,48 @@ button {
 
 .semantic-trail-list::before {
   position: absolute;
-  top: 18px;
-  bottom: 18px;
-  left: 19px;
-  width: 4px;
+  top: 16px;
+  bottom: 16px;
+  left: 9px;
+  width: 58px;
   border-radius: 999px;
   pointer-events: none;
   content: '';
   background:
+    radial-gradient(ellipse at 52% 8%, rgba(255, 255, 255, 0.82), transparent 26%),
+    radial-gradient(ellipse at 44% 28%, rgba(178, 235, 255, 0.58), transparent 34%),
+    radial-gradient(ellipse at 58% 62%, rgba(82, 190, 226, 0.38), transparent 40%),
     linear-gradient(
       180deg,
-      rgba(255, 255, 255, 0.05),
-      rgba(125, 211, 252, 0.7) 18%,
-      rgba(58, 184, 218, 0.36) 54%,
-      rgba(255, 255, 255, 0.08)
-    ),
-    rgba(213, 246, 255, 0.42);
+      transparent,
+      rgba(125, 211, 252, 0.42) 18%,
+      rgba(58, 184, 218, 0.28) 54%,
+      transparent
+    );
+  filter: blur(9px);
+  opacity: 0.86;
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.52),
-    0 0 16px rgba(78, 169, 214, 0.34);
+    0 0 20px rgba(78, 169, 214, 0.18),
+    0 0 38px rgba(125, 211, 252, 0.14);
 }
 
 .semantic-trail-list::after {
   position: absolute;
   top: 18px;
   bottom: 18px;
-  left: 20px;
-  width: 2px;
+  left: 27px;
+  width: 14px;
   border-radius: 999px;
   pointer-events: none;
   content: '';
-  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.9), transparent);
-  opacity: 0.72;
-  animation: flowStream 2.8s ease-in-out infinite;
+  background:
+    radial-gradient(ellipse at 50% 10%, rgba(255, 255, 255, 0.96) 0 12%, transparent 34%),
+    radial-gradient(ellipse at 45% 38%, rgba(255, 255, 255, 0.76) 0 9%, transparent 30%),
+    radial-gradient(ellipse at 54% 72%, rgba(255, 255, 255, 0.68) 0 10%, transparent 32%),
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.82), transparent);
+  opacity: 0.82;
+  filter: blur(0.6px);
+  animation: flowStream 4.2s ease-in-out infinite;
 }
 
 .semantic-trail-item {
@@ -2764,13 +3067,41 @@ button {
   overflow: visible;
 }
 
+.semantic-trail-item::before {
+  position: absolute;
+  top: 31px;
+  left: 28px;
+  width: 26px;
+  height: 10px;
+  border-top: 1px solid rgba(107, 196, 231, 0.28);
+  border-radius: 999px;
+  pointer-events: none;
+  content: '';
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.86), rgba(116, 211, 241, 0.18), transparent);
+}
+
 @keyframes flowStream {
   0% {
-    transform: translateY(-28%);
+    transform: translateY(-34%) scaleY(0.92);
+  }
+
+  50% {
+    transform: translateY(4%) scaleY(1.05);
   }
 
   100% {
-    transform: translateY(28%);
+    transform: translateY(34%) scaleY(0.96);
+  }
+}
+
+@keyframes flowMapCurrent {
+  0%,
+  100% {
+    transform: translateY(-8%) scaleX(0.88);
+  }
+
+  50% {
+    transform: translateY(8%) scaleX(1.08);
   }
 }
 
@@ -2865,12 +3196,23 @@ button {
   font-size: 11px;
   font-weight: 700;
   line-height: 1.45;
+  margin-bottom: 10px;
 }
 
 .semantic-trail-loading strong {
   color: var(--ink);
   font-size: 12px;
   font-weight: 840;
+}
+
+.semantic-trail-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  margin-top: 5px;
 }
 
 .answer-loading {
@@ -4275,16 +4617,16 @@ button {
   align-content: center;
   justify-self: center;
   justify-items: center;
-  gap: clamp(14px, 2.3vh, 24px);
+  gap: clamp(12px, 2vh, 22px);
   min-height: 0;
 }
 
 .start-mark {
   display: grid;
   place-items: center;
-  width: clamp(96px, 15vh, 156px);
-  height: clamp(96px, 15vh, 156px);
-  opacity: 0.92;
+  width: clamp(170px, 28vh, 292px);
+  height: clamp(170px, 28vh, 292px);
+  opacity: 1;
 }
 
 .start-mark img {
@@ -4377,6 +4719,15 @@ button {
 
   .start-page-inner {
     gap: 10px;
+  }
+
+  .start-mark {
+    width: clamp(128px, 22vh, 178px);
+    height: clamp(128px, 22vh, 178px);
+  }
+
+  .start-page-hero-copy h1 {
+    font-size: clamp(40px, min(5.6vw, 8vh), 64px);
   }
 
   .start-search input,

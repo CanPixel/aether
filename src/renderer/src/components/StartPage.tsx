@@ -34,10 +34,7 @@ export function StartPage({
       />
       <div className="start-page-inner">
         <div className="start-page-hero-copy">
-          <h1 aria-label="Discover">
-            <span>Di</span>
-            <span>SCOVER</span>
-          </h1>
+          <h1>DiSCOVER</h1>
         </div>
         <div className="start-mark" aria-hidden="true">
           <div className="start-orb">
