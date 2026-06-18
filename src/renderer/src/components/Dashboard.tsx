@@ -37,7 +37,7 @@ import {
   getRootDomainLetter,
   inferIcebergIcon
 } from '../utils/aether-ui'
-import { ChevronRightIcon, AetherSigilIcon, CloseIcon, CubeIcon, SnowflakeIcon } from './icons'
+import { ChevronRightIcon, AetherSigilIcon, CloseIcon, CubeIcon } from './icons'
 import { SquarePen, Trash2 as TrashIcon } from 'lucide-react'
 import { portals } from "../constants/Features"
 
@@ -217,7 +217,7 @@ export function Dashboard({
         <section className="hub-row">
           <div className="section-title compact">
             <span className="section-symbol">
-              <span style={{ margin: '4px 2px 0 0' }}>
+              <span style={{ margin: '3px 2px 0 0' }}>
                 {portals.icon}
               </span>
             </span>
@@ -298,7 +298,7 @@ export function Dashboard({
         <section className="iceberg-band">
           <div className="section-title compact">
             <span className="section-symbol">
-              <SnowflakeIcon />
+              <Snowflake />
             </span>
             <div>
               <h2>Saved Icebergs</h2>

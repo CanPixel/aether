@@ -117,7 +117,7 @@ export function SparkIcon(): React.JSX.Element {
   )
 }
 
-export function SnowflakeIcon({ className }: { className?: string }): React.JSX.Element {
+/* export function SnowflakeIcon({ className }: { className?: string }): React.JSX.Element {
   return (
     <svg className={className} aria-hidden="true" viewBox="0 0 24 24">
       <path
@@ -130,7 +130,7 @@ export function SnowflakeIcon({ className }: { className?: string }): React.JSX.
       />
     </svg>
   )
-}
+} */
 
 export function AetherLensIcon(): React.JSX.Element {
   return (

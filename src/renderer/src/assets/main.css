@@ -4766,6 +4766,16 @@ button {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.72),
     0 8px 18px rgba(74, 145, 194, 0.08);
+
+  transition: border-color 0.4s ease, box-shadow 0.4s ease, border 0.2s ease;
+}
+
+.inline-model-selector:hover {
+  border: 2px solid rgba(142, 219, 255, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 8px 24px rgba(105, 188, 224, 0.2),
+    0 0 8px rgba(165, 230, 255, 0.3); /* Soft frost aura */
 }
 
 .inline-model-selector span {
@@ -4777,7 +4787,7 @@ button {
 .inline-model-selector select {
   min-width: 0;
   height: 24px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 999px;
   padding: 0 20px 0 7px;
   background: rgba(255, 255, 255, 0.52);
@@ -4785,6 +4795,14 @@ button {
   font-size: 11px;
   font-weight: 820;
   box-shadow: none;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.inline-model-selector select:hover {
+  cursor: pointer;
+  background-color: rgba(224, 247, 255, 0.75); 
+  border-color: rgba(174, 227, 253, 0.4);
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.6);
 }
 
 .inline-model-selector select:focus {
@@ -6963,8 +6981,8 @@ button {
 }
 
 .crystallizer-empty svg {
-  width: 58px;
-  height: 58px;
+  width: 42px;
+  height: 42px;
 }
 
 .crystallizer-empty h2 {

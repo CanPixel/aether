@@ -85,11 +85,6 @@
         <circle cx="371" cy="705" r="5"/>
         <circle cx="553" cy="777" r="3"/>
       </g>
-      <g fill="none" stroke="#ffffff" stroke-linecap="round" opacity="0.78">
-        <path d="M706 651v54M679 678h54" stroke-width="8"/>
-        <path d="M379 403v34M362 420h34" stroke-width="6"/>
-        <path d="M619 295v25M606 308h26" stroke-width="5"/>
-      </g>
     </g>
 
     <circle cx="512" cy="512" r="372" fill="none" stroke="#ffffff" stroke-width="16" opacity="0.64"/>

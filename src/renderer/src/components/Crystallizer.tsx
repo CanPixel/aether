@@ -29,7 +29,7 @@ import {
   SavedIcebergSummary
 } from '../../../shared/aether'
 import { formatVisibleModelName, inferIcebergIcon } from '../utils/aether-ui'
-import { ChevronRightIcon, SnowflakeIcon, SpinnerIcon } from './icons'
+import { ChevronRightIcon, SpinnerIcon } from './icons'
 
 type LayerDefinition = {
   level: number
@@ -476,7 +476,7 @@ export function Crystallizer({
             />
           </div>
           <button disabled={loading || Boolean(busy) || !keyword.trim()} type="submit">
-            {loading ? <SpinnerIcon /> : <SnowflakeIcon />}
+            {loading ? <SpinnerIcon /> : <Snowflake />}
             <span>{loading ? 'Crystallizing' : 'Crystallize'}</span>
           </button>
           {hasUnsavedResult && (
@@ -713,7 +713,7 @@ export function Crystallizer({
           {!result && !loading && !error && (
             <div className="crystallizer-empty">
               <div className="crystallizer-state-card">
-                <SnowflakeIcon />
+                <Snowflake />
                 <h2>Enter a topic to begin.</h2>
               </div>
             </div>
@@ -786,7 +786,7 @@ export function Crystallizer({
               <span>
                 {loading ? (
                   <div style={{ width: '30px' }}>
-                    <SnowflakeIcon className="animate-spin-fast" />
+                    <Snowflake className="animate-spin-fast" />
                   </div>
                 ) : (
                   <Snowflake size={30} />

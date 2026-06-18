@@ -38,11 +38,11 @@ import { Crystallizer } from './components/Crystallizer'
 import { Dashboard } from './components/Dashboard'
 import { FlowView } from './components/FlowView'
 import { AirView } from './components/AirView'
-import { GlobeIcon, CloudIcon, GearIcon, SnowflakeIcon } from './components/icons'
+import { GlobeIcon, CloudIcon, GearIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
 import { formatVisibleModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
-import { SearchIcon, ChevronUp, ChevronDown, Waves, Wind } from 'lucide-react'
+import { SearchIcon, ChevronUp, Snowflake, ChevronDown, Waves, Wind } from 'lucide-react'
 
 // Sentinel URL for a blank tab that shows the Æther start page instead of loading a
 // page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
@@ -1657,7 +1657,8 @@ function App(): React.JSX.Element {
             title='iCE'
             type="button"
           >
-            <SnowflakeIcon />
+            {/* <SnowflakeIcon /> */}
+            <Snowflake />
             <span className="app-dot" aria-hidden="true" />
           </button>
           <button
