@@ -31,7 +31,7 @@ export function StartPage({
         src={wavyLinesSrc}
         alt="Wavy lines"
         draggable={false}
-      />
+        />
       <div className="start-page-inner">
         <div className="start-page-hero-copy">
           <h1>DiSCOVER</h1>
