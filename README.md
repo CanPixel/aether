@@ -1,6 +1,6 @@
 # ÆTHER Browser
 
-Æther is a Tauri-native research browser for local knowledge work. It combines normal web browsing, persistent knowledge hubs, local page capture, semantic retrieval, AiON question answering, Flow semantic mapping, AiR Markdown dossier rendering, and the iCE Information Complexity Explorer in one desktop shell, with an Android build path under active migration.
+ÆTHER is a Tauri-native research browser for local knowledge work. It combines normal web browsing, persistent knowledge hubs, local page capture, semantic retrieval, AiON question answering, Flow semantic mapping, AiR Markdown dossier rendering, and the iCE Information Complexity Explorer in one desktop shell, with an Android build path under active migration.
 
 The core idea is simple: browse the web, save useful pages into local knowledge hubs, embed those captures on your machine, and ask questions against that private local context without sending captured page content to a cloud model API.
 
@@ -10,7 +10,7 @@ Current major capabilities:
 
 - Tauri desktop shell using Rust commands and native child webview browser surfaces.
 - Browser tabs with dynamic sizing, favicons, page-theme tinting, back/forward history, and dashboard/browser switching.
-- Æther dashboard with saved portals, saved iCE atlases, and knowledge hub accordions.
+- ÆTHER dashboard with saved portals, saved iCE atlases, and knowledge hub accordions.
 - Saved portals can be reordered by dragging and reopened as browser tabs.
 - Knowledge hubs can be created, edited, deleted, reordered, assigned icons, and expanded as accordions.
 - Captured source cards appear as compact scrollable lists inside hubs and can be dragged between knowledge hubs.
@@ -27,7 +27,7 @@ Current major capabilities:
 
 ## Privacy Boundary
 
-Æther's capture, retrieval, and local AI path is designed to stay on the machine.
+ÆTHER's capture, retrieval, and local AI path is designed to stay on the machine.
 
 Local-only pieces:
 
@@ -43,7 +43,7 @@ Local-only pieces:
 - AiR dossier context, previews, and generated Markdown files
 - iCE topic maps generated through in-process local models
 
-Normal browsing is still normal browsing. Websites loaded in the browser can make their own network requests, track sessions, run JavaScript, and communicate with their own servers. The privacy boundary applies to Æther's indexing and intelligence pipeline, not to websites themselves.
+Normal browsing is still normal browsing. Websites loaded in the browser can make their own network requests, track sessions, run JavaScript, and communicate with their own servers. The privacy boundary applies to ÆTHER's indexing and intelligence pipeline, not to websites themselves.
 
 ## Prerequisites
 
@@ -137,7 +137,7 @@ bun run build
 
 ## Android Build
 
-Æther now has Tauri Android scripts, but the local Android SDK/NDK must be installed before Tauri can initialize or build the Android project.
+ÆTHER now has Tauri Android scripts, but the local Android SDK/NDK must be installed before Tauri can initialize or build the Android project.
 
 Install Android Studio, then install these SDK pieces through Android Studio's SDK Manager:
 
@@ -210,7 +210,7 @@ Android outputs are generated under:
 src-tauri/gen/android/app/build/outputs/
 ```
 
-Current mobile limitation: the React shell can be packaged for Android, but Æther's current live browser tab surface uses Tauri desktop child webviews. That desktop-only browser surface must be replaced with an Android-compatible browser path before the Android app behaves like the macOS Tauri app.
+Current mobile limitation: the React shell can be packaged for Android, but ÆTHER's current live browser tab surface uses Tauri desktop child webviews. That desktop-only browser surface must be replaced with an Android-compatible browser path before the Android app behaves like the macOS Tauri app.
 
 ## Linux Build
 
@@ -305,8 +305,8 @@ Common Tauri outputs:
 
 ```text
 src-tauri/target/release/bundle/
-src-tauri/target-linux-arm64/aarch64-unknown-linux-gnu/release/bundle/deb/Æther_1.0.0_arm64.deb
-src-tauri/target-linux-x64/x86_64-unknown-linux-gnu/release/bundle/deb/Æther_1.0.0_amd64.deb
+src-tauri/target-linux-arm64/aarch64-unknown-linux-gnu/release/bundle/deb/ÆTHER_1.0.0_arm64.deb
+src-tauri/target-linux-x64/x86_64-unknown-linux-gnu/release/bundle/deb/ÆTHER_1.0.0_amd64.deb
 src-tauri/gen/android/app/build/outputs/
 ```
 
@@ -340,7 +340,7 @@ bun run build
 
 The left rail is the main app switcher:
 
-- Æther opens the dashboard.
+- ÆTHER opens the dashboard.
 - iCE opens the Information Complexity Explorer.
 - Flow opens the semantic relation graph for captured knowledge. This rail button is shown in Developer Mode.
 - AiR opens the Automatic Information Renderer for Markdown dossier exports. This rail button is shown in Developer Mode.
@@ -441,7 +441,7 @@ Flow uses local embeddings and captured chunk metadata. It is most useful after 
 
 ### AiR Automatic Information Renderer
 
-AiR is the final Markdown export funnel for Æther research. It prepares local context, previews coverage, renders one dossier, and lets the user open or reveal the file immediately.
+AiR is the final Markdown export funnel for ÆTHER research. It prepares local context, previews coverage, renders one dossier, and lets the user open or reveal the file immediately.
 
 AiR supports these lens types:
 
@@ -456,7 +456,7 @@ AiR behavior:
 - Preview before writing shows matched sources, citations, proposed sections, confidence, and coverage.
 - Rendered files are normal `.md` files with YAML frontmatter and numbered source footnotes.
 - File titles and filenames follow `AiR Dossier: <lens>`.
-- Preferred export directory is `~/Documents/Æther/AiR/`.
+- Preferred export directory is `~/Documents/ÆTHER/AiR/`.
 - If Documents cannot be created or written, AiR falls back to the app-data export folder and reports the actual path.
 - Recent renders show title, timestamp, lens, source count, and quick open/reveal actions.
 
@@ -488,7 +488,7 @@ The iCE canvas includes:
 
 ## Local Data Storage
 
-Æther stores app data under Tauri's app data directory.
+ÆTHER stores app data under Tauri's app data directory.
 
 Current storage paths:
 
@@ -498,7 +498,7 @@ Current storage paths:
 <appData>/aether-settings/settings.json
 <appData>/aether-icebergs/icebergs.json
 <appData>/aether-air/
-~/Documents/Æther/AiR/
+~/Documents/ÆTHER/AiR/
 ./aether-models/
 ```
 
@@ -532,7 +532,7 @@ Current storage paths:
 - Original keyword, model, and generation timestamp.
 - Full iceberg item lists for reopening in iCE.
 
-AiR dossier exports are written to `~/Documents/Æther/AiR/` when available. `<appData>/aether-air/` is the fallback export directory and is also scanned for recent renders.
+AiR dossier exports are written to `~/Documents/ÆTHER/AiR/` when available. `<appData>/aether-air/` is the fallback export directory and is also scanned for recent renders.
 
 ## Capture Pipeline
 

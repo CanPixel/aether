@@ -44,7 +44,7 @@ import { QuickAction } from './types/ui'
 import { formatVisibleModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
 import { SearchIcon, ChevronUp, Snowflake, ChevronDown, Waves, Wind } from 'lucide-react'
 
-// Sentinel URL for a blank tab that shows the Æther start page instead of loading a
+// Sentinel URL for a blank tab that shows the ÆTHER start page instead of loading a
 // page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
 const START_PAGE_URL = 'aether://start'
 
@@ -318,7 +318,7 @@ function getNoticeTone(message: string): StatusToastInput['tone'] {
 
 function getErrorMessage(error: unknown): string {
   if (typeof error === 'string') return error
-  if (!(error instanceof Error)) return 'Æther hit an unexpected error.'
+  if (!(error instanceof Error)) return 'ÆTHER hit an unexpected error.'
 
   return error.message
     .replace(/^Error invoking remote method '[^']+':\s*/i, '')
@@ -1142,7 +1142,7 @@ function App(): React.JSX.Element {
     setAskPhase('Preparing local context')
     setChatResult(null)
 
-    await runTask('Asking Æther', async () => {
+    await runTask('Asking ÆTHER', async () => {
       try {
         const result = await window.aether.chat.ask({
           prompt,
@@ -1592,7 +1592,7 @@ function App(): React.JSX.Element {
     setNotice(null)
     // Skip the toast when asking ÆTHER — the user just triggered it themselves,
     // and the intelligence panel already shows the in-progress state.
-    if (label !== 'Asking Æther') {
+    if (label !== 'Asking ÆTHER') {
       showToast({
         message: label,
         tone: 'info',
@@ -1703,7 +1703,7 @@ function App(): React.JSX.Element {
         </nav>
         <button
           className="app-button settings-button"
-          aria-label="Open Æther settings"
+          aria-label="Open ÆTHER settings"
           onClick={openSettings}
           title='Settings'
           type="button"

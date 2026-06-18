@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# make-styled-dmg.sh — build a *reliably styled* Æther installer DMG.
+# make-styled-dmg.sh — build a *reliably styled* ÆTHER installer DMG.
 #
 # Why this exists:
 #   Tauri's built-in DMG bundler copies the background PNG into the image but
@@ -23,7 +23,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-VOLNAME="Æther"
+VOLNAME="ÆTHER"
 APP="src-tauri/target/release/bundle/macos/${VOLNAME}.app"
 OUT_DIR="src-tauri/target/release/bundle/dmg"
 OUT="${OUT_DIR}/${VOLNAME}_1.0.0_aarch64.dmg"

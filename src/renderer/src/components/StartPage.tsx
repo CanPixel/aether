@@ -2,7 +2,7 @@ import { CSSProperties, FormEvent, useState } from 'react'
 import { HubShortcutSummary } from '../../../shared/aether'
 import { cleanTitle, getPortalTint, getRootDomainLetter } from '../utils/aether-ui'
 
-// The Æther start page replaces a blank new tab's default search-engine landing.
+// The ÆTHER start page replaces a blank new tab's default search-engine landing.
 // It keeps Portals one click away from the web view (where they belong) and offers a
 // search box that hands the query straight to the active tab's navigation.
 export function StartPage({
