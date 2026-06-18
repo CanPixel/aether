@@ -7406,7 +7406,8 @@ button {
   flex: 2 1 280px;
   flex-direction: column;
   gap: 7px;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .crystallizer-list button {
