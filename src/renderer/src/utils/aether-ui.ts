@@ -78,7 +78,7 @@ export function normalizeComparableUrl(value: string): string {
   }
 }
 
-export function formatLocalModelName(model?: string | null): string | null {
+function formatLocalModelName(model?: string | null): string | null {
   if (!model) return null
 
   const filename = model.split(/[\\/]/).pop() ?? model
@@ -101,8 +101,7 @@ export function formatLocalModelName(model?: string | null): string | null {
     .replace(/\s{2,}/g, ' ')
     .trim()
 }
-
-export function formatBrandedModelName(
+function formatBrandedModelName(
   model?: string | null,
   role: 'chat' | 'embedding' = 'chat'
 ): string | null {

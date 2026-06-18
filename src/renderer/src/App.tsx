@@ -41,7 +41,7 @@ import { AirView } from './components/AirView'
 import { GlobeIcon, CloudIcon, GearIcon, SnowflakeIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
-import { formatLocalModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
+import { formatVisibleModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
 import { SearchIcon, ChevronUp, ChevronDown, Waves, Wind } from 'lucide-react'
 
 // Sentinel URL for a blank tab that shows the Æther start page instead of loading a
@@ -1428,7 +1428,7 @@ function App(): React.JSX.Element {
       const result = await window.aether.crystallizer.generate({ keyword })
       setNotice(
         `Mapped ${result.items.length} fragments with ${
-          formatLocalModelName(result.model) ?? result.model
+          formatVisibleModelName(result.model) ?? result.model
         }.`
       )
       return result
@@ -1671,28 +1671,34 @@ function App(): React.JSX.Element {
             <GlobeIcon />
             <span className="app-dot" aria-hidden="true" />
           </button>
-          <button
-            className={`app-button flow-button tooltip-host ${flowOpen ? 'active' : ''}`}
-            data-tooltip="Flow"
-            data-tooltip-side="right"
-            onClick={openFlow}
-            title="Flow"
-            type="button"
-          >
-            <Waves />
-            <span className="app-dot" aria-hidden="true" />
-          </button>
-          <button
-            className={`app-button air-button tooltip-host ${airOpen ? 'active' : ''}`}
-            data-tooltip="AiR"
-            data-tooltip-side="right"
-            onClick={openAir}
-            title="AiR"
-            type="button"
-          >
-            <Wind />
-            <span className="app-dot" aria-hidden="true" />
-          </button>
+
+          {(settings.developerMode ? (
+          <div>
+            <button
+              className={`app-button flow-button tooltip-host ${flowOpen ? 'active' : ''}`}
+              data-tooltip="Flow"
+              data-tooltip-side="right"
+              onClick={openFlow}
+              title="Flow"
+              type="button"
+            >
+              <Waves />
+              <span className="app-dot" aria-hidden="true" />
+            </button>
+            <button
+              className={`app-button air-button tooltip-host ${airOpen ? 'active' : ''}`}
+              data-tooltip="AiR"
+              data-tooltip-side="right"
+              onClick={openAir}
+              title="AiR"
+              type="button"
+            >
+              <Wind />
+              <span className="app-dot" aria-hidden="true" />
+            </button>
+          </div>
+        ) : <></>)}
+
         </nav>
         <button
           className="app-button settings-button"

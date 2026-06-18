@@ -31,7 +31,7 @@ import { CollectionIcon } from '../utils/collection-icons'
 import {
   cleanTitle,
   formatDate,
-  formatLocalModelName,
+  formatVisibleModelName,
   getCaptureHost,
   getPortalTint,
   getRootDomainLetter,
@@ -356,8 +356,8 @@ export function Dashboard({
                     <span>{iceberg.itemCount} fragments</span>
                     <strong>{iceberg.title}</strong>
                     <small>
-                      {formatDate(iceberg.savedAt)}{' '}
-                      {formatLocalModelName(iceberg.model) ?? iceberg.model}
+                      {formatDate(iceberg.savedAt)}{' • '}
+                      {formatVisibleModelName(iceberg.model) ?? iceberg.model}
                     </small>
                   </button>
                   <button

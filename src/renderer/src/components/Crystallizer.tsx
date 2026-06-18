@@ -28,7 +28,7 @@ import {
   SavedIceberg,
   SavedIcebergSummary
 } from '../../../shared/aether'
-import { formatLocalModelName, inferIcebergIcon } from '../utils/aether-ui'
+import { formatVisibleModelName, inferIcebergIcon } from '../utils/aether-ui'
 import { ChevronRightIcon, SnowflakeIcon, SpinnerIcon } from './icons'
 
 type LayerDefinition = {
@@ -853,7 +853,7 @@ export function Crystallizer({
                       <strong>{iceberg.title}</strong>
                       <small>
                         {iceberg.itemCount} fragments /{' '}
-                        {formatLocalModelName(iceberg.model) ?? iceberg.model}
+                        {formatVisibleModelName(iceberg.model) ?? iceberg.model}
                       </small>
                     </button>
                     <button
