@@ -195,9 +195,7 @@ export function IntelligencePanel({
           AiON
         </span>
         <button
-          className="panel-icon-toggle tooltip-host crystal-button"
-          data-tooltip={showTooltips ? 'AiON' : undefined}
-          data-tooltip-side={showTooltips ? 'left' : undefined}
+          className="panel-icon-toggle crystal-button"
           aria-hidden={!panelCollapsed}
           onClick={onTogglePanel}
           tabIndex={panelCollapsed ? 0 : -1}

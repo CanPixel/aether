@@ -4,6 +4,10 @@ import {
   AetherApi,
   AetherShortcutId,
   AetherState,
+  AirDossierInput,
+  AirPreparedDossier,
+  AirRecentFile,
+  AirRenderResult,
   AppSettings,
   AppSummary,
   BrowserTabSummary,
@@ -85,6 +89,13 @@ if (isTauri) {
     },
     flow: {
       graph: (input) => call<FlowGraphResult>('aether_flow_graph', { input })
+    },
+    air: {
+      prepare: (input: AirDossierInput) => call<AirPreparedDossier>('aether_air_prepare', { input }),
+      render: (input: AirDossierInput) => call<AirRenderResult>('aether_air_render', { input }),
+      listRecent: () => call<AirRecentFile[]>('aether_air_list_recent'),
+      open: (path) => call<void>('aether_air_open', { path }),
+      reveal: (path) => call<void>('aether_air_reveal', { path })
     },
     chat: {
       ask: (input) => call<ChatResult>('aether_chat_ask', { input }),

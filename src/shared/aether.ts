@@ -203,6 +203,52 @@ export interface ChatResult {
   citations: SearchResult[]
 }
 
+export type AirLensKind = 'topic' | 'flow' | 'hub' | 'answer' | 'iceberg'
+
+export interface AirDossierInput {
+  lens: string
+  lensKind?: AirLensKind
+  collectionId?: string
+  captureId?: string
+  savedIcebergId?: string
+  answer?: ChatResult
+  limit?: number
+}
+
+export interface AirDossierSource {
+  id: string
+  title: string
+  excerpt: string
+  collectionName?: string
+  url?: string
+  host?: string
+  capturedAt?: string
+  score?: number
+}
+
+export interface AirPreparedDossier {
+  title: string
+  lens: string
+  lensKind: AirLensKind
+  generatedAt: string
+  model?: string
+  outputDir: string
+  markdownPreview: string
+  sources: AirDossierSource[]
+}
+
+export interface AirRenderResult {
+  path: string
+  filename: string
+  title: string
+  sourceCount: number
+  renderedAt: string
+}
+
+export interface AirRecentFile extends AirRenderResult {
+  lens: string
+}
+
 export interface ChatStreamEvent {
   requestId: string
   status?: string
@@ -361,6 +407,13 @@ export interface AetherApi {
   }
   flow: {
     graph(input?: FlowGraphInput): Promise<FlowGraphResult>
+  }
+  air: {
+    prepare(input: AirDossierInput): Promise<AirPreparedDossier>
+    render(input: AirDossierInput): Promise<AirRenderResult>
+    listRecent(): Promise<AirRecentFile[]>
+    open(path: string): Promise<void>
+    reveal(path: string): Promise<void>
   }
   chat: {
     ask(input: {

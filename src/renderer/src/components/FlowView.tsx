@@ -4,8 +4,7 @@ import {
   PointerEvent as ReactPointerEvent,
   useLayoutEffect,
   useMemo,
-  useRef,
-  useState
+  useRef
 } from 'react'
 import {
   CollectionSummary,
@@ -17,22 +16,21 @@ import {
 import { formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aether-ui'
 import { ExternalLink, LocateFixed, Network, Search, Waves } from 'lucide-react'
 
-const CANVAS_WIDTH = 1120
-const CANVAS_HEIGHT = 640
+const CANVAS_WIDTH = 1320
+const CANVAS_HEIGHT = 760
 const CENTER_X = CANVAS_WIDTH / 2
 const CENTER_Y = CANVAS_HEIGHT / 2
 const MATCH_LIST_LIMIT = 8
 
-// Force-simulation tuning. Velocity is hard-capped (MAX_VELOCITY) so the system can never
-// explode regardless of constants; ALPHA_FLOOR keeps a little perpetual energy so the graph
-// breathes like water rather than freezing solid once it settles.
-const REPULSION = 2400
-const REPULSION_CAP = 5
-const DAMPING = 0.84
-const MAX_VELOCITY = 6
-const ALPHA_DECAY = 0.99
-const ALPHA_FLOOR = 0.06
-const AMBIENT = 0.016
+// Force-simulation tuning. The graph now settles instead of animating forever, which keeps
+// Flow responsive once the initial layout has relaxed.
+const REPULSION = 5200
+const REPULSION_CAP = 8
+const DAMPING = 0.82
+const MAX_VELOCITY = 7
+const ALPHA_DECAY = 0.965
+const ALPHA_STOP = 0.018
+const AMBIENT = 0.006
 
 type SimNode = {
   id: string
@@ -62,10 +60,12 @@ type FlowViewProps = {
   query: string
   result: FlowGraphResult | null
   status: SystemStatus | null
+  selectedNodeId: string | null
   onBuildGraph: (query?: string) => Promise<void>
   onOpenHub: (collectionId: string) => Promise<void>
   onOpenSource: (node: FlowGraphNode) => Promise<void>
   onQueryChange: (value: string) => void
+  onSelectedNodeChange: (nodeId: string | null) => void
 }
 
 export function FlowView({
@@ -74,13 +74,13 @@ export function FlowView({
   query,
   result,
   status,
+  selectedNodeId,
   onBuildGraph,
   onOpenHub,
   onOpenSource,
-  onQueryChange
+  onQueryChange,
+  onSelectedNodeChange
 }: FlowViewProps): React.JSX.Element {
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-
   const svgRef = useRef<SVGSVGElement | null>(null)
   const simNodesRef = useRef<SimNode[]>([])
   const simIndexRef = useRef<Map<string, SimNode>>(new Map())
@@ -89,6 +89,7 @@ export function FlowView({
   const edgeElsRef = useRef<Map<string, SVGPathElement>>(new Map())
   const alphaRef = useRef(1)
   const rafRef = useRef<number | null>(null)
+  const animationTickRef = useRef<((now: number) => void) | null>(null)
   const draggingRef = useRef<string | null>(null)
 
   const selectedNode =
@@ -122,6 +123,10 @@ export function FlowView({
     result?.sourceCount ?? collections.reduce((sum, item) => sum + item.captureCount, 0)
   const graphBlocked = Boolean(busy) || (!status?.embeddingModel && query.trim().length > 0)
 
+  function selectNode(nodeId: string | null): void {
+    onSelectedNodeChange(nodeId)
+  }
+
   // Build (or rebuild) the physics model whenever the graph data changes, carrying over the
   // positions of nodes that persist so re-querying glides instead of snapping, then run the
   // animation loop for as long as this view is mounted.
@@ -150,17 +155,19 @@ export function FlowView({
       stepSimulation(simNodesRef.current, simEdgesRef.current, simIndexRef.current, alphaRef, now, Boolean(reduceMotion))
       writeNodePositions(simNodesRef.current, nodeElsRef.current)
       writeEdgePaths(simEdgesRef.current, simIndexRef.current, edgeElsRef.current)
-      if (reduceMotion && alphaRef.current <= ALPHA_FLOOR + 0.001 && draggingRef.current === null) {
+      if (alphaRef.current <= ALPHA_STOP && draggingRef.current === null) {
         rafRef.current = null
         return
       }
       rafRef.current = requestAnimationFrame(tick)
     }
 
+    animationTickRef.current = tick
     rafRef.current = requestAnimationFrame(tick)
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
       rafRef.current = null
+      animationTickRef.current = null
     }
   }, [result])
 
@@ -178,13 +185,16 @@ export function FlowView({
 
   function reheat(value: number): void {
     alphaRef.current = Math.max(alphaRef.current, value)
+    if (rafRef.current === null && animationTickRef.current) {
+      rafRef.current = requestAnimationFrame(animationTickRef.current)
+    }
   }
 
   function handleNodePointerDown(event: ReactPointerEvent<SVGGElement>, id: string): void {
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
     draggingRef.current = id
-    setSelectedNodeId(id)
+    selectNode(id)
     const node = simIndexRef.current.get(id)
     if (node) {
       node.fx = node.x
@@ -293,20 +303,13 @@ export function FlowView({
                   <stop offset="48%" stopColor="#c7fff2" />
                   <stop offset="100%" stopColor="#41a99e" />
                 </radialGradient>
-                <filter id="flow-glow" x="-60%" y="-60%" width="220%" height="220%">
-                  <feGaussianBlur stdDeviation="5" result="blur" />
-                  <feMerge>
-                    <feMergeNode in="blur" />
-                    <feMergeNode in="SourceGraphic" />
-                  </feMerge>
-                </filter>
               </defs>
               <g className="flow-current-field" aria-hidden="true">
-                {Array.from({ length: 9 }).map((_, index) => (
+                {Array.from({ length: 5 }).map((_, index) => (
                   <path key={index} d={currentPath(index)} />
                 ))}
               </g>
-              <g className="flow-edges">
+              <g className="flow-edges flow-edge-currents">
                 {result.edges.map((edge) => {
                   const selected = selectedNode
                     ? edge.from === selectedNode.id || edge.to === selectedNode.id
@@ -340,7 +343,7 @@ export function FlowView({
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
                           event.preventDefault()
-                          setSelectedNodeId(node.id)
+                          selectNode(node.id)
                         }
                       }}
                     >
@@ -419,7 +422,7 @@ export function FlowView({
                     key={node.id}
                     node={node}
                     onOpen={() => onOpenSource(node)}
-                    onSelect={() => setSelectedNodeId(node.id)}
+                    onSelect={() => selectNode(node.id)}
                   />
                 ))}
               </div>
@@ -567,9 +570,9 @@ function FlowNodeDetail({
 }
 
 function nodeRadius(node: FlowGraphNode): number {
-  if (node.kind === 'query') return 32
-  if (node.kind === 'hub') return clamp(node.weight / 2.4, 24, 38)
-  return clamp(9 + node.weight / 7 + (node.score ?? 0) / 55, 10, 19)
+  if (node.kind === 'query') return 28
+  if (node.kind === 'hub') return clamp(node.weight / 2.8, 21, 34)
+  return clamp(8 + node.weight / 8 + (node.score ?? 0) / 70, 9, 16)
 }
 
 // Seed each node from a tidy radial layout (so the first frame is legible), then let the
@@ -581,7 +584,7 @@ function buildSimulation(
   const hubNodes = result.nodes.filter((node) => node.kind === 'hub')
   const sourceNodes = result.nodes.filter((node) => node.kind === 'source')
   const queryNode = result.nodes.find((node) => node.kind === 'query')
-  const hubRadius = queryNode ? 218 : 174
+  const hubRadius = queryNode ? 286 : 238
   const hubPositions = new Map<string, { x: number; y: number }>()
   const hubAngles = new Map<string, number>()
   const nodes: SimNode[] = []
@@ -623,10 +626,10 @@ function buildSimulation(
     const hubAngle = hubAngles.get(collectionId) ?? 0
     list.forEach((node, index) => {
       const localIndex = index - (list.length - 1) / 2
-      const spread = Math.min(1.35, 0.28 + list.length * 0.045)
-      const angle = hubAngle + localIndex * spread + hashUnit(node.id) * 0.24
-      const radius = 72 + (index % 4) * 19 + hashUnit(`${node.id}-r`) * 16
-      make(node, hubPosition.x + Math.cos(angle) * radius, hubPosition.y + Math.sin(angle) * radius * 0.78)
+      const spread = Math.min(1.9, 0.42 + list.length * 0.06)
+      const angle = hubAngle + localIndex * spread + hashUnit(node.id) * 0.34
+      const radius = 116 + (index % 5) * 28 + hashUnit(`${node.id}-r`) * 30
+      make(node, hubPosition.x + Math.cos(angle) * radius, hubPosition.y + Math.sin(angle) * radius * 0.82)
     })
   }
 
@@ -638,7 +641,7 @@ function buildSimulation(
       to: edge.to,
       rest,
       strength,
-      bend: (hashUnit(edge.id) - 0.5) * 2
+      bend: (hashUnit(edge.id) - 0.5) * 0.72
     }
   })
 
@@ -646,9 +649,9 @@ function buildSimulation(
 }
 
 function restAndStrength(edge: FlowGraphEdge): [number, number] {
-  if (edge.kind === 'query-match') return [150, 0.022]
-  if (edge.kind === 'semantic') return [96, 0.012]
-  return [64, 0.02]
+  if (edge.kind === 'query-match') return [220, 0.018]
+  if (edge.kind === 'semantic') return [148, 0.009]
+  return [112, 0.016]
 }
 
 function stepSimulation(
@@ -714,8 +717,8 @@ function stepSimulation(
     const gravity = (node.isQuery ? 0.02 : 0.0016) * alpha
     node.vx += (CENTER_X - node.x) * gravity
     node.vy += (CENTER_Y - node.y) * gravity
-    // Ambient buoyancy: a slow per-node drift so the surface keeps breathing once settled.
-    if (!reduceMotion) {
+    // Small initial buoyancy prevents stacked nodes while the graph settles.
+    if (!reduceMotion && alpha > 0.12) {
       node.vx += Math.cos(now * 0.0005 + node.phase) * AMBIENT
       node.vy += Math.sin(now * 0.0006 + node.phase) * AMBIENT
     }
@@ -725,8 +728,7 @@ function stepSimulation(
     node.y = clamp(node.y + node.vy, node.radius + 8, CANVAS_HEIGHT - node.radius - 8)
   }
 
-  const floor = reduceMotion ? 0 : ALPHA_FLOOR
-  alphaRef.current = Math.max(floor, alpha * ALPHA_DECAY)
+  alphaRef.current = alpha * (reduceMotion ? 0.88 : ALPHA_DECAY)
 }
 
 function writeNodePositions(nodes: SimNode[], elements: Map<string, SVGGElement>): void {
@@ -755,16 +757,16 @@ function curvePath(ax: number, ay: number, bx: number, by: number, bend: number)
   const dx = bx - ax
   const dy = by - ay
   const length = Math.max(1, Math.hypot(dx, dy))
-  const offset = bend * Math.min(70, length * 0.16)
+  const offset = bend * Math.min(34, length * 0.07)
   const controlX = midX - (dy / length) * offset
   const controlY = midY + (dx / length) * offset
   return `M ${ax.toFixed(1)} ${ay.toFixed(1)} Q ${controlX.toFixed(1)} ${controlY.toFixed(1)} ${bx.toFixed(1)} ${by.toFixed(1)}`
 }
 
 function currentPath(index: number): string {
-  const y = 92 + index * 58
-  const lift = index % 2 === 0 ? 42 : -34
-  return `M 42 ${y} C 252 ${y + lift}, 348 ${y - lift}, 548 ${y + lift * 0.4} S 874 ${y - lift * 0.8}, 1078 ${y + lift * 0.2}`
+  const y = 132 + index * 118
+  const lift = index % 2 === 0 ? 34 : -28
+  return `M 84 ${y} C 314 ${y - lift}, 424 ${y + lift * 0.55}, 642 ${y + lift * 0.18} S 998 ${y - lift * 0.62}, 1238 ${y + lift * 0.08}`
 }
 
 function flowMatchLabel(score: number): string {

@@ -2,6 +2,11 @@ import { FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState
 import {
   AetherState,
   AetherShortcutId,
+  AirDossierInput,
+  AirLensKind,
+  AirPreparedDossier,
+  AirRecentFile,
+  AirRenderResult,
   AppSettings,
   AppSummary,
   CaptureProgress,
@@ -32,11 +37,12 @@ import { CollectionDialog, CollectionDialogState } from './components/Collection
 import { Crystallizer } from './components/Crystallizer'
 import { Dashboard } from './components/Dashboard'
 import { FlowView } from './components/FlowView'
+import { AirView } from './components/AirView'
 import { GlobeIcon, CloudIcon, GearIcon, SnowflakeIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
 import { formatLocalModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
-import { SearchIcon, ChevronUp, ChevronDown, Waves } from 'lucide-react'
+import { SearchIcon, ChevronUp, ChevronDown, Waves, Wind } from 'lucide-react'
 
 // Sentinel URL for a blank tab that shows the Æther start page instead of loading a
 // page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
@@ -335,7 +341,7 @@ function App(): React.JSX.Element {
     developerMode: false
   })
   const [dashboardOpen, setDashboardOpen] = useState(true)
-  const [workspaceMode, setWorkspaceMode] = useState<'dashboard' | 'crystallizer' | 'flow'>(
+  const [workspaceMode, setWorkspaceMode] = useState<'dashboard' | 'crystallizer' | 'flow' | 'air'>(
     'dashboard'
   )
   const [activeTabId, setActiveTabId] = useState('')
@@ -357,6 +363,14 @@ function App(): React.JSX.Element {
   const [semanticTrailResult, setSemanticTrailResult] = useState<SemanticTrailResult | null>(null)
   const [flowGraphQuery, setFlowGraphQuery] = useState('')
   const [flowGraphResult, setFlowGraphResult] = useState<FlowGraphResult | null>(null)
+  const [flowSelectedNodeId, setFlowSelectedNodeId] = useState<string | null>(null)
+  const [airLens, setAirLens] = useState('')
+  const [airLensKind, setAirLensKind] = useState<AirLensKind>('topic')
+  const [airHubId, setAirHubId] = useState('')
+  const [airFlowNodeId, setAirFlowNodeId] = useState<string | null>(null)
+  const [airPrepared, setAirPrepared] = useState<AirPreparedDossier | null>(null)
+  const [airRecent, setAirRecent] = useState<AirRecentFile[]>([])
+  const [airResult, setAirResult] = useState<AirRenderResult | null>(null)
   const [askPhase, setAskPhase] = useState<string | null>(null)
   const askRequestIdRef = useRef<string | null>(null)
   const streamBufferRef = useRef('')
@@ -396,6 +410,24 @@ function App(): React.JSX.Element {
       collections.find((collection) => collection.id === selectedCollectionId) ?? collections[0],
     [collections, selectedCollectionId]
   )
+  const selectedAirHub = useMemo(
+    () => collections.find((collection) => collection.id === airHubId) ?? selectedCollection,
+    [airHubId, collections, selectedCollection]
+  )
+  const selectedFlowNode = useMemo(
+    () => flowGraphResult?.nodes.find((node) => node.id === flowSelectedNodeId) ?? null,
+    [flowGraphResult, flowSelectedNodeId]
+  )
+  const selectedAirFlowNode = useMemo(
+    () =>
+      flowGraphResult?.nodes.find((node) => node.id === airFlowNodeId) ??
+      selectedFlowNode ??
+      flowGraphResult?.nodes.find((node) => node.kind === 'query') ??
+      flowGraphResult?.nodes.find((node) => node.kind === 'hub') ??
+      flowGraphResult?.nodes[0] ??
+      null,
+    [airFlowNodeId, flowGraphResult, selectedFlowNode]
+  )
   const askCollection = useMemo(
     () => collections.find((collection) => collection.id === askCollectionId),
     [askCollectionId, collections]
@@ -427,7 +459,9 @@ function App(): React.JSX.Element {
         ? 'ice://crystallizer'
         : workspaceMode === 'flow'
           ? 'flow://semantic-graph'
-          : 'æther://dashboard'
+          : workspaceMode === 'air'
+            ? 'air://renderer'
+            : 'æther://dashboard'
       : isStartPage
         ? ''
         : activeTabUrl
@@ -540,14 +574,19 @@ function App(): React.JSX.Element {
     setSavedIcebergs(await window.aether.crystallizer.listSaved())
   }, [])
 
+  const refreshAirRecent = useCallback(async (): Promise<void> => {
+    setAirRecent(await window.aether.air.listRecent())
+  }, [])
+
   const refreshAll = useCallback(async (): Promise<void> => {
     await Promise.all([
       refreshShell(),
       refreshCollections(),
       refreshShortcuts(),
-      refreshSavedIcebergs()
+      refreshSavedIcebergs(),
+      refreshAirRecent()
     ])
-  }, [refreshCollections, refreshSavedIcebergs, refreshShell, refreshShortcuts])
+  }, [refreshAirRecent, refreshCollections, refreshSavedIcebergs, refreshShell, refreshShortcuts])
 
   const createTab = useCallback(
     async (input?: { url?: string }): Promise<BrowserTabSummary | null> => {
@@ -782,6 +821,13 @@ function App(): React.JSX.Element {
     if (!flowGraphResult) {
       void buildFlowGraph()
     }
+  }
+
+  async function openAir(): Promise<void> {
+    await window.aether.dashboard.open()
+    setWorkspaceMode('air')
+    setDashboardOpen(true)
+    await refreshAirRecent()
   }
 
   async function openBrowser(): Promise<void> {
@@ -1237,7 +1283,123 @@ function App(): React.JSX.Element {
         query: query.trim() || undefined
       })
       setFlowGraphResult(result)
+      const fallbackNodeId =
+        result.nodes.find((node) => node.kind === 'query')?.id ??
+        result.nodes.find((node) => node.kind === 'hub')?.id ??
+        result.nodes[0]?.id ??
+        null
+      setFlowSelectedNodeId((current) =>
+        current && result.nodes.some((node) => node.id === current) ? current : fallbackNodeId
+      )
+      setAirFlowNodeId((current) =>
+        current && result.nodes.some((node) => node.id === current) ? current : null
+      )
     })
+  }
+
+  function buildAirInput(): AirDossierInput {
+    const flowNode = selectedAirFlowNode
+    const lens =
+      airLens.trim() ||
+      (airLensKind === 'flow'
+        ? flowNode?.title || flowGraphResult?.query || 'Current Flow map'
+        : airLensKind === 'hub'
+          ? selectedAirHub?.name || 'Selected knowledge hub'
+          : airLensKind === 'answer'
+            ? 'Latest AiON answer'
+            : airLensKind === 'iceberg'
+              ? activeSavedIceberg?.title || 'Saved iCE map'
+              : '')
+    return {
+      lens,
+      lensKind: airLensKind,
+      collectionId:
+        airLensKind === 'hub'
+          ? selectedAirHub?.id
+          : airLensKind === 'flow' && flowNode?.kind === 'hub'
+            ? flowNode.collectionId
+            : undefined,
+      captureId: airLensKind === 'flow' && flowNode?.kind === 'source' ? flowNode.captureId : undefined,
+      savedIcebergId: airLensKind === 'iceberg' ? activeSavedIceberg?.id : undefined,
+      answer: airLensKind === 'answer' ? chatResult ?? undefined : undefined,
+      limit: 12
+    }
+  }
+
+  function handleAirLensChange(value: string): void {
+    setAirLens(value)
+    setAirPrepared(null)
+    setAirResult(null)
+  }
+
+  function handleAirLensKindChange(value: AirLensKind): void {
+    setAirLensKind(value)
+    if (value === 'hub' && !airHubId && selectedAirHub?.id) {
+      setAirHubId(selectedAirHub.id)
+      setAirLens(selectedAirHub.name)
+    }
+    if (value === 'flow' && !airFlowNodeId && selectedAirFlowNode?.id) {
+      setAirFlowNodeId(selectedAirFlowNode.id)
+      setAirLens(selectedAirFlowNode.title)
+    }
+    setAirPrepared(null)
+    setAirResult(null)
+  }
+
+  function useAirLens(kind: AirLensKind, lens: string): void {
+    setAirLensKind(kind)
+    setAirLens(lens)
+    if (kind === 'hub' && selectedAirHub?.id) {
+      setAirHubId(selectedAirHub.id)
+    }
+    if (kind === 'flow' && selectedAirFlowNode?.id) {
+      setAirFlowNodeId(selectedAirFlowNode.id)
+    }
+    setAirPrepared(null)
+    setAirResult(null)
+  }
+
+  function selectAirHub(collectionId: string): void {
+    const collection = collections.find((item) => item.id === collectionId)
+    setAirHubId(collectionId)
+    setAirLensKind('hub')
+    setAirLens(collection?.name ?? '')
+    setAirPrepared(null)
+    setAirResult(null)
+  }
+
+  function selectAirFlowNode(nodeId: string): void {
+    const node = flowGraphResult?.nodes.find((item) => item.id === nodeId)
+    setAirFlowNodeId(nodeId)
+    setAirLensKind('flow')
+    setAirLens(node?.title ?? flowGraphResult?.query ?? '')
+    setAirPrepared(null)
+    setAirResult(null)
+  }
+
+  async function prepareAir(): Promise<void> {
+    await runTask('Preparing AiR', async () => {
+      const prepared = await window.aether.air.prepare(buildAirInput())
+      setAirPrepared(prepared)
+      setAirResult(null)
+    })
+  }
+
+  async function renderAir(): Promise<void> {
+    await runTask('Rendering AiR', async () => {
+      const result = await window.aether.air.render(buildAirInput())
+      setAirResult(result)
+      await refreshAirRecent()
+      setNotice(`Rendered ${result.filename}.`)
+    })
+  }
+
+  async function openAirFile(path: string): Promise<void> {
+    await window.aether.air.open(path)
+  }
+
+  async function revealAirFile(path: string): Promise<void> {
+    await window.aether.air.reveal(path)
   }
 
   async function openSemanticTrailItem(item: SemanticTrailItem): Promise<void> {
@@ -1449,6 +1611,7 @@ function App(): React.JSX.Element {
 
   const crystallizerOpen = dashboardOpen && workspaceMode === 'crystallizer'
   const flowOpen = dashboardOpen && workspaceMode === 'flow'
+  const airOpen = dashboardOpen && workspaceMode === 'air'
   const dashboardHomeOpen = dashboardOpen && workspaceMode === 'dashboard'
   const startPageActive = !dashboardOpen && isStartPage
 
@@ -1519,6 +1682,17 @@ function App(): React.JSX.Element {
             <Waves />
             <span className="app-dot" aria-hidden="true" />
           </button>
+          <button
+            className={`app-button air-button tooltip-host ${airOpen ? 'active' : ''}`}
+            data-tooltip="AiR"
+            data-tooltip-side="right"
+            onClick={openAir}
+            title="AiR"
+            type="button"
+          >
+            <Wind />
+            <span className="app-dot" aria-hidden="true" />
+          </button>
         </nav>
         <button
           className="app-button settings-button"
@@ -1545,9 +1719,11 @@ function App(): React.JSX.Element {
               ? 'Info Crystallizer Engine'
               : flowOpen
                 ? 'Semantic Relation Flow'
-                : 'Knowledge Gatherer'
+                : airOpen
+                  ? 'Automated Info Renderer'
+                  : 'Knowledge Gatherer'
           }
-          dashboardTitle={crystallizerOpen ? 'iCE' : flowOpen ? 'Flow' : 'ÆTHER'}
+          dashboardTitle={crystallizerOpen ? 'iCE' : flowOpen ? 'Flow' : airOpen ? 'AiR' : 'ÆTHER'}
           lastCapture={lastCapture}
           portalSaveBlocked={
             dashboardOpen ||
@@ -1611,11 +1787,41 @@ function App(): React.JSX.Element {
             collections={collections}
             query={flowGraphQuery}
             result={flowGraphResult}
+            selectedNodeId={flowSelectedNodeId}
             status={status}
             onBuildGraph={buildFlowGraph}
             onOpenHub={openFlowHub}
             onOpenSource={openFlowSource}
             onQueryChange={setFlowGraphQuery}
+            onSelectedNodeChange={setFlowSelectedNodeId}
+          />
+        ) : airOpen ? (
+          <AirView
+            activeSavedIceberg={activeSavedIceberg}
+            busy={busy}
+            chatResult={chatResult}
+            collections={collections}
+            flowGraphResult={flowGraphResult}
+            lens={airLens}
+            lensKind={airLensKind}
+            prepared={airPrepared}
+            recent={airRecent}
+            result={airResult}
+            selectedFlowNode={selectedAirFlowNode}
+            selectedFlowNodeId={selectedAirFlowNode?.id ?? null}
+            selectedCollection={selectedCollection}
+            selectedHub={selectedAirHub}
+            selectedHubId={selectedAirHub?.id ?? ''}
+            status={status}
+            onLensChange={handleAirLensChange}
+            onLensKindChange={handleAirLensKindChange}
+            onOpenFile={openAirFile}
+            onPrepare={prepareAir}
+            onRender={renderAir}
+            onRevealFile={revealAirFile}
+            onSelectFlowNode={selectAirFlowNode}
+            onSelectHub={selectAirHub}
+            onUseLens={useAirLens}
           />
         ) : startPageActive ? (
           <StartPage shortcuts={shortcuts} onNavigate={navigateActiveTab} />
