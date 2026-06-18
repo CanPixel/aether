@@ -118,9 +118,9 @@ export function formatBrandedModelName(
     normalized.includes('embeddinggemma') ||
     normalized.includes('nomic-embed-text')
   ) {
-    return 'AiON FRiDGE' //AiON Embedder
+    return 'AiON MiST' //AiON - FRiDGE - GLACiER - FROSTBiTE - LiQUID - RiFT - MiST - MiNT
   }
-  if (normalized.includes('gemma-4-e2b')) return isCommunity ? 'AiON Compact' : 'AiON LiTE'
+  if (normalized.includes('gemma-4-e2b')) return isCommunity ? 'AiON TiNY' : 'AiON LiTE'
   if (normalized.includes('gemma-4-e4b')) return 'AiON WiSE'
   if (normalized.includes('gemma-4-12b')) return 'AiON PRiME'
 

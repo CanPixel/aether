@@ -2,6 +2,11 @@ import { FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState
 import {
   AetherState,
   AetherShortcutId,
+  AirDossierInput,
+  AirLensKind,
+  AirPreparedDossier,
+  AirRecentFile,
+  AirRenderResult,
   AppSettings,
   AppSummary,
   CaptureProgress,
@@ -11,6 +16,8 @@ import {
   ChatResult,
   CollectionSummary,
   FindAction,
+  FlowGraphNode,
+  FlowGraphResult,
   HubShortcutSummary,
   IcebergItem,
   IcebergResult,
@@ -29,11 +36,13 @@ import { StartPage } from './components/StartPage'
 import { CollectionDialog, CollectionDialogState } from './components/CollectionDialog'
 import { Crystallizer } from './components/Crystallizer'
 import { Dashboard } from './components/Dashboard'
+import { FlowView } from './components/FlowView'
+import { AirView } from './components/AirView'
 import { GlobeIcon, CloudIcon, GearIcon, SnowflakeIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
 import { formatLocalModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
-import { SearchIcon, ChevronUp, ChevronDown } from 'lucide-react'
+import { SearchIcon, ChevronUp, ChevronDown, Waves, Wind } from 'lucide-react'
 
 // Sentinel URL for a blank tab that shows the Æther start page instead of loading a
 // page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
@@ -332,7 +341,9 @@ function App(): React.JSX.Element {
     developerMode: false
   })
   const [dashboardOpen, setDashboardOpen] = useState(true)
-  const [workspaceMode, setWorkspaceMode] = useState<'dashboard' | 'crystallizer'>('dashboard')
+  const [workspaceMode, setWorkspaceMode] = useState<'dashboard' | 'crystallizer' | 'flow' | 'air'>(
+    'dashboard'
+  )
   const [activeTabId, setActiveTabId] = useState('')
   const [selectedCollectionId, setSelectedCollectionId] = useState('')
   const [addressDraft, setAddressDraft] = useState('aether://dashboard')
@@ -350,11 +361,31 @@ function App(): React.JSX.Element {
   const [streamingCitations, setStreamingCitations] = useState<SearchResult[]>([])
   const [semanticTrailQuery, setSemanticTrailQuery] = useState('')
   const [semanticTrailResult, setSemanticTrailResult] = useState<SemanticTrailResult | null>(null)
+  const [flowGraphQuery, setFlowGraphQuery] = useState('')
+  const [flowGraphResult, setFlowGraphResult] = useState<FlowGraphResult | null>(null)
+  const [flowSelectedNodeId, setFlowSelectedNodeId] = useState<string | null>(null)
+  const [airLens, setAirLens] = useState('')
+  const [airLensKind, setAirLensKind] = useState<AirLensKind>('topic')
+  const [airHubId, setAirHubId] = useState('')
+  const [airFlowNodeId, setAirFlowNodeId] = useState<string | null>(null)
+  const [airPrepared, setAirPrepared] = useState<AirPreparedDossier | null>(null)
+  const [airRecent, setAirRecent] = useState<AirRecentFile[]>([])
+  const [airResult, setAirResult] = useState<AirRenderResult | null>(null)
   const [askPhase, setAskPhase] = useState<string | null>(null)
   const askRequestIdRef = useRef<string | null>(null)
   const streamBufferRef = useRef('')
   const streamFlushRef = useRef<number | null>(null)
   const [lastCapture, setLastCapture] = useState<CaptureResult | null>(null)
+  // Capture auto-routing state. suggestedHubUrlRef: page URLs we have already asked the
+  // backend to route (so repeated intent does not re-embed). manualHubUrlRef: URLs where the
+  // user picked a hub by hand (never silently overwrite those). activeTabUrlRef mirrors the
+  // live URL so an in-flight suggestion can tell whether the user navigated away mid-request.
+  const suggestedHubUrlRef = useRef<string | null>(null)
+  const manualHubUrlRef = useRef<string | null>(null)
+  const activeTabUrlRef = useRef('')
+  // Holds a suggestion that resolved while the hub <select> was open, to apply on close so
+  // the dropdown's highlighted option never jumps out from under the user mid-interaction.
+  const pendingHubSuggestionRef = useRef<{ url: string; collectionId: string } | null>(null)
   const [panelCollapsed, setPanelCollapsed] = useState(true)
   const [busy, setBusy] = useState<string | null>('')
   const [notice, setNotice] = useState<string | null>(null)
@@ -379,6 +410,24 @@ function App(): React.JSX.Element {
       collections.find((collection) => collection.id === selectedCollectionId) ?? collections[0],
     [collections, selectedCollectionId]
   )
+  const selectedAirHub = useMemo(
+    () => collections.find((collection) => collection.id === airHubId) ?? selectedCollection,
+    [airHubId, collections, selectedCollection]
+  )
+  const selectedFlowNode = useMemo(
+    () => flowGraphResult?.nodes.find((node) => node.id === flowSelectedNodeId) ?? null,
+    [flowGraphResult, flowSelectedNodeId]
+  )
+  const selectedAirFlowNode = useMemo(
+    () =>
+      flowGraphResult?.nodes.find((node) => node.id === airFlowNodeId) ??
+      selectedFlowNode ??
+      flowGraphResult?.nodes.find((node) => node.kind === 'query') ??
+      flowGraphResult?.nodes.find((node) => node.kind === 'hub') ??
+      flowGraphResult?.nodes[0] ??
+      null,
+    [airFlowNodeId, flowGraphResult, selectedFlowNode]
+  )
   const askCollection = useMemo(
     () => collections.find((collection) => collection.id === askCollectionId),
     [askCollectionId, collections]
@@ -393,6 +442,9 @@ function App(): React.JSX.Element {
   const chatBlocked = status ? !status.runtimeReady || !status.chatModel : false
   const quickActions = useMemo<QuickAction[]>(() => getQuickActions(activeTab), [activeTab])
   const activeTabUrl = activeTab?.url ?? ''
+  useEffect(() => {
+    activeTabUrlRef.current = activeTabUrl
+  }, [activeTabUrl])
   const mostRecentHubId = useMemo(
     () =>
       usableAskCollections.some((collection) => collection.id === selectedCollectionId)
@@ -405,7 +457,11 @@ function App(): React.JSX.Element {
     : dashboardOpen
       ? workspaceMode === 'crystallizer'
         ? 'ice://crystallizer'
-        : 'æther://dashboard'
+        : workspaceMode === 'flow'
+          ? 'flow://semantic-graph'
+          : workspaceMode === 'air'
+            ? 'air://renderer'
+            : 'æther://dashboard'
       : isStartPage
         ? ''
         : activeTabUrl
@@ -518,14 +574,19 @@ function App(): React.JSX.Element {
     setSavedIcebergs(await window.aether.crystallizer.listSaved())
   }, [])
 
+  const refreshAirRecent = useCallback(async (): Promise<void> => {
+    setAirRecent(await window.aether.air.listRecent())
+  }, [])
+
   const refreshAll = useCallback(async (): Promise<void> => {
     await Promise.all([
       refreshShell(),
       refreshCollections(),
       refreshShortcuts(),
-      refreshSavedIcebergs()
+      refreshSavedIcebergs(),
+      refreshAirRecent()
     ])
-  }, [refreshCollections, refreshSavedIcebergs, refreshShell, refreshShortcuts])
+  }, [refreshAirRecent, refreshCollections, refreshSavedIcebergs, refreshShell, refreshShortcuts])
 
   const createTab = useCallback(
     async (input?: { url?: string }): Promise<BrowserTabSummary | null> => {
@@ -753,6 +814,22 @@ function App(): React.JSX.Element {
     setDashboardOpen(true)
   }
 
+  async function openFlow(): Promise<void> {
+    await window.aether.dashboard.open()
+    setWorkspaceMode('flow')
+    setDashboardOpen(true)
+    if (!flowGraphResult) {
+      void buildFlowGraph()
+    }
+  }
+
+  async function openAir(): Promise<void> {
+    await window.aether.dashboard.open()
+    setWorkspaceMode('air')
+    setDashboardOpen(true)
+    await refreshAirRecent()
+  }
+
   async function openBrowser(): Promise<void> {
     if (activeTab) {
       await window.aether.tabs.activate(activeTab.id)
@@ -855,19 +932,25 @@ function App(): React.JSX.Element {
   async function goBack(): Promise<void> {
     if (!activeTab) return
 
-    await runTask('Going back', async () => {
+    setNotice(null)
+    try {
       await window.aether.tabs.goBack(activeTab.id)
       await refreshShell()
-    })
+    } catch (error) {
+      setNotice(getErrorMessage(error))
+    }
   }
 
   async function goForward(): Promise<void> {
     if (!activeTab) return
 
-    await runTask('Going forward', async () => {
+    setNotice(null)
+    try {
       await window.aether.tabs.goForward(activeTab.id)
       await refreshShell()
-    })
+    } catch (error) {
+      setNotice(getErrorMessage(error))
+    }
   }
 
   async function saveCollectionDialog(input: {
@@ -891,6 +974,7 @@ function App(): React.JSX.Element {
               })
         await closeCollectionDialog()
         await refreshCollections(collection.id)
+        setFlowGraphResult(null)
         setNotice(`${collection.name} is ready.`)
       }
     )
@@ -904,6 +988,7 @@ function App(): React.JSX.Element {
       await closeCollectionDialog()
       setChatResult(null)
       setSemanticTrailResult(null)
+      setFlowGraphResult(null)
       await refreshCollections()
       setStatus(await window.aether.system.status())
       setNotice('Collection deleted.')
@@ -914,6 +999,45 @@ function App(): React.JSX.Element {
     setSelectedCollectionId(collectionId)
     setAskCollectionId(collectionId)
     setChatResult(null)
+  }
+
+  // Record a manual hub pick for the current page so capture auto-routing leaves it alone.
+  async function handleCaptureHubSelect(collectionId: string): Promise<void> {
+    if (activeTabUrl) manualHubUrlRef.current = activeTabUrl
+    await selectCollection(collectionId)
+  }
+
+  // Quietly pre-select the hub that best matches the current page. Best-effort and silent:
+  // triggered by capture intent (never on page load), never throws, never overrides a manual
+  // pick, and discards its own result if the user navigated away while it was running.
+  async function maybeSuggestCaptureHub(): Promise<void> {
+    if (dashboardOpen || !canUseCurrentPage) return
+    const url = activeTabUrl
+    if (!url || suggestedHubUrlRef.current === url || manualHubUrlRef.current === url) return
+    suggestedHubUrlRef.current = url
+    try {
+      const suggestion = await window.aether.capture.suggestHub()
+      if (!suggestion || activeTabUrlRef.current !== url || manualHubUrlRef.current === url) return
+      // If the user is interacting with the hub <select> right now, applying would jump the
+      // open dropdown. Stash it and let the select's blur apply it once the popup closes.
+      const select = document.getElementById('capture-collection-select')
+      if (select && document.activeElement === select) {
+        pendingHubSuggestionRef.current = { url, collectionId: suggestion.collectionId }
+        return
+      }
+      setSelectedCollectionId(suggestion.collectionId)
+    } catch {
+      suggestedHubUrlRef.current = null
+    }
+  }
+
+  // Apply a suggestion that arrived while the hub <select> was open, now that it has closed.
+  function applyPendingHubSuggestion(): void {
+    const pending = pendingHubSuggestionRef.current
+    pendingHubSuggestionRef.current = null
+    if (!pending || pending.url !== activeTabUrlRef.current) return
+    if (manualHubUrlRef.current === pending.url) return
+    setSelectedCollectionId(pending.collectionId)
   }
 
   // Open AiON focused on a single hub (from the dashboard "Ask" buttons).
@@ -948,6 +1072,7 @@ function App(): React.JSX.Element {
       setAskIncludeCurrentPage(false)
       setAskCollectionId(result.collectionId)
       setSemanticTrailResult(null)
+      setFlowGraphResult(null)
       setNotice(`Saved ${result.chunkCount} chunks into ${result.collectionName}.`)
     })
   }
@@ -957,6 +1082,7 @@ function App(): React.JSX.Element {
       await window.aether.capture.delete(captureId)
       await refreshCollections(selectedCollection?.id)
       setSemanticTrailResult(null)
+      setFlowGraphResult(null)
       setNotice('Capture deleted.')
     })
   }
@@ -967,6 +1093,7 @@ function App(): React.JSX.Element {
       await refreshCollections(collectionId)
       setChatResult(null)
       setSemanticTrailResult(null)
+      setFlowGraphResult(null)
       setNotice(`Moved ${capture.title}.`)
     })
   }
@@ -1094,6 +1221,19 @@ function App(): React.JSX.Element {
     setDashboardOpen(false)
   }
 
+  async function openFlowSource(node: FlowGraphNode): Promise<void> {
+    if (!node.url) return
+    await createTab({ url: node.url })
+    setDashboardOpen(false)
+    setWorkspaceMode('dashboard')
+  }
+
+  async function openFlowHub(collectionId: string): Promise<void> {
+    await selectCollection(collectionId)
+    setWorkspaceMode('dashboard')
+    setDashboardOpen(true)
+  }
+
   async function openCitation(citation: SearchResult, claimText?: string): Promise<void> {
     const anchorText = resolveCitationAnchorText(citation.text, claimText ?? '')
     const targetUrl = buildCitationTargetUrl(citation, anchorText)
@@ -1135,6 +1275,131 @@ function App(): React.JSX.Element {
           : 'No captured sources matched this page yet.'
       )
     })
+  }
+
+  async function buildFlowGraph(query = flowGraphQuery): Promise<void> {
+    await runTask('Mapping Flow', async () => {
+      const result = await window.aether.flow.graph({
+        query: query.trim() || undefined
+      })
+      setFlowGraphResult(result)
+      const fallbackNodeId =
+        result.nodes.find((node) => node.kind === 'query')?.id ??
+        result.nodes.find((node) => node.kind === 'hub')?.id ??
+        result.nodes[0]?.id ??
+        null
+      setFlowSelectedNodeId((current) =>
+        current && result.nodes.some((node) => node.id === current) ? current : fallbackNodeId
+      )
+      setAirFlowNodeId((current) =>
+        current && result.nodes.some((node) => node.id === current) ? current : null
+      )
+    })
+  }
+
+  function buildAirInput(): AirDossierInput {
+    const flowNode = selectedAirFlowNode
+    const lens =
+      airLens.trim() ||
+      (airLensKind === 'flow'
+        ? flowNode?.title || flowGraphResult?.query || 'Current Flow map'
+        : airLensKind === 'hub'
+          ? selectedAirHub?.name || 'Selected knowledge hub'
+          : airLensKind === 'answer'
+            ? 'Latest AiON answer'
+            : airLensKind === 'iceberg'
+              ? activeSavedIceberg?.title || 'Saved iCE map'
+              : '')
+    return {
+      lens,
+      lensKind: airLensKind,
+      collectionId:
+        airLensKind === 'hub'
+          ? selectedAirHub?.id
+          : airLensKind === 'flow' && flowNode?.kind === 'hub'
+            ? flowNode.collectionId
+            : undefined,
+      captureId: airLensKind === 'flow' && flowNode?.kind === 'source' ? flowNode.captureId : undefined,
+      savedIcebergId: airLensKind === 'iceberg' ? activeSavedIceberg?.id : undefined,
+      answer: airLensKind === 'answer' ? chatResult ?? undefined : undefined,
+      limit: 12
+    }
+  }
+
+  function handleAirLensChange(value: string): void {
+    setAirLens(value)
+    setAirPrepared(null)
+    setAirResult(null)
+  }
+
+  function handleAirLensKindChange(value: AirLensKind): void {
+    setAirLensKind(value)
+    if (value === 'hub' && !airHubId && selectedAirHub?.id) {
+      setAirHubId(selectedAirHub.id)
+      setAirLens(selectedAirHub.name)
+    }
+    if (value === 'flow' && !airFlowNodeId && selectedAirFlowNode?.id) {
+      setAirFlowNodeId(selectedAirFlowNode.id)
+      setAirLens(selectedAirFlowNode.title)
+    }
+    setAirPrepared(null)
+    setAirResult(null)
+  }
+
+  function useAirLens(kind: AirLensKind, lens: string): void {
+    setAirLensKind(kind)
+    setAirLens(lens)
+    if (kind === 'hub' && selectedAirHub?.id) {
+      setAirHubId(selectedAirHub.id)
+    }
+    if (kind === 'flow' && selectedAirFlowNode?.id) {
+      setAirFlowNodeId(selectedAirFlowNode.id)
+    }
+    setAirPrepared(null)
+    setAirResult(null)
+  }
+
+  function selectAirHub(collectionId: string): void {
+    const collection = collections.find((item) => item.id === collectionId)
+    setAirHubId(collectionId)
+    setAirLensKind('hub')
+    setAirLens(collection?.name ?? '')
+    setAirPrepared(null)
+    setAirResult(null)
+  }
+
+  function selectAirFlowNode(nodeId: string): void {
+    const node = flowGraphResult?.nodes.find((item) => item.id === nodeId)
+    setAirFlowNodeId(nodeId)
+    setAirLensKind('flow')
+    setAirLens(node?.title ?? flowGraphResult?.query ?? '')
+    setAirPrepared(null)
+    setAirResult(null)
+  }
+
+  async function prepareAir(): Promise<void> {
+    await runTask('Preparing AiR', async () => {
+      const prepared = await window.aether.air.prepare(buildAirInput())
+      setAirPrepared(prepared)
+      setAirResult(null)
+    })
+  }
+
+  async function renderAir(): Promise<void> {
+    await runTask('Rendering AiR', async () => {
+      const result = await window.aether.air.render(buildAirInput())
+      setAirResult(result)
+      await refreshAirRecent()
+      setNotice(`Rendered ${result.filename}.`)
+    })
+  }
+
+  async function openAirFile(path: string): Promise<void> {
+    await window.aether.air.open(path)
+  }
+
+  async function revealAirFile(path: string): Promise<void> {
+    await window.aether.air.reveal(path)
   }
 
   async function openSemanticTrailItem(item: SemanticTrailItem): Promise<void> {
@@ -1345,6 +1610,8 @@ function App(): React.JSX.Element {
   }
 
   const crystallizerOpen = dashboardOpen && workspaceMode === 'crystallizer'
+  const flowOpen = dashboardOpen && workspaceMode === 'flow'
+  const airOpen = dashboardOpen && workspaceMode === 'air'
   const dashboardHomeOpen = dashboardOpen && workspaceMode === 'dashboard'
   const startPageActive = !dashboardOpen && isStartPage
 
@@ -1404,6 +1671,28 @@ function App(): React.JSX.Element {
             <GlobeIcon />
             <span className="app-dot" aria-hidden="true" />
           </button>
+          <button
+            className={`app-button flow-button tooltip-host ${flowOpen ? 'active' : ''}`}
+            data-tooltip="Flow"
+            data-tooltip-side="right"
+            onClick={openFlow}
+            title="Flow"
+            type="button"
+          >
+            <Waves />
+            <span className="app-dot" aria-hidden="true" />
+          </button>
+          <button
+            className={`app-button air-button tooltip-host ${airOpen ? 'active' : ''}`}
+            data-tooltip="AiR"
+            data-tooltip-side="right"
+            onClick={openAir}
+            title="AiR"
+            type="button"
+          >
+            <Wind />
+            <span className="app-dot" aria-hidden="true" />
+          </button>
         </nav>
         <button
           className="app-button settings-button"
@@ -1425,8 +1714,16 @@ function App(): React.JSX.Element {
           capturesBlocked={dashboardOpen || startPageActive}
           collections={collections}
           dashboardOpen={dashboardOpen}
-          dashboardSubtitle={crystallizerOpen ? 'Info Crystallizer Engine' : 'Knowledge Gatherer'}
-          dashboardTitle={crystallizerOpen ? 'iCE' : 'ÆTHER'}
+          dashboardSubtitle={
+            crystallizerOpen
+              ? 'Info Crystallizer Engine'
+              : flowOpen
+                ? 'Semantic Relation Flow'
+                : airOpen
+                  ? 'Automated Info Renderer'
+                  : 'Knowledge Gatherer'
+          }
+          dashboardTitle={crystallizerOpen ? 'iCE' : flowOpen ? 'Flow' : airOpen ? 'AiR' : 'ÆTHER'}
           lastCapture={lastCapture}
           portalSaveBlocked={
             dashboardOpen ||
@@ -1465,7 +1762,9 @@ function App(): React.JSX.Element {
           onQuickAction={handleQuickAction}
           onSavePortal={saveActiveTabToHub}
           onSelectTab={activateTab}
-          onSelectCollection={selectCollection}
+          onCaptureIntent={maybeSuggestCaptureHub}
+          onCaptureSelectBlur={applyPendingHubSuggestion}
+          onSelectCollection={handleCaptureHubSelect}
           onTabMenuClose={closeTabMenuOverlay}
           onTabMenuOpen={openTabMenuOverlay}
         />
@@ -1481,6 +1780,48 @@ function App(): React.JSX.Element {
             onOpenSaved={openSavedIceberg}
             onOpenTopic={openCrystallizedTopic}
             onSave={saveIceberg}
+          />
+        ) : flowOpen ? (
+          <FlowView
+            busy={busy}
+            collections={collections}
+            query={flowGraphQuery}
+            result={flowGraphResult}
+            selectedNodeId={flowSelectedNodeId}
+            status={status}
+            onBuildGraph={buildFlowGraph}
+            onOpenHub={openFlowHub}
+            onOpenSource={openFlowSource}
+            onQueryChange={setFlowGraphQuery}
+            onSelectedNodeChange={setFlowSelectedNodeId}
+          />
+        ) : airOpen ? (
+          <AirView
+            activeSavedIceberg={activeSavedIceberg}
+            busy={busy}
+            chatResult={chatResult}
+            collections={collections}
+            flowGraphResult={flowGraphResult}
+            lens={airLens}
+            lensKind={airLensKind}
+            prepared={airPrepared}
+            recent={airRecent}
+            result={airResult}
+            selectedFlowNode={selectedAirFlowNode}
+            selectedFlowNodeId={selectedAirFlowNode?.id ?? null}
+            selectedCollection={selectedCollection}
+            selectedHub={selectedAirHub}
+            selectedHubId={selectedAirHub?.id ?? ''}
+            status={status}
+            onLensChange={handleAirLensChange}
+            onLensKindChange={handleAirLensKindChange}
+            onOpenFile={openAirFile}
+            onPrepare={prepareAir}
+            onRender={renderAir}
+            onRevealFile={revealAirFile}
+            onSelectFlowNode={selectAirFlowNode}
+            onSelectHub={selectAirHub}
+            onUseLens={useAirLens}
           />
         ) : startPageActive ? (
           <StartPage shortcuts={shortcuts} onNavigate={navigateActiveTab} />

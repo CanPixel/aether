@@ -38,6 +38,8 @@ type BrowserChromeProps = {
   onCloseTab: (tabId: string) => Promise<void>
   onCreateTab: () => void
   onCapture: () => Promise<void>
+  onCaptureIntent?: () => void | Promise<void>
+  onCaptureSelectBlur?: () => void
   onCreateCollection: () => void
   onForward: () => Promise<void>
   onNavigate: (event: FormEvent<HTMLFormElement>) => Promise<void>
@@ -75,6 +77,8 @@ export function BrowserChrome({
   onCloseTab,
   onCreateTab,
   onCapture,
+  onCaptureIntent,
+  onCaptureSelectBlur,
   onCreateCollection,
   onForward,
   onNavigate,
@@ -293,10 +297,20 @@ export function BrowserChrome({
               Save as Portal
             </button>
           </div>
-          <div className="browser-capture-dock">
+          <div
+            className="browser-capture-dock"
+            onMouseEnter={() => {
+              void onCaptureIntent?.()
+            }}
+          >
             <select
+              id="capture-collection-select"
               aria-label="Capture collection"
               value={selectedCollectionId}
+              onFocus={() => {
+                void onCaptureIntent?.()
+              }}
+              onBlur={() => onCaptureSelectBlur?.()}
               onChange={(event) => {
                 if (event.target.value === CREATE_COLLECTION_VALUE) {
                   onCreateCollection()

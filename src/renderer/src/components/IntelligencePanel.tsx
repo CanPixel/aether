@@ -11,9 +11,7 @@ import {
   ChatResult,
   CollectionSummary,
   SearchResult,
-  SemanticTrailEdgeKind,
   SemanticTrailItem,
-  SemanticTrailReason,
   SemanticTrailResult,
   SystemStatus
 } from '../../../shared/aether'
@@ -197,9 +195,7 @@ export function IntelligencePanel({
           AiON
         </span>
         <button
-          className="panel-icon-toggle tooltip-host crystal-button"
-          data-tooltip={showTooltips ? 'AiON' : undefined}
-          data-tooltip-side={showTooltips ? 'left' : undefined}
+          className="panel-icon-toggle crystal-button"
           aria-hidden={!panelCollapsed}
           onClick={onTogglePanel}
           tabIndex={panelCollapsed ? 0 : -1}
@@ -463,11 +459,9 @@ function SemanticTrailView({
         <p>{result.root.excerpt}</p>
       </header>
 
-      <SemanticTrailGraph result={result} />
-
       {result.items.length === 0 ? (
         <div className="semantic-trail-empty">
-          No captured hub sources are close enough yet. Capture related pages, then rebuild.
+          No captured sources are close enough yet. Capture related pages, then rebuild.
         </div>
       ) : (
         <div className="semantic-trail-list">
@@ -481,7 +475,9 @@ function SemanticTrailView({
               title={item.url}
               type="button"
             >
-              <span className="semantic-trail-score">{Math.round(item.score.total)}</span>
+              <span className="semantic-trail-score" aria-hidden="true">
+                <Waves size={16} />
+              </span>
               <span className="semantic-trail-item-copy">
                 <span className="semantic-trail-item-meta">
                   {item.collectionName} · {formatDate(item.capturedAt)}
@@ -490,13 +486,7 @@ function SemanticTrailView({
                 <small>{item.host || getCaptureHost(item.url)}</small>
                 <span className="semantic-trail-excerpt">{item.excerpt}</span>
                 <span className="semantic-trail-reasons">
-                  {item.reasons.map((reason) => (
-                    <span key={reason}>{semanticTrailReasonLabel(reason)}</span>
-                  ))}
-                </span>
-                <span className="semantic-trail-breakdown">
-                  Semantic {Math.round(item.score.semantic)} · Fresh{' '}
-                  {Math.round(item.score.recency)} · Host {Math.round(item.score.hostAffinity)}
+                  <span>{semanticTrailMatchLabel(item.score.semantic)}</span>
                 </span>
               </span>
             </button>
@@ -507,93 +497,11 @@ function SemanticTrailView({
   )
 }
 
-function SemanticTrailGraph({ result }: { result: SemanticTrailResult }): React.JSX.Element {
-  const nodes = result.items.slice(0, 4)
-  const edgeCounts = result.edges.reduce(
-    (counts, edge) => {
-      counts[edge.kind] += 1
-      return counts
-    },
-    {
-      'semantic-match': 0,
-      'same-host': 0,
-      'same-collection': 0
-    } satisfies Record<SemanticTrailEdgeKind, number>
-  )
-  const usedTypedFocus =
-    result.query.trim().length > 0 &&
-    result.query.trim().toLowerCase() !== result.root.title.trim().toLowerCase()
-
-  return (
-    <section className="semantic-trail-graph" aria-label="Flow map">
-      <header className="semantic-trail-graph-header">
-        <span>Flow map</span>
-        <strong>{usedTypedFocus ? `Focus: ${result.query}` : 'Focus: current page'}</strong>
-      </header>
-
-      <div className="semantic-trail-graph-flow">
-        <div className="semantic-trail-graph-root">
-          <span>Seed</span>
-          <strong>{usedTypedFocus ? result.query : result.root.title}</strong>
-          <small>{usedTypedFocus ? 'Typed lens' : result.root.host || 'Current page'}</small>
-        </div>
-
-        <div className="semantic-trail-graph-stream" aria-hidden="true" />
-
-        <div className="semantic-trail-graph-sources">
-          {nodes.length === 0 ? (
-            <span className="semantic-trail-graph-empty">No source cards yet.</span>
-          ) : (
-            nodes.map((item, index) => (
-              <div
-                className="semantic-trail-graph-source"
-                key={item.id}
-                style={{ '--node-index': index } as CSSProperties}
-                title={item.title}
-              >
-                <span>{Math.round(item.score.total)}</span>
-                <strong>{item.title}</strong>
-                <small>{semanticTrailReasonSummary(item.reasons)}</small>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <footer className="semantic-trail-graph-legend">
-        <span>{edgeCounts['semantic-match']} meaning matches</span>
-        <span>{edgeCounts['same-host']} same-site links</span>
-        <span>{edgeCounts['same-collection']} same-hub links</span>
-      </footer>
-    </section>
-  )
-}
-
-function semanticTrailReasonSummary(reasons: SemanticTrailReason[]): string {
-  if (reasons.includes('same-host') && reasons.includes('semantic-match')) {
-    return 'Similar meaning, same site'
-  }
-  if (reasons.includes('same-collection') && reasons.includes('semantic-match')) {
-    return 'Similar meaning, same hub'
-  }
-  if (reasons.includes('same-host')) return 'Same site'
-  if (reasons.includes('same-collection')) return 'Same hub'
-  if (reasons.includes('recent-capture')) return 'Recent capture'
-  return 'Similar meaning'
-}
-
-function semanticTrailReasonLabel(reason: SemanticTrailReason): string {
-  switch (reason) {
-    case 'recent-capture':
-      return 'Recent'
-    case 'same-host':
-      return 'Same host'
-    case 'same-collection':
-      return 'Same hub'
-    case 'semantic-match':
-    default:
-      return 'Semantic'
-  }
+// One honest, qualitative read on how close a source is — no exposed score internals.
+function semanticTrailMatchLabel(semantic: number): string {
+  if (semantic >= 70) return 'Strong match'
+  if (semantic >= 55) return 'Related'
+  return 'Loose match'
 }
 
 function AnswerLoading({

@@ -111,14 +111,9 @@ export interface SemanticTrailScoreBreakdown {
   total: number
   semantic: number
   recency: number
-  hostAffinity: number
 }
 
-export type SemanticTrailReason =
-  | 'semantic-match'
-  | 'recent-capture'
-  | 'same-host'
-  | 'same-collection'
+export type SemanticTrailReason = 'semantic-match' | 'recent-capture' | 'same-collection'
 
 export interface SemanticTrailItem {
   id: string
@@ -153,10 +148,105 @@ export interface SemanticTrailResult {
   edges: SemanticTrailEdge[]
 }
 
+export type FlowGraphNodeKind = 'query' | 'hub' | 'source'
+export type FlowGraphEdgeKind = 'contains' | 'semantic' | 'query-match'
+
+export interface FlowGraphNode {
+  id: string
+  kind: FlowGraphNodeKind
+  title: string
+  subtitle: string
+  weight: number
+  collectionId?: string
+  collectionName?: string
+  captureId?: string
+  url?: string
+  host?: string
+  capturedAt?: string
+  excerpt?: string
+  score?: number
+}
+
+export interface FlowGraphEdge {
+  id: string
+  from: string
+  to: string
+  kind: FlowGraphEdgeKind
+  weight: number
+}
+
+export interface FlowGraphInput {
+  query?: string
+  sourceLimit?: number
+}
+
+export interface FlowGraphResult {
+  query: string
+  generatedAt: string
+  nodes: FlowGraphNode[]
+  edges: FlowGraphEdge[]
+  hubCount: number
+  sourceCount: number
+  omittedSourceCount: number
+}
+
+export interface CaptureHubSuggestion {
+  collectionId: string
+  collectionName: string
+  confidence: number
+  sampleTitle: string
+}
+
 export interface ChatResult {
   answer: string
   model: string
   citations: SearchResult[]
+}
+
+export type AirLensKind = 'topic' | 'flow' | 'hub' | 'answer' | 'iceberg'
+
+export interface AirDossierInput {
+  lens: string
+  lensKind?: AirLensKind
+  collectionId?: string
+  captureId?: string
+  savedIcebergId?: string
+  answer?: ChatResult
+  limit?: number
+}
+
+export interface AirDossierSource {
+  id: string
+  title: string
+  excerpt: string
+  collectionName?: string
+  url?: string
+  host?: string
+  capturedAt?: string
+  score?: number
+}
+
+export interface AirPreparedDossier {
+  title: string
+  lens: string
+  lensKind: AirLensKind
+  generatedAt: string
+  model?: string
+  outputDir: string
+  markdownPreview: string
+  sources: AirDossierSource[]
+}
+
+export interface AirRenderResult {
+  path: string
+  filename: string
+  title: string
+  sourceCount: number
+  renderedAt: string
+}
+
+export interface AirRecentFile extends AirRenderResult {
+  lens: string
 }
 
 export interface ChatStreamEvent {
@@ -303,6 +393,7 @@ export interface AetherApi {
     currentPage(input: { collectionId: string }): Promise<CaptureResult>
     move(input: { captureId: string; collectionId: string }): Promise<CaptureSummary>
     delete(captureId: string): Promise<void>
+    suggestHub(): Promise<CaptureHubSuggestion | null>
   }
   search: {
     collection(input: {
@@ -313,6 +404,16 @@ export interface AetherApi {
   }
   semanticTrail: {
     generate(input?: SemanticTrailInput): Promise<SemanticTrailResult>
+  }
+  flow: {
+    graph(input?: FlowGraphInput): Promise<FlowGraphResult>
+  }
+  air: {
+    prepare(input: AirDossierInput): Promise<AirPreparedDossier>
+    render(input: AirDossierInput): Promise<AirRenderResult>
+    listRecent(): Promise<AirRecentFile[]>
+    open(path: string): Promise<void>
+    reveal(path: string): Promise<void>
   }
   chat: {
     ask(input: {

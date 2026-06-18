@@ -34,6 +34,7 @@ use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Position, Rect, Size, State,
     WindowEvent,
 };
+use tauri_plugin_opener::OpenerExt;
 use tokio::task;
 use url::Url;
 
@@ -73,6 +74,18 @@ const DEFAULT_CAPTURE_CHUNK_SIZE: usize = 2200;
 const DEFAULT_CAPTURE_CHUNK_OVERLAP: usize = 240;
 const DEFAULT_SEMANTIC_TRAIL_LIMIT: usize = 12;
 const MAX_SEMANTIC_TRAIL_LIMIT: usize = 24;
+const DEFAULT_FLOW_GRAPH_SOURCE_LIMIT: usize = 96;
+const MAX_FLOW_GRAPH_SOURCE_LIMIT: usize = 180;
+const FLOW_GRAPH_MIN_EDGE_SCORE: f64 = 42.0;
+const FLOW_GRAPH_NEIGHBORS_PER_SOURCE: usize = 3;
+const FLOW_GRAPH_MAX_SEMANTIC_EDGES: usize = 180;
+const FLOW_GRAPH_QUERY_MATCH_LIMIT: usize = 18;
+// Below this semantic score (0-100) a captured chunk is too unrelated to surface in Flow.
+// Keeps weak matches out instead of padding the list with noise.
+const SEMANTIC_TRAIL_MIN_SCORE: f64 = 35.0;
+// Minimum semantic score before we silently pre-select a hub at capture time. Below this we
+// leave the user's manual choice alone rather than risk auto-misfiling the page.
+const CAPTURE_SUGGEST_MIN_SCORE: f64 = 50.0;
 // Sentinel URL for a blank tab that shows the Æther start page in the renderer instead
 // of loading a remote page. Must match START_PAGE_URL in src/renderer/src/App.tsx.
 const START_PAGE_URL: &str = "aether://start";
@@ -240,6 +253,7 @@ struct DataPaths {
     library_path: PathBuf,
     settings_path: PathBuf,
     icebergs_path: PathBuf,
+    air_exports_path: PathBuf,
     chunks_path: PathBuf,
     models_path: PathBuf,
 }
@@ -424,7 +438,6 @@ struct SemanticTrailRoot {
 enum SemanticTrailReason {
     SemanticMatch,
     RecentCapture,
-    SameHost,
     SameCollection,
 }
 
@@ -442,7 +455,6 @@ struct SemanticTrailScoreBreakdown {
     total: f64,
     semantic: f64,
     recency: f64,
-    host_affinity: f64,
 }
 
 #[derive(Clone, Serialize)]
@@ -474,6 +486,15 @@ struct SemanticTrailEdge {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct CaptureHubSuggestion {
+    collection_id: String,
+    collection_name: String,
+    confidence: f64,
+    sample_title: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct SemanticTrailResult {
     query: String,
     generated_at: String,
@@ -482,12 +503,157 @@ struct SemanticTrailResult {
     edges: Vec<SemanticTrailEdge>,
 }
 
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FlowGraphNodeKind {
+    Query,
+    Hub,
+    Source,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum FlowGraphEdgeKind {
+    Contains,
+    Semantic,
+    QueryMatch,
+}
+
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlowGraphNode {
+    id: String,
+    kind: FlowGraphNodeKind,
+    title: String,
+    subtitle: String,
+    weight: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    collection_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    collection_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    capture_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    captured_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    excerpt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    score: Option<f64>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlowGraphEdge {
+    id: String,
+    from: String,
+    to: String,
+    kind: FlowGraphEdgeKind,
+    weight: f64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FlowGraphResult {
+    query: String,
+    generated_at: String,
+    nodes: Vec<FlowGraphNode>,
+    edges: Vec<FlowGraphEdge>,
+    hub_count: usize,
+    source_count: usize,
+    omitted_source_count: usize,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ChatResult {
     answer: String,
     model: String,
     citations: Vec<SearchResult>,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum AirLensKind {
+    Topic,
+    Flow,
+    Hub,
+    Answer,
+    Iceberg,
+}
+
+impl Default for AirLensKind {
+    fn default() -> Self {
+        Self::Topic
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AirDossierInput {
+    lens: String,
+    lens_kind: Option<AirLensKind>,
+    collection_id: Option<String>,
+    capture_id: Option<String>,
+    saved_iceberg_id: Option<String>,
+    answer: Option<ChatResult>,
+    limit: Option<usize>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AirDossierSource {
+    id: String,
+    title: String,
+    excerpt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    collection_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    captured_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    score: Option<f64>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AirPreparedDossier {
+    title: String,
+    lens: String,
+    lens_kind: AirLensKind,
+    generated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    output_dir: String,
+    markdown_preview: String,
+    sources: Vec<AirDossierSource>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AirRenderResult {
+    path: String,
+    filename: String,
+    title: String,
+    source_count: usize,
+    rendered_at: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AirRecentFile {
+    path: String,
+    filename: String,
+    title: String,
+    lens: String,
+    source_count: usize,
+    rendered_at: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -688,6 +854,13 @@ struct SemanticTrailInput {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct FlowGraphInput {
+    query: Option<String>,
+    source_limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AskChatInput {
     collection_id: Option<String>,
     prompt: String,
@@ -875,6 +1048,7 @@ impl Backend {
                 library_path: app_data_dir.join("aether-library").join("library.json"),
                 settings_path: app_data_dir.join("aether-settings").join("settings.json"),
                 icebergs_path: app_data_dir.join("aether-icebergs").join("icebergs.json"),
+                air_exports_path: app_data_dir.join("aether-air"),
                 models_path: project_models_path(),
             },
             tabs: Mutex::new(TabState::new()),
@@ -2013,8 +2187,15 @@ pub fn run() {
             aether_capture_current_page,
             aether_capture_move,
             aether_capture_delete,
+            aether_capture_suggest_hub,
             aether_search_collection,
             aether_semantic_trail_generate,
+            aether_flow_graph,
+            aether_air_prepare,
+            aether_air_render,
+            aether_air_list_recent,
+            aether_air_open,
+            aether_air_reveal,
             aether_chat_ask,
             aether_chat_cancel,
             aether_crystallizer_generate,
@@ -2758,11 +2939,96 @@ async fn aether_semantic_trail_generate(
     state: State<'_, Backend>,
     input: Option<SemanticTrailInput>,
 ) -> Cmd<SemanticTrailResult> {
-    semantic_trail_generate(&state, input.unwrap_or(SemanticTrailInput {
-        query: None,
-        limit: None,
-    }))
+    semantic_trail_generate(
+        &state,
+        input.unwrap_or(SemanticTrailInput {
+            query: None,
+            limit: None,
+        }),
+    )
     .await
+}
+
+#[tauri::command]
+async fn aether_flow_graph(
+    state: State<'_, Backend>,
+    input: Option<FlowGraphInput>,
+) -> Cmd<FlowGraphResult> {
+    flow_graph_generate(
+        &state,
+        input.unwrap_or(FlowGraphInput {
+            query: None,
+            source_limit: None,
+        }),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn aether_air_prepare(
+    state: State<'_, Backend>,
+    input: AirDossierInput,
+) -> Cmd<AirPreparedDossier> {
+    air_prepare_dossier(&state, input, false).await
+}
+
+#[tauri::command]
+async fn aether_air_render(
+    state: State<'_, Backend>,
+    input: AirDossierInput,
+) -> Cmd<AirRenderResult> {
+    let prepared = air_prepare_dossier(&state, input, true).await?;
+    let output_dir = resolve_air_export_dir(&state.paths, true).await?;
+    let filename = air_dossier_filename(&prepared.title, &prepared.generated_at);
+    let path = output_dir.join(filename);
+    tokio::fs::write(&path, prepared.markdown_preview.as_bytes())
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(AirRenderResult {
+        path: path.display().to_string(),
+        filename: path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("aether-dossier.md")
+            .to_string(),
+        title: prepared.title,
+        source_count: prepared.sources.len(),
+        rendered_at: prepared.generated_at,
+    })
+}
+
+#[tauri::command]
+async fn aether_air_list_recent(state: State<'_, Backend>) -> Cmd<Vec<AirRecentFile>> {
+    air_list_recent(&state.paths).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn aether_air_open(app: AppHandle, path: String) -> Cmd<()> {
+    let path = PathBuf::from(path);
+    if !path.exists() {
+        return Err("AiR file not found.".to_string());
+    }
+    app.opener()
+        .open_path(path.display().to_string(), None::<String>)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn aether_air_reveal(app: AppHandle, path: String) -> Cmd<()> {
+    let path = PathBuf::from(path);
+    if !path.exists() {
+        return Err("AiR file not found.".to_string());
+    }
+    app.opener()
+        .reveal_item_in_dir(path)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn aether_capture_suggest_hub(
+    state: State<'_, Backend>,
+) -> Cmd<Option<CaptureHubSuggestion>> {
+    suggest_capture_hub(&state).await
 }
 
 #[tauri::command]
@@ -3115,6 +3381,20 @@ struct SemanticTrailChunkCandidate {
     reasons: Vec<SemanticTrailReason>,
 }
 
+#[derive(Clone)]
+struct FlowSourceCandidate {
+    capture: CaptureSummary,
+    collection_name: String,
+    vector: Vec<f32>,
+    excerpt: String,
+}
+
+struct FlowEdgeCandidate {
+    from: String,
+    to: String,
+    weight: f64,
+}
+
 async fn semantic_trail_generate(
     state: &State<'_, Backend>,
     input: SemanticTrailInput,
@@ -3191,10 +3471,11 @@ async fn semantic_trail_generate(
             if !distance.is_finite() {
                 return None;
             }
-            let chunk_host = get_tab_host(&chunk.url);
             let same_collection = root_collection_ids.contains(&chunk.collection_id);
-            let score =
-                semantic_trail_score_breakdown(distance, &chunk.captured_at, &root_host, &chunk_host);
+            let score = semantic_trail_score_breakdown(distance, &chunk.captured_at);
+            if score.semantic < SEMANTIC_TRAIL_MIN_SCORE {
+                return None;
+            }
             let reasons = semantic_trail_reasons(&score, same_collection);
             let collection_name = collection_names
                 .get(&chunk.collection_id)
@@ -3234,6 +3515,1121 @@ async fn semantic_trail_generate(
         items,
         edges,
     })
+}
+
+// Rank the user's hubs against the active page so capture can silently pre-select the best
+// home for it. Best-effort: any reason we cannot produce a confident match returns Ok(None)
+// rather than an error, so a failed suggestion never blocks or interrupts capturing.
+async fn suggest_capture_hub(
+    state: &State<'_, Backend>,
+) -> Cmd<Option<CaptureHubSuggestion>> {
+    let active_tab = {
+        let tabs = lock_tabs(state)?;
+        if tabs.dashboard_open {
+            return Ok(None);
+        }
+        match tabs.active_tab().cloned() {
+            Some(tab) => tab,
+            None => return Ok(None),
+        }
+    };
+
+    let captured = match extract_readable_active_page(state, &active_tab).await {
+        Ok(page) => page,
+        Err(_) => return Ok(None),
+    };
+
+    let library = load_library(&state.paths.library_path).await?;
+    if library.collections.is_empty() {
+        return Ok(None);
+    }
+    let chunks = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
+    if chunks.is_empty() {
+        return Ok(None);
+    }
+
+    let settings = load_settings(&state.paths.settings_path).await?;
+    let embedding_query = semantic_trail_default_query(&captured);
+    let query_vector = match local_embed(state, &settings, vec![embedding_query]).await {
+        Ok(vectors) => match vectors.into_iter().next() {
+            Some(vector) => vector,
+            None => return Ok(None),
+        },
+        Err(_) => return Ok(None),
+    };
+
+    // A hub is a strong home for this page if it already holds a source whose meaning is
+    // close to it, so score each hub by its single closest chunk.
+    let mut best_by_collection: HashMap<String, (f64, String)> = HashMap::new();
+    for chunk in &chunks {
+        let distance = cosine_distance(&query_vector, &chunk.vector);
+        if !distance.is_finite() {
+            continue;
+        }
+        let semantic = semantic_score_from_distance(distance);
+        let entry = best_by_collection
+            .entry(chunk.collection_id.clone())
+            .or_insert((0.0, String::new()));
+        if semantic > entry.0 {
+            entry.0 = semantic;
+            entry.1 = chunk.title.clone();
+        }
+    }
+
+    let Some((collection_id, (confidence, sample_title))) =
+        best_by_collection.into_iter().max_by(|left, right| {
+            left.1.0.partial_cmp(&right.1.0).unwrap_or(Ordering::Equal)
+        })
+    else {
+        return Ok(None);
+    };
+
+    if confidence < CAPTURE_SUGGEST_MIN_SCORE {
+        return Ok(None);
+    }
+
+    let collection_name = library
+        .collections
+        .iter()
+        .find(|collection| collection.id == collection_id)
+        .map(|collection| collection.name.clone())
+        .unwrap_or_else(|| "Knowledge Hub".to_string());
+
+    Ok(Some(CaptureHubSuggestion {
+        collection_id,
+        collection_name,
+        confidence: round_score(confidence),
+        sample_title,
+    }))
+}
+
+async fn flow_graph_generate(
+    state: &State<'_, Backend>,
+    input: FlowGraphInput,
+) -> Cmd<FlowGraphResult> {
+    let query = input.query.unwrap_or_default().trim().to_string();
+    let source_limit = input
+        .source_limit
+        .unwrap_or(DEFAULT_FLOW_GRAPH_SOURCE_LIMIT)
+        .clamp(1, MAX_FLOW_GRAPH_SOURCE_LIMIT);
+    let library = load_library(&state.paths.library_path).await?;
+    let collection_names = library
+        .collections
+        .iter()
+        .map(|collection| (collection.id.clone(), collection.name.clone()))
+        .collect::<HashMap<_, _>>();
+    let chunks = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
+    let mut chunks_by_capture = HashMap::<String, Vec<ChunkRecord>>::new();
+    for chunk in chunks {
+        chunks_by_capture
+            .entry(chunk.capture_id.clone())
+            .or_default()
+            .push(chunk);
+    }
+
+    let mut captures = library.captures.clone();
+    captures.sort_by(|left, right| right.captured_at.cmp(&left.captured_at));
+    let indexed_source_count = captures
+        .iter()
+        .filter(|capture| chunks_by_capture.contains_key(&capture.id))
+        .count();
+    let mut sources = Vec::<FlowSourceCandidate>::new();
+    for capture in captures {
+        if sources.len() >= source_limit {
+            break;
+        }
+        let Some(chunks) = chunks_by_capture.get(&capture.id) else {
+            continue;
+        };
+        let Some(vector) = average_flow_source_vector(chunks) else {
+            continue;
+        };
+        let collection_name = collection_names
+            .get(&capture.collection_id)
+            .cloned()
+            .unwrap_or_else(|| "Knowledge Hub".to_string());
+        let excerpt = chunks
+            .iter()
+            .max_by_key(|chunk| chunk.text.chars().count())
+            .map(|chunk| semantic_trail_excerpt(&chunk.text, 300))
+            .unwrap_or_default();
+        sources.push(FlowSourceCandidate {
+            capture,
+            collection_name,
+            vector,
+            excerpt,
+        });
+    }
+
+    let query_scores = if query.is_empty() || sources.is_empty() {
+        HashMap::new()
+    } else {
+        let settings = load_settings(&state.paths.settings_path).await?;
+        let query_vector = local_embed(state, &settings, vec![query.clone()])
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "Local embedding model returned no embedding.".to_string())?;
+        sources
+            .iter()
+            .map(|source| {
+                let distance = cosine_distance(&query_vector, &source.vector);
+                (
+                    flow_source_node_id(&source.capture.id),
+                    semantic_score_from_distance(distance),
+                )
+            })
+            .filter(|(_, score)| score.is_finite())
+            .collect::<HashMap<_, _>>()
+    };
+
+    let mut nodes = Vec::<FlowGraphNode>::new();
+    if !query.is_empty() {
+        nodes.push(FlowGraphNode {
+            id: "query".to_string(),
+            kind: FlowGraphNodeKind::Query,
+            title: query.clone(),
+            subtitle: "Semantic search lens".to_string(),
+            weight: 72.0,
+            collection_id: None,
+            collection_name: None,
+            capture_id: None,
+            url: None,
+            host: None,
+            captured_at: None,
+            excerpt: None,
+            score: None,
+        });
+    }
+
+    for collection in &library.collections {
+        nodes.push(FlowGraphNode {
+            id: flow_hub_node_id(&collection.id),
+            kind: FlowGraphNodeKind::Hub,
+            title: collection.name.clone(),
+            subtitle: format!(
+                "{} sources · {} chunks",
+                collection.capture_count, collection.chunk_count
+            ),
+            weight: (42.0 + (collection.capture_count as f64 * 7.0)).min(92.0),
+            collection_id: Some(collection.id.clone()),
+            collection_name: Some(collection.name.clone()),
+            capture_id: None,
+            url: None,
+            host: None,
+            captured_at: Some(collection.updated_at.clone()),
+            excerpt: Some(collection.description.clone())
+                .filter(|description| !description.is_empty()),
+            score: None,
+        });
+    }
+
+    for source in &sources {
+        let node_id = flow_source_node_id(&source.capture.id);
+        nodes.push(FlowGraphNode {
+            id: node_id.clone(),
+            kind: FlowGraphNodeKind::Source,
+            title: source.capture.title.clone(),
+            subtitle: source.collection_name.clone(),
+            weight: (24.0 + (source.capture.chunk_count as f64 * 2.0)).min(58.0),
+            collection_id: Some(source.capture.collection_id.clone()),
+            collection_name: Some(source.collection_name.clone()),
+            capture_id: Some(source.capture.id.clone()),
+            url: Some(source.capture.url.clone()),
+            host: Some(get_tab_host(&source.capture.url)),
+            captured_at: Some(source.capture.captured_at.clone()),
+            excerpt: Some(source.excerpt.clone()).filter(|excerpt| !excerpt.is_empty()),
+            score: query_scores.get(&node_id).copied().map(round_score),
+        });
+    }
+
+    let mut edges = Vec::<FlowGraphEdge>::new();
+    for source in &sources {
+        push_flow_graph_edge(
+            &mut edges,
+            &flow_hub_node_id(&source.capture.collection_id),
+            &flow_source_node_id(&source.capture.id),
+            FlowGraphEdgeKind::Contains,
+            36.0,
+        );
+    }
+
+    if !query_scores.is_empty() {
+        let mut matches = query_scores.iter().collect::<Vec<_>>();
+        matches.sort_by(|left, right| right.1.partial_cmp(left.1).unwrap_or(Ordering::Equal));
+        for (node_id, score) in matches.into_iter().take(FLOW_GRAPH_QUERY_MATCH_LIMIT) {
+            if *score >= FLOW_GRAPH_MIN_EDGE_SCORE {
+                push_flow_graph_edge(
+                    &mut edges,
+                    "query",
+                    node_id,
+                    FlowGraphEdgeKind::QueryMatch,
+                    *score,
+                );
+            }
+        }
+    }
+
+    let mut semantic_edges = Vec::<FlowEdgeCandidate>::new();
+    for left_index in 0..sources.len() {
+        for right_index in (left_index + 1)..sources.len() {
+            let left = &sources[left_index];
+            let right = &sources[right_index];
+            let distance = cosine_distance(&left.vector, &right.vector);
+            let weight = semantic_score_from_distance(distance);
+            if weight >= FLOW_GRAPH_MIN_EDGE_SCORE {
+                semantic_edges.push(FlowEdgeCandidate {
+                    from: flow_source_node_id(&left.capture.id),
+                    to: flow_source_node_id(&right.capture.id),
+                    weight,
+                });
+            }
+        }
+    }
+    semantic_edges.sort_by(|left, right| {
+        right
+            .weight
+            .partial_cmp(&left.weight)
+            .unwrap_or(Ordering::Equal)
+    });
+    let mut neighbor_counts = HashMap::<String, usize>::new();
+    let mut semantic_edge_count = 0_usize;
+    for candidate in semantic_edges {
+        if semantic_edge_count >= FLOW_GRAPH_MAX_SEMANTIC_EDGES {
+            break;
+        }
+        let left_count = *neighbor_counts.get(&candidate.from).unwrap_or(&0);
+        let right_count = *neighbor_counts.get(&candidate.to).unwrap_or(&0);
+        if left_count >= FLOW_GRAPH_NEIGHBORS_PER_SOURCE
+            || right_count >= FLOW_GRAPH_NEIGHBORS_PER_SOURCE
+        {
+            continue;
+        }
+        push_flow_graph_edge(
+            &mut edges,
+            &candidate.from,
+            &candidate.to,
+            FlowGraphEdgeKind::Semantic,
+            candidate.weight,
+        );
+        semantic_edge_count += 1;
+        *neighbor_counts.entry(candidate.from).or_insert(0) += 1;
+        *neighbor_counts.entry(candidate.to).or_insert(0) += 1;
+    }
+
+    Ok(FlowGraphResult {
+        query,
+        generated_at: now(),
+        nodes,
+        edges,
+        hub_count: library.collections.len(),
+        source_count: sources.len(),
+        omitted_source_count: indexed_source_count.saturating_sub(sources.len()),
+    })
+}
+
+fn average_flow_source_vector(chunks: &[ChunkRecord]) -> Option<Vec<f32>> {
+    let first = chunks.first()?;
+    let dimensions = first.vector.len();
+    if dimensions == 0 {
+        return None;
+    }
+    let mut total = vec![0.0_f32; dimensions];
+    let mut count = 0.0_f32;
+    for chunk in chunks {
+        if chunk.vector.len() != dimensions {
+            continue;
+        }
+        for (index, value) in chunk.vector.iter().enumerate() {
+            total[index] += *value;
+        }
+        count += 1.0;
+    }
+    if count == 0.0 {
+        return None;
+    }
+    for value in &mut total {
+        *value /= count;
+    }
+    Some(normalize_embedding(&total))
+}
+
+fn flow_hub_node_id(collection_id: &str) -> String {
+    format!("hub-{collection_id}")
+}
+
+fn flow_source_node_id(capture_id: &str) -> String {
+    format!("source-{capture_id}")
+}
+
+fn push_flow_graph_edge(
+    edges: &mut Vec<FlowGraphEdge>,
+    from: &str,
+    to: &str,
+    kind: FlowGraphEdgeKind,
+    weight: f64,
+) {
+    if from == to {
+        return;
+    }
+    edges.push(FlowGraphEdge {
+        id: format!("{}-{from}-{to}", flow_edge_kind_label(kind)),
+        from: from.to_string(),
+        to: to.to_string(),
+        kind,
+        weight: round_score(weight),
+    });
+}
+
+fn flow_edge_kind_label(kind: FlowGraphEdgeKind) -> &'static str {
+    match kind {
+        FlowGraphEdgeKind::Contains => "contains",
+        FlowGraphEdgeKind::Semantic => "semantic",
+        FlowGraphEdgeKind::QueryMatch => "query",
+    }
+}
+
+async fn air_prepare_dossier(
+    state: &State<'_, Backend>,
+    input: AirDossierInput,
+    synthesize: bool,
+) -> Cmd<AirPreparedDossier> {
+    let lens_kind = input.lens_kind.unwrap_or_default();
+    let lens = input.lens.trim().to_string();
+    let visible_lens = if lens.is_empty() {
+        match lens_kind {
+            AirLensKind::Topic => "Local knowledge".to_string(),
+            AirLensKind::Flow => "Current Flow lens".to_string(),
+            AirLensKind::Hub => "Selected knowledge hub".to_string(),
+            AirLensKind::Answer => "Latest AiON answer".to_string(),
+            AirLensKind::Iceberg => "Saved iCE map".to_string(),
+        }
+    } else {
+        lens
+    };
+    let generated_at = now();
+    let limit = input.limit.unwrap_or(12).clamp(1, 24);
+    let (sources, seed_answer, ice_map, seed_model) =
+        air_gather_context(state, &input, lens_kind, &visible_lens, limit).await?;
+    let title = format!("AiR Dossier: {visible_lens}");
+    let output_dir = resolve_air_export_dir(&state.paths, false).await?;
+
+    let mut model = seed_model.unwrap_or_else(|| "deterministic-scaffold".to_string());
+    let synthesized_sections = if synthesize {
+        match air_synthesize_sections(state, &visible_lens, lens_kind, &sources, seed_answer.as_deref(), ice_map.as_deref()).await {
+            Ok((synthesis_model, sections)) => {
+                model = synthesis_model;
+                Some(sections)
+            }
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    let markdown_preview = build_air_markdown(AirMarkdownInput {
+        title: &title,
+        lens: &visible_lens,
+        lens_kind,
+        generated_at: &generated_at,
+        model: &model,
+        sources: &sources,
+        synthesized_sections: synthesized_sections.as_deref(),
+        seed_answer: seed_answer.as_deref(),
+        ice_map: ice_map.as_deref(),
+    });
+
+    Ok(AirPreparedDossier {
+        title,
+        lens: visible_lens,
+        lens_kind,
+        generated_at,
+        model: Some(model),
+        output_dir: output_dir.display().to_string(),
+        markdown_preview,
+        sources,
+    })
+}
+
+async fn air_gather_context(
+    state: &State<'_, Backend>,
+    input: &AirDossierInput,
+    lens_kind: AirLensKind,
+    lens: &str,
+    limit: usize,
+) -> Cmd<(Vec<AirDossierSource>, Option<String>, Option<String>, Option<String>)> {
+    match lens_kind {
+        AirLensKind::Answer => {
+            let Some(answer) = input.answer.clone() else {
+                return Ok((Vec::new(), None, None, None));
+            };
+            let library = load_library(&state.paths.library_path).await?;
+            let collection_names = library
+                .collections
+                .iter()
+                .map(|collection| (collection.id.clone(), collection.name.clone()))
+                .collect::<HashMap<_, _>>();
+            let sources = search_results_to_air_sources(
+                dedupe_citations(answer.citations).into_iter().take(limit).collect(),
+                &collection_names,
+            );
+            Ok((sources, Some(answer.answer), None, Some(answer.model)))
+        }
+        AirLensKind::Iceberg => {
+            let icebergs = load_icebergs(&state.paths.icebergs_path).await?;
+            let selected = input
+                .saved_iceberg_id
+                .as_deref()
+                .and_then(|id| icebergs.icebergs.iter().find(|iceberg| iceberg.id == id))
+                .or_else(|| {
+                    icebergs
+                        .icebergs
+                        .iter()
+                        .find(|iceberg| iceberg.title.eq_ignore_ascii_case(lens))
+                })
+                .or_else(|| icebergs.icebergs.first());
+            let Some(iceberg) = selected else {
+                return Ok((Vec::new(), None, None, None));
+            };
+            let mut items = iceberg.iceberg.items.clone();
+            items.sort_by(|left, right| {
+                left.level
+                    .cmp(&right.level)
+                    .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
+            });
+            let sources = items
+                .iter()
+                .take(limit)
+                .map(|item| AirDossierSource {
+                    id: format!("iceberg-{}", item.id),
+                    title: item.name.clone(),
+                    excerpt: format!("Level {}: {}", item.level, item.description),
+                    collection_name: Some(format!("iCE · {}", iceberg.title)),
+                    url: None,
+                    host: None,
+                    captured_at: Some(iceberg.updated_at.clone()),
+                    score: None,
+                })
+                .collect::<Vec<_>>();
+            let map = items
+                .iter()
+                .map(|item| format!("- Level {} · {}: {}", item.level, item.name, item.description))
+                .collect::<Vec<_>>()
+                .join("\n");
+            Ok((sources, None, Some(map), Some(iceberg.iceberg.model.clone())))
+        }
+        AirLensKind::Hub => {
+            let sources = air_sources_for_hub(state, input.collection_id.as_deref(), limit).await?;
+            Ok((sources, None, None, None))
+        }
+        AirLensKind::Flow => {
+            if let Some(collection_id) = input.collection_id.as_deref() {
+                let sources = air_sources_for_hub(state, Some(collection_id), limit).await?;
+                return Ok((sources, None, None, None));
+            }
+            let mut sources = match input.capture_id.as_deref() {
+                Some(capture_id) => air_sources_for_capture(state, capture_id).await?,
+                None => Vec::new(),
+            };
+            let existing = sources
+                .iter()
+                .map(|source| source.id.clone())
+                .collect::<HashSet<_>>();
+            let related = air_sources_for_topic(state, lens, limit).await?;
+            sources.extend(
+                related
+                    .into_iter()
+                    .filter(|source| !existing.contains(&source.id))
+                    .take(limit.saturating_sub(sources.len())),
+            );
+            Ok((sources, None, None, None))
+        }
+        AirLensKind::Topic => {
+            let sources = air_sources_for_topic(state, lens, limit).await?;
+            Ok((sources, None, None, None))
+        }
+    }
+}
+
+async fn air_sources_for_hub(
+    state: &State<'_, Backend>,
+    collection_id: Option<&str>,
+    limit: usize,
+) -> Cmd<Vec<AirDossierSource>> {
+    let library = load_library(&state.paths.library_path).await?;
+    let collection_names = library
+        .collections
+        .iter()
+        .map(|collection| (collection.id.clone(), collection.name.clone()))
+        .collect::<HashMap<_, _>>();
+    let vectors = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
+    let mut chunks_by_capture = HashMap::<String, Vec<ChunkRecord>>::new();
+    for chunk in vectors {
+        chunks_by_capture
+            .entry(chunk.capture_id.clone())
+            .or_default()
+            .push(chunk);
+    }
+    let mut captures = library
+        .captures
+        .into_iter()
+        .filter(|capture| {
+            collection_id
+                .map(|id| capture.collection_id == id)
+                .unwrap_or(true)
+        })
+        .collect::<Vec<_>>();
+    captures.sort_by(|left, right| right.captured_at.cmp(&left.captured_at));
+    Ok(captures
+        .into_iter()
+        .take(limit)
+        .map(|capture| {
+            let excerpt = chunks_by_capture
+                .get(&capture.id)
+                .and_then(|chunks| chunks.iter().max_by_key(|chunk| chunk.text.chars().count()))
+                .map(|chunk| semantic_trail_excerpt(&chunk.text, 700))
+                .or_else(|| capture.metadata.as_ref().and_then(|metadata| metadata.summary.clone()))
+                .unwrap_or_default();
+            AirDossierSource {
+                id: capture.id.clone(),
+                title: capture.title,
+                excerpt,
+                collection_name: collection_names.get(&capture.collection_id).cloned(),
+                url: Some(capture.url.clone()),
+                host: Some(get_tab_host(&capture.url)),
+                captured_at: Some(capture.captured_at),
+                score: None,
+            }
+        })
+        .collect())
+}
+
+async fn air_sources_for_capture(
+    state: &State<'_, Backend>,
+    capture_id: &str,
+) -> Cmd<Vec<AirDossierSource>> {
+    let library = load_library(&state.paths.library_path).await?;
+    let collection_names = library
+        .collections
+        .iter()
+        .map(|collection| (collection.id.clone(), collection.name.clone()))
+        .collect::<HashMap<_, _>>();
+    let Some(capture) = library
+        .captures
+        .iter()
+        .find(|capture| capture.id == capture_id)
+        .cloned()
+    else {
+        return Ok(Vec::new());
+    };
+    let mut chunks = with_vectors_read(state, |vectors| {
+        vectors
+            .chunks
+            .iter()
+            .filter(|chunk| chunk.capture_id == capture_id)
+            .cloned()
+            .collect::<Vec<_>>()
+    })
+    .await?;
+    chunks.sort_by_key(|chunk| chunk.chunk_index);
+    let excerpt = semantic_trail_excerpt(
+        &chunks
+            .iter()
+            .map(|chunk| chunk.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+        1200,
+    );
+    Ok(vec![AirDossierSource {
+        id: capture.id.clone(),
+        title: capture.title,
+        excerpt,
+        collection_name: collection_names.get(&capture.collection_id).cloned(),
+        url: Some(capture.url.clone()),
+        host: Some(get_tab_host(&capture.url)),
+        captured_at: Some(capture.captured_at),
+        score: Some(100.0),
+    }])
+}
+
+async fn air_sources_for_topic(
+    state: &State<'_, Backend>,
+    lens: &str,
+    limit: usize,
+) -> Cmd<Vec<AirDossierSource>> {
+    let library = load_library(&state.paths.library_path).await?;
+    let collection_names = library
+        .collections
+        .iter()
+        .map(|collection| (collection.id.clone(), collection.name.clone()))
+        .collect::<HashMap<_, _>>();
+    let vectors = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
+    if vectors.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let results = if lens.trim().is_empty() || lens == "Current Flow lens" {
+        let mut chunks = vectors;
+        chunks.sort_by(|left, right| right.captured_at.cmp(&left.captured_at));
+        chunks
+            .into_iter()
+            .take(limit * 2)
+            .map(|chunk| SearchResult {
+                score: 0.0,
+                id: chunk.id,
+                collection_id: chunk.collection_id,
+                capture_id: chunk.capture_id,
+                app_id: chunk.app_id,
+                title: chunk.title,
+                url: chunk.url,
+                captured_at: chunk.captured_at,
+                chunk_index: chunk.chunk_index,
+                text: chunk.text,
+            })
+            .collect::<Vec<_>>()
+    } else {
+        let settings = load_settings(&state.paths.settings_path).await?;
+        let query_vector = local_embed(state, &settings, vec![lens.to_string()])
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| "Local embedding model returned no embedding.".to_string())?;
+        let mut scored = vectors
+            .into_iter()
+            .filter_map(|chunk| {
+                let distance = cosine_distance(&query_vector, &chunk.vector);
+                if !distance.is_finite() {
+                    return None;
+                }
+                Some((distance, chunk))
+            })
+            .collect::<Vec<_>>();
+        scored.sort_by(|left, right| left.0.partial_cmp(&right.0).unwrap_or(Ordering::Equal));
+        scored
+            .into_iter()
+            .take(limit * 3)
+            .map(|(score, chunk)| SearchResult {
+                score,
+                id: chunk.id,
+                collection_id: chunk.collection_id,
+                capture_id: chunk.capture_id,
+                app_id: chunk.app_id,
+                title: chunk.title,
+                url: chunk.url,
+                captured_at: chunk.captured_at,
+                chunk_index: chunk.chunk_index,
+                text: chunk.text,
+            })
+            .collect::<Vec<_>>()
+    };
+    Ok(search_results_to_air_sources(
+        dedupe_citations(results).into_iter().take(limit).collect(),
+        &collection_names,
+    ))
+}
+
+fn search_results_to_air_sources(
+    results: Vec<SearchResult>,
+    collection_names: &HashMap<String, String>,
+) -> Vec<AirDossierSource> {
+    results
+        .into_iter()
+        .map(|result| {
+            let collection_name = collection_names.get(&result.collection_id).cloned();
+            AirDossierSource {
+                id: result.capture_id.clone(),
+                title: result.title,
+                excerpt: semantic_trail_excerpt(&result.text, 850),
+                collection_name,
+                url: Some(result.url.clone()),
+                host: Some(get_tab_host(&result.url)),
+                captured_at: Some(result.captured_at),
+                score: Some(round_score(semantic_score_from_distance(result.score))),
+            }
+        })
+        .collect()
+}
+
+async fn air_synthesize_sections(
+    state: &State<'_, Backend>,
+    lens: &str,
+    lens_kind: AirLensKind,
+    sources: &[AirDossierSource],
+    seed_answer: Option<&str>,
+    ice_map: Option<&str>,
+) -> Cmd<(String, String)> {
+    let settings = load_settings(&state.paths.settings_path).await?;
+    let citations = sources
+        .iter()
+        .enumerate()
+        .map(|(index, source)| SearchResult {
+            id: source.id.clone(),
+            collection_id: source.collection_name.clone().unwrap_or_default(),
+            capture_id: source.id.clone(),
+            app_id: "air".to_string(),
+            title: source.title.clone(),
+            url: source.url.clone().unwrap_or_else(|| format!("aether://air/source/{}", index + 1)),
+            captured_at: source.captured_at.clone().unwrap_or_else(now),
+            chunk_index: index,
+            text: source.excerpt.clone(),
+            score: source.score.unwrap_or(0.0),
+        })
+        .collect::<Vec<_>>();
+    let source_rule = if citations.is_empty() {
+        "No local source excerpts matched. Say that coverage is currently sparse."
+    } else {
+        "Use only the numbered local source excerpts. Cite every concrete claim with bracket citations like [1] or [2]."
+    };
+    let prompt = format!(
+        "Render a concise Markdown dossier for Æther AiR.\nLens kind: {}\nLens: {lens}\n{source_rule}\n\nInclude exactly these sections:\n## Summary\n## Key Findings\n## Source-Backed Notes\n## Unresolved Questions\n\nDo not include YAML frontmatter, a title, or a source index. Keep prose dense and professional.\n\nSeed AiON answer:\n{}\n\nSaved iCE map:\n{}",
+        air_lens_label(lens_kind),
+        seed_answer.unwrap_or("None"),
+        ice_map.unwrap_or("None")
+    );
+    let result = local_chat(state, &settings, &prompt, citations, None).await?;
+    Ok((
+        result.model,
+        normalize_model_markdown_citations(&result.answer, sources.len()),
+    ))
+}
+
+struct AirMarkdownInput<'a> {
+    title: &'a str,
+    lens: &'a str,
+    lens_kind: AirLensKind,
+    generated_at: &'a str,
+    model: &'a str,
+    sources: &'a [AirDossierSource],
+    synthesized_sections: Option<&'a str>,
+    seed_answer: Option<&'a str>,
+    ice_map: Option<&'a str>,
+}
+
+fn build_air_markdown(input: AirMarkdownInput<'_>) -> String {
+    let tags = air_tags(input.lens)
+        .into_iter()
+        .map(|tag| yaml_string(&tag))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut markdown = format!(
+        "---\ntitle: {}\ncreated: {}\naether_lens: {}\nsource_count: {}\ntags: [{}]\nmodel: {}\ntype: aether-dossier\n---\n\n# {}\n\n_Rendered by AiR from the {} lens on {}._\n\n",
+        yaml_string(input.title),
+        yaml_string(input.generated_at),
+        yaml_string(input.lens),
+        input.sources.len(),
+        tags,
+        yaml_string(input.model),
+        markdown_escape(input.title),
+        air_lens_label(input.lens_kind),
+        markdown_escape(input.generated_at)
+    );
+
+    if let Some(sections) = input
+        .synthesized_sections
+        .map(str::trim)
+        .filter(|sections| !sections.is_empty())
+    {
+        markdown.push_str(sections);
+        markdown.push_str("\n\n");
+    } else {
+        markdown.push_str("## Summary\n\n");
+        if input.sources.is_empty() {
+            markdown.push_str(&format!(
+                "No local sources matched [[{}]] yet. This dossier preserves the requested lens and can be regenerated after more captures are available.\n\n",
+                markdown_escape(input.lens)
+            ));
+        } else {
+            markdown.push_str(&format!(
+                "This dossier gathers {} local source{} around [[{}]]. It is generated as a deterministic citation scaffold from Æther's captured knowledge.\n\n",
+                input.sources.len(),
+                if input.sources.len() == 1 { "" } else { "s" },
+                markdown_escape(input.lens)
+            ));
+        }
+
+        markdown.push_str("## Key Findings\n\n");
+        if input.sources.is_empty() {
+            markdown.push_str("- Coverage is sparse; capture or connect more relevant material before treating this lens as complete.\n\n");
+        } else {
+            for (index, source) in input.sources.iter().take(6).enumerate() {
+                markdown.push_str(&format!(
+                    "- **{}** anchors this lens with: {} [^{}]\n",
+                    markdown_escape(&source.title),
+                    markdown_escape(&semantic_trail_excerpt(&source.excerpt, 180)),
+                    index + 1
+                ));
+            }
+            markdown.push('\n');
+        }
+
+        markdown.push_str("## Source-Backed Notes\n\n");
+        for (index, source) in input.sources.iter().enumerate() {
+            markdown.push_str(&format!(
+                "### {}. {}\n\n{}\n\n",
+                index + 1,
+                markdown_escape(&source.title),
+                markdown_escape(&source.excerpt)
+            ));
+            let mut meta = Vec::new();
+            if let Some(collection) = &source.collection_name {
+                meta.push(format!("Hub: {}", markdown_escape(collection)));
+            }
+            if let Some(host) = &source.host {
+                meta.push(format!("Host: {}", markdown_escape(host)));
+            }
+            if let Some(captured_at) = &source.captured_at {
+                meta.push(format!("Captured: {}", markdown_escape(captured_at)));
+            }
+            if let Some(score) = source.score {
+                meta.push(format!("Match: {score:.1}"));
+            }
+            if !meta.is_empty() {
+                markdown.push_str(&format!("{}\n\n", meta.join(" · ")));
+            }
+        }
+
+        if let Some(answer) = input.seed_answer.map(str::trim).filter(|answer| !answer.is_empty()) {
+            markdown.push_str("## AiON Seed\n\n");
+            markdown.push_str(&markdown_escape(answer));
+            markdown.push_str("\n\n");
+        }
+
+        if let Some(map) = input.ice_map.map(str::trim).filter(|map| !map.is_empty()) {
+            markdown.push_str("## iCE Map\n\n");
+            markdown.push_str(&markdown_escape(map));
+            markdown.push_str("\n\n");
+        }
+
+        markdown.push_str("## Unresolved Questions\n\n");
+        markdown.push_str("- Which claims need fresher or primary-source confirmation?\n");
+        markdown.push_str("- Which adjacent hubs should be captured next to improve coverage?\n\n");
+    }
+
+    markdown.push_str("## Source Index\n\n");
+    if input.sources.is_empty() {
+        markdown.push_str("No source index entries were available for this render.\n");
+    } else {
+        for (index, source) in input.sources.iter().enumerate() {
+            let title = markdown_escape(&source.title);
+            let collection = source
+                .collection_name
+                .as_deref()
+                .map(markdown_escape)
+                .unwrap_or_else(|| "Knowledge Hub".to_string());
+            let captured_at = source
+                .captured_at
+                .as_deref()
+                .map(markdown_escape)
+                .unwrap_or_else(|| "unknown capture date".to_string());
+            if let Some(url) = &source.url {
+                markdown.push_str(&format!(
+                    "[^{}]: [{}]({}) — {} · {}\n",
+                    index + 1,
+                    title,
+                    url.replace(')', "%29"),
+                    collection,
+                    captured_at
+                ));
+            } else {
+                markdown.push_str(&format!(
+                    "[^{}]: {} — {} · {}\n",
+                    index + 1,
+                    title,
+                    collection,
+                    captured_at
+                ));
+            }
+        }
+    }
+    markdown
+}
+
+async fn resolve_air_export_dir(paths: &DataPaths, create: bool) -> Cmd<PathBuf> {
+    let preferred = documents_air_dir();
+    let candidates = preferred
+        .into_iter()
+        .chain(std::iter::once(paths.air_exports_path.clone()))
+        .collect::<Vec<_>>();
+    for candidate in candidates {
+        if !create {
+            if candidate.exists()
+                || candidate
+                    .parent()
+                    .is_some_and(|parent| parent.exists() && parent.is_dir())
+            {
+                return Ok(candidate);
+            }
+            continue;
+        }
+        if tokio::fs::create_dir_all(&candidate).await.is_ok() {
+            return Ok(candidate);
+        }
+    }
+    if create {
+        Err("Could not create an AiR export folder.".to_string())
+    } else {
+        Ok(paths.air_exports_path.clone())
+    }
+}
+
+fn documents_air_dir() -> Option<PathBuf> {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .map(|home| home.join("Documents").join("Æther").join("AiR"))
+}
+
+async fn air_list_recent(paths: &DataPaths) -> Cmd<Vec<AirRecentFile>> {
+    let mut files = Vec::<AirRecentFile>::new();
+    let mut directories = Vec::new();
+    if let Some(documents) = documents_air_dir() {
+        directories.push(documents);
+    }
+    directories.push(paths.air_exports_path.clone());
+
+    for directory in directories {
+        let Ok(mut entries) = tokio::fs::read_dir(&directory).await else {
+            continue;
+        };
+        while let Some(entry) = entries.next_entry().await.map_err(|error| error.to_string())? {
+            let path = entry.path();
+            if !path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+            {
+                continue;
+            }
+            let filename = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("aether-dossier.md")
+                .to_string();
+            let metadata = entry.metadata().await.ok();
+            let rendered_at = metadata
+                .and_then(|metadata| metadata.modified().ok())
+                .map(|modified| DateTime::<Utc>::from(modified).to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+                .unwrap_or_else(now);
+            let content = tokio::fs::read_to_string(&path).await.unwrap_or_default();
+            files.push(AirRecentFile {
+                title: air_frontmatter_value(&content, "title")
+                    .unwrap_or_else(|| air_title_from_filename(&filename)),
+                lens: air_frontmatter_value(&content, "aether_lens").unwrap_or_default(),
+                source_count: air_frontmatter_value(&content, "source_count")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(0),
+                path: path.display().to_string(),
+                filename,
+                rendered_at,
+            });
+        }
+    }
+    files.sort_by(|left, right| right.rendered_at.cmp(&left.rendered_at));
+    files.truncate(12);
+    Ok(files)
+}
+
+fn air_frontmatter_value(markdown: &str, key: &str) -> Option<String> {
+    let mut lines = markdown.lines();
+    if lines.next()? != "---" {
+        return None;
+    }
+    let prefix = format!("{key}:");
+    for line in lines {
+        if line == "---" {
+            break;
+        }
+        if let Some(value) = line.strip_prefix(&prefix) {
+            return Some(value.trim().trim_matches('"').replace("\\\"", "\""));
+        }
+    }
+    None
+}
+
+fn air_dossier_filename(title: &str, generated_at: &str) -> String {
+    let _ = generated_at;
+    let filename = title
+        .trim()
+        .chars()
+        .map(|char| match char {
+            '/' | '\\' | '\0' => '-',
+            char if char.is_control() => ' ',
+            char => char,
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim_matches(['.', ' '])
+        .to_string();
+    if filename.is_empty() {
+        "AiR Dossier.md".to_string()
+    } else {
+        format!("{filename}.md")
+    }
+}
+
+fn air_title_from_filename(filename: &str) -> String {
+    filename
+        .trim_end_matches(".md")
+        .split('-')
+        .filter(|part| !part.chars().all(|char| char.is_ascii_digit()))
+        .take(8)
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => format!("{}{}", first.to_uppercase(), chars.as_str()),
+                None => String::new(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn yaml_string(value: &str) -> String {
+    format!(
+        "\"{}\"",
+        value
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', " ")
+            .replace('\r', " ")
+    )
+}
+
+fn markdown_escape(value: &str) -> String {
+    strip_numeric_bracket_markers(value)
+        .replace('\r', "")
+        .trim()
+        .to_string()
+}
+
+fn air_tags(lens: &str) -> Vec<String> {
+    let mut tags = vec!["aether".to_string(), "air".to_string(), "dossier".to_string()];
+    for word in lens
+        .split(|char: char| !char.is_alphanumeric())
+        .filter(|word| word.chars().count() >= 3)
+        .take(4)
+    {
+        tags.push(word.to_lowercase());
+    }
+    tags.sort();
+    tags.dedup();
+    tags
+}
+
+fn air_lens_label(kind: AirLensKind) -> &'static str {
+    match kind {
+        AirLensKind::Topic => "topic",
+        AirLensKind::Flow => "Flow",
+        AirLensKind::Hub => "hub",
+        AirLensKind::Answer => "AiON answer",
+        AirLensKind::Iceberg => "iCE",
+    }
+}
+
+fn normalize_model_markdown_citations(markdown: &str, source_count: usize) -> String {
+    normalize_answer_citations(&clean_model_output(markdown), source_count)
 }
 
 fn semantic_trail_default_query(captured: &CapturedPage) -> String {
@@ -3290,19 +4686,17 @@ fn semantic_trail_items(
 fn semantic_trail_score_breakdown(
     distance: f64,
     captured_at: &str,
-    root_host: &str,
-    source_host: &str,
 ) -> SemanticTrailScoreBreakdown {
+    // Relatedness is about meaning across the whole library, regardless of where a source
+    // came from. Semantic similarity dominates; recency is only a gentle tiebreaker.
     let semantic = semantic_score_from_distance(distance);
     let recency = semantic_trail_recency_score(captured_at);
-    let host_affinity = semantic_trail_host_affinity(root_host, source_host);
-    let total = round_score((semantic * 0.78) + (recency * 0.14) + (host_affinity * 0.08));
+    let total = round_score((semantic * 0.92) + (recency * 0.08));
 
     SemanticTrailScoreBreakdown {
         total,
         semantic,
         recency,
-        host_affinity,
     }
 }
 
@@ -3331,14 +4725,6 @@ fn semantic_trail_recency_score(captured_at: &str) -> f64 {
     }
 }
 
-fn semantic_trail_host_affinity(root_host: &str, source_host: &str) -> f64 {
-    if !root_host.is_empty() && root_host == source_host {
-        100.0
-    } else {
-        0.0
-    }
-}
-
 fn semantic_trail_reasons(
     score: &SemanticTrailScoreBreakdown,
     same_collection: bool,
@@ -3349,9 +4735,6 @@ fn semantic_trail_reasons(
     }
     if score.recency >= 80.0 {
         reasons.push(SemanticTrailReason::RecentCapture);
-    }
-    if score.host_affinity > 0.0 {
-        reasons.push(SemanticTrailReason::SameHost);
     }
     if same_collection {
         reasons.push(SemanticTrailReason::SameCollection);
@@ -3381,7 +4764,7 @@ fn semantic_trail_edges(
                 "root",
                 &item.id,
                 SemanticTrailEdgeKind::SameHost,
-                item.score.host_affinity,
+                item.score.total,
             );
         }
     }
@@ -5684,7 +7067,6 @@ mod tests {
             total: 88.0,
             semantic: 70.0,
             recency: 80.0,
-            host_affinity: 100.0,
         };
 
         assert_eq!(
@@ -5692,10 +7074,85 @@ mod tests {
             vec![
                 SemanticTrailReason::SemanticMatch,
                 SemanticTrailReason::RecentCapture,
-                SemanticTrailReason::SameHost,
                 SemanticTrailReason::SameCollection,
             ]
         );
+    }
+
+    #[test]
+    fn air_filename_matches_dossier_title_with_safe_separators() {
+        assert_eq!(
+            air_dossier_filename("AiR Dossier: Local/Fluid Research", "2026-06-17T10:11:12.123Z"),
+            "AiR Dossier: Local-Fluid Research.md"
+        );
+    }
+
+    #[test]
+    fn air_yaml_string_escapes_quotes_and_newlines() {
+        assert_eq!(yaml_string("A \"quoted\"\nLens"), "\"A \\\"quoted\\\" Lens\"");
+    }
+
+    #[test]
+    fn air_markdown_fallback_keeps_frontmatter_and_source_index() {
+        let sources = vec![AirDossierSource {
+            id: "source-1".to_string(),
+            title: "Research Source".to_string(),
+            excerpt: "A captured passage with a local finding [99].".to_string(),
+            collection_name: Some("Hub".to_string()),
+            url: Some("https://example.com/research".to_string()),
+            host: Some("example.com".to_string()),
+            captured_at: Some("2026-06-17T10:00:00.000Z".to_string()),
+            score: Some(88.4),
+        }];
+
+        let markdown = build_air_markdown(AirMarkdownInput {
+            title: "AiR Dossier: Research",
+            lens: "Research",
+            lens_kind: AirLensKind::Topic,
+            generated_at: "2026-06-17T10:11:12.123Z",
+            model: "deterministic-scaffold",
+            sources: &sources,
+            synthesized_sections: None,
+            seed_answer: None,
+            ice_map: None,
+        });
+
+        assert!(markdown.contains("type: aether-dossier"));
+        assert!(markdown.contains("source_count: 1"));
+        assert!(markdown.contains("## Source-Backed Notes"));
+        assert!(markdown.contains("[^1]: [Research Source](https://example.com/research)"));
+        assert!(!markdown.contains("[99]"));
+    }
+
+    #[test]
+    fn air_source_conversion_dedupes_repeated_capture_urls() {
+        let collection_names = HashMap::from([("hub".to_string(), "Hub".to_string())]);
+        let results = dedupe_citations(vec![
+            search_result("chunk-1", "https://example.com/a#one", "First passage."),
+            search_result("chunk-2", "https://example.com/a#two", "Second passage."),
+        ]);
+
+        let sources = search_results_to_air_sources(results, &collection_names);
+
+        assert_eq!(sources.len(), 1);
+        assert!(sources[0].excerpt.contains("First passage"));
+        assert!(sources[0].excerpt.contains("Second passage"));
+        assert_eq!(sources[0].collection_name.as_deref(), Some("Hub"));
+    }
+
+    fn search_result(id: &str, url: &str, text: &str) -> SearchResult {
+        SearchResult {
+            id: id.to_string(),
+            collection_id: "hub".to_string(),
+            capture_id: "capture".to_string(),
+            app_id: "browser".to_string(),
+            title: "Example".to_string(),
+            url: url.to_string(),
+            captured_at: "2026-06-17T10:00:00.000Z".to_string(),
+            chunk_index: 0,
+            text: text.to_string(),
+            score: 0.2,
+        }
     }
 
     fn semantic_trail_candidate(
@@ -5722,7 +7179,6 @@ mod tests {
                 total,
                 semantic: total,
                 recency: 50.0,
-                host_affinity: 0.0,
             },
             reasons,
         }
