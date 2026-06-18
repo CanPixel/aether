@@ -27,3 +27,5 @@ aether-web
 .vscode
 
 public/old
+
+build/dmg-background.tiff
