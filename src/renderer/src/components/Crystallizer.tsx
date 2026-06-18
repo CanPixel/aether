@@ -1,5 +1,6 @@
 import {
   FormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent,
   type CSSProperties,
@@ -59,11 +60,17 @@ type CrystallizerProps = {
 
 const CANVAS_WIDTH = 2200
 const CANVAS_HEIGHT = 1800
-const NODE_WIDTH = 306
-const NODE_HEIGHT = 92
+const NODE_WIDTH = 286
+const NODE_HEIGHT = 82
 const MIN_ZOOM = 0.74
 const MAX_ZOOM = 2.25
 const FITTED_ZOOM = 0.74
+const NODE_FIELD = {
+  minX: 600,
+  maxX: CANVAS_WIDTH - 430,
+  topInset: 128,
+  bottomInset: 58
+}
 const ICEBERG_BOUNDS = {
   minX: 172,
   maxX: 2028,
@@ -114,6 +121,8 @@ const LAYERS: LayerDefinition[] = [
   }
 ]
 
+const LAYER_HEIGHT = CANVAS_HEIGHT / LAYERS.length
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
@@ -137,30 +146,32 @@ function easeOutCubic(value: number): number {
 }
 
 function positionTopics(items: IcebergItem[]): PositionedTopic[] {
-  const layerHeight = CANVAS_HEIGHT / LAYERS.length
   const lanes = [14, 86, 29, 71, 50]
 
   return LAYERS.flatMap((layer) => {
     const layerItems = items
       .filter((item) => item.level === layer.level)
       .sort((first, second) => first.y - second.y || first.name.localeCompare(second.name))
-    const availableHeight = layerHeight - 120
+    const layerTop = (layer.level - 1) * LAYER_HEIGHT
+    const layerBottom = layer.level * LAYER_HEIGHT
+    const yMin = layerTop + NODE_FIELD.topInset
+    const yMax = layerBottom - NODE_FIELD.bottomInset
+    const availableHeight = Math.max(0, yMax - yMin)
     const yStep = layerItems.length > 1 ? availableHeight / (layerItems.length - 1) : 0
 
     return layerItems.map((item, index) => {
       const sourceRatio =
         typeof item.x === 'number' ? item.x / 100 : lanes[index % lanes.length] / 100
       const lane = lanes[(layer.level + index) % lanes.length] / 100
-      const blendedX = sourceRatio * 0.35 + lane * 0.65
+      const blendedX = sourceRatio * 0.84 + lane * 0.16
 
       return {
         item,
-        displayX: clamp(blendedX * CANVAS_WIDTH, 210, CANVAS_WIDTH - 210),
+        displayX: clamp(blendedX * CANVAS_WIDTH, NODE_FIELD.minX, NODE_FIELD.maxX),
         displayY: clamp(
-          (layer.level - 1) * layerHeight +
-            (layerItems.length > 1 ? 58 + index * yStep : layerHeight / 2),
-          (layer.level - 1) * layerHeight + 46,
-          layer.level * layerHeight - 46
+          layerItems.length > 1 ? yMin + index * yStep : layerTop + LAYER_HEIGHT / 2,
+          yMin,
+          yMax
         )
       }
     })
@@ -200,6 +211,7 @@ export function Crystallizer({
   const [pan, setPan] = useState(() => getCenteredPan(FITTED_ZOOM))
   const [dragging, setDragging] = useState(false)
   const [savedDrawerOpen, setSavedDrawerOpen] = useState(() => !openedIceberg)
+  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null)
   const dragStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
   const animationFrame = useRef<number | null>(null)
 
@@ -223,6 +235,7 @@ export function Crystallizer({
   const hasUnsavedResult = Boolean(result && !savedId)
   const hasSavedAtlases = savedIcebergs.length > 0
   const savedAtlasExpanded = savedDrawerOpen
+  const focusedItemId = hoveredItemId ?? activeSelectedItem?.id ?? null
   const layerCounts = useMemo(() => {
     const counts = new Map<number, number>()
     for (const layer of LAYERS) counts.set(layer.level, 0)
@@ -397,6 +410,20 @@ export function Crystallizer({
       x: CANVAS_WIDTH / 2 - positionedItem.displayX * nextZoom,
       y: CANVAS_HEIGHT / 2 - positionedItem.displayY * nextZoom
     })
+  }
+
+  function selectItem(item: IcebergItem): void {
+    setSelectedItem(item)
+    focusItem(item)
+  }
+
+  function handleNodeKeyDown(
+    event: ReactKeyboardEvent<SVGGElement>,
+    item: IcebergItem
+  ): void {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    selectItem(item)
   }
 
   function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>): void {
@@ -618,6 +645,9 @@ export function Crystallizer({
               <path className="iceberg-ridge faint" d="M468 1498 1230 804 1732 1498" />
               <path className="iceberg-ridge faint" d="M776 216 1010 292 1230 804" />
               <line className="waterline" x1="0" x2={CANVAS_WIDTH} y1="360" y2="360" />
+              <text className="waterline-label" x={CANVAS_WIDTH / 2} y="354">
+                Waterline
+              </text>
 
               {LAYERS.map((layer) => (
                 <g
@@ -633,23 +663,23 @@ export function Crystallizer({
                   />
                   <g
                     className="crystallizer-layer-label"
-                    transform={`translate(128 ${(CANVAS_HEIGHT / LAYERS.length) * (layer.level - 0.68)})`}
+                    transform={`translate(94 ${(CANVAS_HEIGHT / LAYERS.length) * (layer.level - 1) + 24})`}
                   >
-                    <rect height="86" rx="14" width="336" />
-                    <circle className="layer-label-number-mark" cx="38" cy="43" r="22" />
-                    <text className="layer-label-number" x="38" y="51">
+                    <rect height="58" rx="18" width="324" />
+                    <circle className="layer-label-number-mark" cx="31" cy="29" r="18" />
+                    <text className="layer-label-number" x="31" y="36">
                       {layer.level}
                     </text>
-                    <text className="layer-label-name" x="78" y="31">
+                    <text className="layer-label-name" x="64" y="25">
                       {layer.name}
                     </text>
-                    <text className="layer-label-caption" x="78" y="58">
+                    <text className="layer-label-caption" x="64" y="45">
                       {layer.caption}
                     </text>
                   </g>
                   <text
                     className="layer-depth-label"
-                    x={CANVAS_WIDTH - 382}
+                    x={CANVAS_WIDTH - 122}
                     y={(CANVAS_HEIGHT / LAYERS.length) * (layer.level - 0.5)}
                   >
                     {layer.depth}
@@ -659,7 +689,12 @@ export function Crystallizer({
 
               {semanticThreads.map((thread, index) => (
                 <path
-                  className="semantic-thread"
+                  className={`semantic-thread ${
+                    focusedItemId &&
+                    (thread.from.item.id === focusedItemId || thread.to.item.id === focusedItemId)
+                      ? 'is-highlighted'
+                      : ''
+                  }`}
                   d={`M${thread.from.displayX} ${thread.from.displayY} C ${thread.from.displayX} ${
                     thread.from.displayY + 128
                   }, ${thread.to.displayX} ${thread.to.displayY - 128}, ${thread.to.displayX} ${
@@ -673,14 +708,24 @@ export function Crystallizer({
               {visiblePositionedItems.map(({ item, displayX, displayY }, index) => {
                 const layer = getLayer(item.level)
                 const selected = activeSelectedItem?.id === item.id
+                const hovered = hoveredItemId === item.id
                 return (
                   <g
-                    className={`ice-node-hit ${selected ? 'selected' : ''}`}
+                    aria-label={`${item.name}, layer ${item.level}`}
+                    aria-pressed={selected}
+                    className={`ice-node-hit ${selected ? 'selected' : ''} ${
+                      hovered ? 'hovered' : ''
+                    }`}
                     key={item.id}
                     onClick={() => {
-                      setSelectedItem(item)
-                      focusItem(item)
+                      selectItem(item)
                     }}
+                    onFocus={() => setHoveredItemId(item.id)}
+                    onBlur={() => setHoveredItemId(null)}
+                    onKeyDown={(event) => handleNodeKeyDown(event, item)}
+                    onMouseEnter={() => setHoveredItemId(item.id)}
+                    onMouseLeave={() => setHoveredItemId(null)}
+                    role="button"
                     style={
                       {
                         '--layer-accent': layer.accent,
@@ -802,9 +847,10 @@ export function Crystallizer({
                 className={`button ${activeSelectedItem?.id === item.id ? 'active' : ''}`}
                 key={item.id}
                 onClick={() => {
-                  setSelectedItem(item)
-                  focusItem(item)
+                  selectItem(item)
                 }}
+                onMouseEnter={() => setHoveredItemId(item.id)}
+                onMouseLeave={() => setHoveredItemId(null)}
                 style={
                   {
                     '--layer-accent': getLayer(item.level).accent,

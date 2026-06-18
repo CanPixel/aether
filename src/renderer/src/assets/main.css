@@ -6738,10 +6738,20 @@ button {
   stroke-width: 15px;
 }
 
+.waterline-label {
+  fill: rgba(71, 85, 105, 0.42);
+  font-size: 17px;
+  font-weight: 920;
+  letter-spacing: 0.24em;
+  text-anchor: middle;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
 .crystallizer-layer line {
-  stroke: color-mix(in srgb, var(--layer-accent) 28%, rgba(15, 140, 194, 0.12));
-  stroke-dasharray: 10 16;
-  stroke-width: 2.25px;
+  stroke: color-mix(in srgb, var(--layer-accent) 20%, rgba(15, 140, 194, 0.1));
+  stroke-dasharray: 8 18;
+  stroke-width: 1.8px;
 }
 
 .crystallizer-body.results-ready .crystallizer-layer line {
@@ -6750,16 +6760,16 @@ button {
 }
 
 .crystallizer-layer-label rect {
-  fill: rgba(255, 255, 255, 0.48);
-  stroke: color-mix(in srgb, var(--layer-accent) 24%, rgba(255, 255, 255, 0.4));
-  stroke-width: 1.4px;
-  filter: drop-shadow(0 12px 24px rgba(8, 47, 73, 0.08));
+  fill: rgba(255, 255, 255, 0.28);
+  stroke: color-mix(in srgb, var(--layer-accent) 24%, rgba(255, 255, 255, 0.34));
+  stroke-width: 1.1px;
+  filter: drop-shadow(0 9px 20px rgba(8, 47, 73, 0.05));
 }
 
 .layer-label-number-mark {
-  fill: color-mix(in srgb, var(--layer-accent) 18%, rgba(255, 255, 255, 0.82));
-  stroke: color-mix(in srgb, var(--layer-accent) 38%, rgba(255, 255, 255, 0.54));
-  stroke-width: 1.4px;
+  fill: color-mix(in srgb, var(--layer-accent) 84%, #ffffff);
+  stroke: rgba(255, 255, 255, 0.68);
+  stroke-width: 1.2px;
 }
 
 .crystallizer-body.results-ready .crystallizer-layer-label,
@@ -6775,36 +6785,52 @@ button {
 }
 
 .layer-label-number {
-  fill: var(--layer-accent);
-  font-size: 24px;
-  font-weight: 940;
+  fill: #ffffff;
+  font-size: 18px;
+  font-weight: 920;
   text-anchor: middle;
 }
 
 .layer-label-name {
-  fill: rgba(15, 23, 42, 0.72);
-  font-size: 25px;
+  fill: color-mix(in srgb, var(--layer-accent) 72%, #102033);
+  font-size: 18px;
   font-weight: 900;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .layer-label-caption,
 .layer-depth-label {
-  fill: rgba(71, 85, 105, 0.58);
-  font-size: 16px;
-  font-weight: 920;
-  letter-spacing: 0.12em;
+  fill: rgba(71, 85, 105, 0.5);
+  font-size: 11px;
+  font-weight: 860;
+  letter-spacing: 0.16em;
 }
 
 .layer-depth-label {
-  fill: rgba(71, 85, 105, 0.5);
+  fill: rgba(71, 85, 105, 0.46);
+  font-size: 14px;
   text-anchor: end;
 }
 
 .semantic-thread {
   fill: none;
-  stroke: rgba(71, 85, 105, 0.18);
-  stroke-width: 3px;
+  opacity: 0.62;
+  stroke: rgba(71, 85, 105, 0.16);
+  stroke-linecap: round;
+  stroke-width: 2.4px;
+  transition:
+    opacity 150ms ease,
+    stroke 150ms ease,
+    stroke-width 150ms ease,
+    filter 150ms ease;
+}
+
+.semantic-thread.is-highlighted {
+  opacity: 0.96;
+  stroke: rgba(98, 216, 235, 0.9);
+  stroke-width: 4px;
+  filter: drop-shadow(0 0 9px rgba(98, 216, 235, 0.42));
 }
 
 .crystallizer-body.results-ready .semantic-thread {
@@ -6823,8 +6849,17 @@ button {
   transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.ice-node-hit.hovered .ice-node-scale,
+.ice-node-hit:focus-visible .ice-node-scale {
+  transform: scale(1.025);
+}
+
 .ice-node-hit.selected .ice-node-scale {
   transform: scale(1.035);
+}
+
+.ice-node-hit.selected.hovered .ice-node-scale {
+  transform: scale(1.045);
 }
 
 .crystallizer-body.results-ready .ice-node-hit {
@@ -6837,72 +6872,85 @@ button {
   display: grid;
   width: 100%;
   height: 100%;
-  grid-template-columns: 30px minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
-  column-gap: 10px;
-  align-content: start;
-  border: 1px solid color-mix(in srgb, var(--layer-accent) 34%, transparent);
-  border-radius: 8px;
-  padding: 10px;
+  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  column-gap: 9px;
+  row-gap: 2px;
+  border: 1px solid color-mix(in srgb, var(--layer-accent) 28%, transparent);
+  border-left: 4px solid var(--layer-accent);
+  border-radius: 11px;
+  padding: 9px 10px 9px 8px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.68)),
-    color-mix(in srgb, var(--layer-accent) 7%, white);
+    radial-gradient(circle at 18% 10%, rgba(255, 255, 255, 0.96), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 252, 255, 0.72)),
+    color-mix(in srgb, var(--layer-accent) 5%, white);
   color: #102033;
   text-align: left;
-  box-shadow: 0 18px 36px rgba(8, 47, 73, 0.12);
+  box-shadow: 0 12px 28px rgba(8, 47, 73, 0.12);
   transition:
     background 180ms ease,
     border-color 180ms ease,
+    filter 160ms ease,
+    opacity 160ms ease,
     box-shadow 180ms ease;
   user-select: none;
   -webkit-user-select: none;
 }
 
 .ice-node-hit.selected .ice-node,
+.ice-node-hit.hovered .ice-node,
+.ice-node-hit:focus-visible .ice-node,
 .ice-node:hover,
 .ice-node:focus-visible {
-  border-color: color-mix(in srgb, var(--layer-accent) 58%, white);
+  border-color: color-mix(in srgb, var(--layer-accent) 62%, white);
+  border-left-color: var(--layer-accent);
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.78)),
-    color-mix(in srgb, var(--layer-accent) 12%, white);
+    radial-gradient(circle at 18% 10%, rgba(255, 255, 255, 1), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 252, 255, 0.82)),
+    color-mix(in srgb, var(--layer-accent) 9%, white);
   box-shadow:
-    0 20px 42px rgba(8, 47, 73, 0.14),
-    0 0 0 3px color-mix(in srgb, var(--layer-accent) 12%, transparent);
+    0 18px 36px rgba(8, 47, 73, 0.16),
+    0 0 0 3px color-mix(in srgb, var(--layer-accent) 14%, transparent);
 }
 
 .ice-node span {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   grid-row: 1 / span 2;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--layer-accent) 14%, white);
-  color: var(--layer-accent);
-  font-size: 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--layer-accent) 88%, #ffffff);
+  color: #ffffff;
+  font-size: 11px;
   font-weight: 900;
+  box-shadow:
+    0 7px 16px color-mix(in srgb, var(--layer-accent) 18%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .ice-node strong {
+  display: -webkit-box;
   min-width: 0;
   overflow: hidden;
   color: #102033;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 900;
   line-height: 1.18;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .ice-node small {
   display: -webkit-box;
   overflow: hidden;
-  color: #526173;
-  font-size: 10px;
+  color: rgba(82, 97, 115, 0.74);
+  font-size: 9.5px;
   font-weight: 680;
-  line-height: 1.32;
+  line-height: 1.25;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
 }
 
 .crystallizer-empty {
@@ -7448,8 +7496,14 @@ button {
 }
 
 .crystallizer-list button.active {
-  border-color: rgba(15, 140, 194, 0.32);
-  background: rgba(231, 246, 255, 0.82);
+  border-color: color-mix(in srgb, var(--layer-accent, #0f8cc2) 38%, white);
+  background: color-mix(in srgb, var(--layer-accent, #0f8cc2) 10%, white);
+}
+
+.crystallizer-list button:hover {
+  border-color: color-mix(in srgb, var(--layer-accent, #0f8cc2) 34%, white);
+  background: color-mix(in srgb, var(--layer-accent, #0f8cc2) 7%, white);
+  box-shadow: 0 8px 18px rgba(8, 47, 73, 0.08);
 }
 
 .crystallizer-list span {
