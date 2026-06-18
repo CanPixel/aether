@@ -1,6 +1,6 @@
 # ÆTHER Browser
 
-Æther is a Tauri-native research browser for local knowledge work. It combines normal web browsing, persistent knowledge hubs, local page capture, semantic retrieval, AiON question answering, and the iCE Information Complexity Explorer in one desktop shell, with an Android build path under active migration.
+Æther is a Tauri-native research browser for local knowledge work. It combines normal web browsing, persistent knowledge hubs, local page capture, semantic retrieval, AiON question answering, Flow semantic mapping, AiR Markdown dossier rendering, and the iCE Information Complexity Explorer in one desktop shell, with an Android build path under active migration.
 
 The core idea is simple: browse the web, save useful pages into local knowledge hubs, embed those captures on your machine, and ask questions against that private local context without sending captured page content to a cloud model API.
 
@@ -10,7 +10,7 @@ Current major capabilities:
 
 - Tauri desktop shell using Rust commands and native child webview browser surfaces.
 - Browser tabs with dynamic sizing, favicons, page-theme tinting, back/forward history, and dashboard/browser switching.
-- Æther dashboard with saved portals, recent captures, and knowledge hub accordions.
+- Æther dashboard with saved portals, saved iCE atlases, and knowledge hub accordions.
 - Saved portals can be reordered by dragging and reopened as browser tabs.
 - Knowledge hubs can be created, edited, deleted, reordered, assigned icons, and expanded as accordions.
 - Captured source cards appear as compact scrollable lists inside hubs and can be dragged between knowledge hubs.
@@ -19,8 +19,10 @@ Current major capabilities:
 - AiON Ask supports populated knowledge hubs, current-page context, or both.
 - Browser quick actions can prompt AiON against the current page with one click.
 - AI answers render as selectable markdown with copy support and clickable citations.
+- Flow maps captured hubs and sources into a semantic relation graph with query lenses, node inspection, and source/hub actions.
+- AiR renders selected research context into one local Obsidian-friendly Markdown dossier.
 - iCE, the Information Complexity Explorer, generates iceberg-style complexity maps for a topic using the local chat model.
-- Settings modal currently supports default search engine selection.
+- Settings supports default search engine selection, Developer Mode, and shortcut reference.
 - Local model menu supports runtime status and model selection for GGUF chat models plus GGUF or official safetensors embedding models.
 
 ## Privacy Boundary
@@ -37,6 +39,8 @@ Local-only pieces:
 - Retrieval queries
 - RAG prompts evaluated inside the app process
 - AiON answers generated through in-process local models
+- Flow graph queries and local semantic relationships
+- AiR dossier context, previews, and generated Markdown files
 - iCE topic maps generated through in-process local models
 
 Normal browsing is still normal browsing. Websites loaded in the browser can make their own network requests, track sessions, run JavaScript, and communicate with their own servers. The privacy boundary applies to Æther's indexing and intelligence pipeline, not to websites themselves.
@@ -96,7 +100,7 @@ Default model behavior:
 Download the official EmbeddingGemma safetensors after accepting the Google model terms on Hugging Face:
 
 ```bash
-cd /Users/canur/Projects/Can/Rust-Aether/aether
+cd /path/to/Aether-browser
 mkdir -p aether-models/embeddings/embeddinggemma-300m
 hf auth login
 hf download google/embeddinggemma-300m \
@@ -122,6 +126,7 @@ Run checks:
 ```bash
 bun run typecheck
 bun run lint
+bun run build:vite
 ```
 
 Build compiled app bundles:
@@ -266,9 +271,16 @@ bun run build
 | Script                 | Purpose                                                                                                                                      |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `bun run dev`          | Start the Tauri desktop app in development.                                                                                                  |
+| `bun run start`        | Alias for the Tauri desktop development app.                                                                                                 |
+| `bun run dev:vite`     | Start only the Vite renderer dev server on `127.0.0.1:1420`.                                                                                 |
+| `bun run format`       | Format the project with Prettier.                                                                                                            |
+| `bun run typecheck:web` | Run renderer TypeScript checks.                                                                                                             |
+| `bun run typecheck:tauri` | Run Rust `cargo check` for the Tauri backend.                                                                                             |
 | `bun run typecheck`    | Run renderer TypeScript checks and Rust `cargo check` for the Tauri backend.                                                                 |
 | `bun run lint`         | Run ESLint.                                                                                                                                  |
+| `bun run build:vite`   | Build only the Vite renderer assets into `dist/`.                                                                                            |
 | `bun run build`        | Typecheck and build the Tauri desktop app.                                                                                                   |
+| `bun run build:desktop-local` | Build local desktop packages for the current Tauri target plus Docker Linux arm64/x64 packages.                                      |
 | `bun run android:dev`  | Run the Tauri Android app on a connected device or emulator.                                                                                 |
 | `bun run android:build:apk` | Build an Android APK.                                                                                                                   |
 | `bun run android:build:aab` | Build an Android App Bundle.                                                                                                           |
@@ -330,9 +342,19 @@ The left rail is the main app switcher:
 
 - Æther opens the dashboard.
 - iCE opens the Information Complexity Explorer.
+- Flow opens the semantic relation graph for captured knowledge. This rail button is shown in Developer Mode.
+- AiR opens the Automatic Information Renderer for Markdown dossier exports. This rail button is shown in Developer Mode.
 - Web View switches back to browser content.
 - Settings opens the global settings modal.
 - AiON can be opened from the right-side panel control.
+
+### Settings
+
+Settings controls app-level preferences:
+
+- Default search engine.
+- Developer Mode, which exposes Flow and AiR in the left rail and reveals advanced local-model controls in AiON.
+- Keyboard shortcut reference.
 
 ### Browser Chrome
 
@@ -356,9 +378,9 @@ Address behavior:
 
 The dashboard is the internal home surface. It shows:
 
-- Saved portals for fast page reopening.
+- Compact saved portals for fast page reopening.
+- Compact saved iCE atlases for reopening generated complexity maps.
 - Knowledge hub accordions.
-- Recent captures.
 - Capture source cards with hub indicators.
 
 Portal behavior:
@@ -378,6 +400,12 @@ Knowledge hub behavior:
 - Click captured source links to open them in a new browser tab.
 - Edit/delete hub controls live in the accordion header.
 
+Saved iCE behavior:
+
+- Saved atlases appear on the dashboard as compact cards.
+- Opening an atlas restores its topic, model metadata, and generated depth map in iCE.
+- Saved atlases can be deleted from the dashboard.
+
 ### AiON
 
 AiON is the local intelligence sidepanel.
@@ -394,6 +422,43 @@ AiON is the local intelligence sidepanel.
 - Answers are markdown-rendered, selectable, copyable, and citation-backed.
 - Duplicate citation URLs are deduplicated before display.
 - Citation clicks open the source in a browser tab.
+- The embedded Flow panel can build a current-page semantic trail from local captures.
+- Developer Mode exposes expanded local chat and embedding model controls.
+
+### Flow
+
+Flow is a semantic relationship surface for the local knowledge library.
+
+It includes:
+
+- Query input for building a semantic lens across captured sources.
+- A force-directed relation map with hub, source, and query nodes.
+- Calmer graph styling with spacious node placement and lightweight animated water-current treatment.
+- An inspector for selected nodes, related matches, and confidence scores.
+- Actions to open source URLs, open hub context, or use a selected Flow node as an AiR lens.
+
+Flow uses local embeddings and captured chunk metadata. It is most useful after pages have been captured into knowledge hubs. The dedicated rail view is currently shown only when Developer Mode is enabled.
+
+### AiR Automatic Information Renderer
+
+AiR is the final Markdown export funnel for Æther research. It prepares local context, previews coverage, renders one dossier, and lets the user open or reveal the file immediately.
+
+AiR supports these lens types:
+
+- Topic: search local captured knowledge by typed topic.
+- Flow: use the selected Flow node, hub, source, or current Flow query as scoped context.
+- Hub: choose a knowledge hub from a dropdown.
+- AiON: seed the dossier from the latest AiON answer and citations.
+- iCE: render the active saved iceberg as a structured conceptual map.
+
+AiR behavior:
+
+- Preview before writing shows matched sources, citations, proposed sections, confidence, and coverage.
+- Rendered files are normal `.md` files with YAML frontmatter and numbered source footnotes.
+- File titles and filenames follow `AiR Dossier: <lens>`.
+- Preferred export directory is `~/Documents/Æther/AiR/`.
+- If Documents cannot be created or written, AiR falls back to the app-data export folder and reports the actual path.
+- Recent renders show title, timestamp, lens, source count, and quick open/reveal actions.
 
 ### iCE Information Complexity Explorer
 
@@ -432,6 +497,8 @@ Current storage paths:
 <appData>/aether-realms/chunks.json
 <appData>/aether-settings/settings.json
 <appData>/aether-icebergs/icebergs.json
+<appData>/aether-air/
+~/Documents/Æther/AiR/
 ./aether-models/
 ```
 
@@ -457,13 +524,15 @@ Current storage paths:
 - `capturedAt`
 - `chunkIndex`
 
-`settings.json` stores app preferences such as the default search engine.
+`settings.json` stores app preferences such as the default search engine, Developer Mode, and selected local model paths.
 
 `icebergs.json` stores manually saved iCE generations:
 
 - Saved iceberg metadata.
 - Original keyword, model, and generation timestamp.
 - Full iceberg item lists for reopening in iCE.
+
+AiR dossier exports are written to `~/Documents/Æther/AiR/` when available. `<appData>/aether-air/` is the fallback export directory and is also scanned for recent renders.
 
 ## Capture Pipeline
 
@@ -499,6 +568,14 @@ Search flow:
 3. The local chunk store returns nearest chunks scoped to the selected hub.
 4. Renderer receives typed `SearchResult` objects.
 
+Flow graph flow:
+
+1. User opens Flow or builds the embedded AiON Flow trail.
+2. Optional query text is embedded as a semantic lens.
+3. Captured sources and hubs are deduplicated from the local library and chunk store.
+4. The backend returns typed graph nodes, semantic edges, containment edges, query-match edges, and scored matches.
+5. The renderer lays out and animates the graph locally.
+
 Ask flow:
 
 1. User chooses current page, a populated hub, or both.
@@ -509,6 +586,15 @@ Ask flow:
 6. AiON renders the markdown answer and citation badges.
 
 The intended answer behavior is grounded: when hub context is used, the model should answer from supplied context rather than inventing unsupported facts.
+
+AiR render flow:
+
+1. User chooses a lens type and previews the dossier.
+2. Backend gathers context from topic search, Flow selection, hub scope, latest AiON answer, or saved iCE atlas.
+3. A deterministic Markdown scaffold is built first, including frontmatter and source index.
+4. If a chat model is available, concise grounded prose is synthesized into the scaffold.
+5. If no chat model is available, AiR exports the deterministic scaffold with excerpts and source notes.
+6. The rendered `.md` file is written locally and can be opened or revealed through the opener plugin.
 
 ## Architecture
 
@@ -541,8 +627,14 @@ Rust Tauri Backend
   |-- Local chunk store
   |     vector search and chunk metadata
   |
+  |-- Flow graph builder
+  |     local semantic graph nodes, edges, matches, and hub/source scoping
+  |
   |-- iCE generator
-        local chat prompt -> parsed iceberg JSON -> typed renderer result
+  |     local chat prompt -> parsed iceberg JSON -> typed renderer result
+  |
+  |-- AiR renderer
+  |     local context gathering -> Markdown scaffold/synthesis -> .md file export/open/reveal
 ```
 
 Rust backend responsibilities:
@@ -552,12 +644,14 @@ Rust backend responsibilities:
 - Owns local chunk storage and vector search.
 - Owns in-process local model loading and inference.
 - Owns capture extraction from the active page.
+- Owns Flow graph construction over captured knowledge.
+- Owns AiR Markdown rendering, file writes, and open/reveal actions.
 - Exposes typed Tauri command results to the renderer.
 
 Renderer responsibilities:
 
 - App shell and UI state.
-- Dashboard, browser chrome, AiON, iCE, modals, and interactions.
+- Dashboard, browser chrome, AiON, iCE, Flow, AiR, modals, and interactions.
 - Drag/drop interactions for portals, hubs, and captured source cards.
 - Calls typed `window.aether` APIs instead of direct Tauri, database, or file-system access.
 
@@ -599,25 +693,42 @@ window.aether.collections.captures(collectionId)
 window.aether.capture.currentPage({ collectionId })
 window.aether.capture.move({ captureId, collectionId })
 window.aether.capture.delete(captureId)
+window.aether.capture.suggestHub()
 
 window.aether.search.collection({ collectionId, query, limit })
-window.aether.chat.ask({ collectionId, prompt, includeCurrentPage })
+window.aether.semanticTrail.generate({ query, limit })
+window.aether.flow.graph({ query, sourceLimit })
+window.aether.chat.ask({ collectionId, prompt, includeCurrentPage, requestId })
+window.aether.chat.cancel()
+
+window.aether.air.prepare({ lensKind, lens, collectionId, captureId, savedIcebergId, answer })
+window.aether.air.render({ lensKind, lens, collectionId, captureId, savedIcebergId, answer })
+window.aether.air.listRecent()
+window.aether.air.open(path)
+window.aether.air.reveal(path)
 
 window.aether.crystallizer.generate({ keyword })
 window.aether.crystallizer.listSaved()
 window.aether.crystallizer.getSaved(id)
 window.aether.crystallizer.save({ title, keyword, model, generatedAt, items })
+window.aether.crystallizer.reorderSaved(ids)
 window.aether.crystallizer.deleteSaved(id)
 
 window.aether.system.status()
 window.aether.system.settings()
-window.aether.system.updateSettings({ browser: { defaultSearchEngine } })
+window.aether.system.updateSettings({ browser: { defaultSearchEngine }, developerMode })
 window.aether.system.updateModels({ embeddingModel, chatModel })
 
 window.aether.layout.setIntelligencePanelCollapsed(collapsed)
 window.aether.layout.setModalOverlayOpen(open)
+window.aether.layout.showStatusToast({ kind, message })
 
 window.aether.events.onState(listener)
+window.aether.events.onCaptureProgress(listener)
+window.aether.events.onChatStream(listener)
+window.aether.events.onShortcut(listener)
+window.aether.events.onFindRequested(listener)
+window.aether.events.onFindResult(listener)
 ```
 
 ## Source Layout
@@ -625,7 +736,7 @@ window.aether.events.onState(listener)
 ```text
 src/
   shared/
-    aether.ts                     Shared API, state, settings, capture, chat, and iCE types
+    aether.ts                     Shared API, state, settings, capture, chat, Flow, AiR, and iCE types
   renderer/
     index.html                    Renderer HTML entry
     src/
@@ -639,20 +750,21 @@ src/
         CaptureDetailCard.tsx     Capture card variant for detail/recent views
         CollectionDialog.tsx      Knowledge hub create/edit/delete modal
         Crystallizer.tsx          iCE Information Complexity Explorer
-        Dashboard.tsx             Portals, knowledge hubs, recent captures
+        Dashboard.tsx             Portals, saved iCE atlases, knowledge hubs, captures
+        FlowView.tsx              Semantic relation graph for captured knowledge
+        AirView.tsx               Markdown dossier preview, render controls, and history
         IntelligencePanel.tsx     AiON search/ask sidepanel and model controls
         SourceTray.tsx            Search/citation source display
+        StartPage.tsx             Browser start page surface
         icons.tsx                 Local icon components
       utils/
         aether-ui.ts              UI formatting helpers
         collection-icon-data.ts   Knowledge hub icon option data
         collection-icons.tsx      Knowledge hub icon renderer
       tauri-aether.ts             Tauri invoke bridge exposed as window.aether
-  shared/
-    aether.ts                     Shared TypeScript types for the window.aether API
 src-tauri/
   src/
-    lib.rs                        Rust Tauri backend, browser views, stores, commands, RAG, iCE
+    lib.rs                        Rust Tauri backend, browser views, stores, commands, RAG, Flow, AiR, iCE
     main.rs                       Tauri entrypoint
   tauri.conf.json                 Main Tauri configuration
   tauri.linux.conf.json           Linux arm64 bundle override
@@ -755,8 +867,9 @@ iCE depends on the local chat model returning parseable JSON. Try:
 - Capture quality depends on page structure, active webview snapshots, and fallback HTTP extraction quality.
 - App-like authenticated services can still have browser API or popup edge cases.
 - iCE generation depends on local model quality and JSON compliance.
+- Flow and AiR dedicated app views are currently exposed through Developer Mode.
+- AiR exports one local Markdown dossier at a time; it does not sync with Obsidian vaults or manage zip exports.
 - Search and Ask currently use one selected hub plus optional current page, not arbitrary multi-hub selection.
-- Settings are intentionally minimal right now.
 
 ## Roadmap Ideas
 

@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Aether plusless faceted crystal mark</title>
+  <desc id="desc">The Aether plusless mark clipped into a continuous angular icy crystal shape with a luminous spiral core.</desc>
+  <defs>
+    <radialGradient id="orbBody" cx="37%" cy="25%" r="70%">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.22" stop-color="#f5fcff" stop-opacity="0.98"/>
+      <stop offset="0.48" stop-color="#c8e8fb" stop-opacity="0.84"/>
+      <stop offset="0.75" stop-color="#6da9dd" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#24496e" stop-opacity="0.28"/>
+    </radialGradient>
+
+    <radialGradient id="innerLight" cx="47%" cy="45%" r="52%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="0.38" stop-color="#dff7ff" stop-opacity="0.62"/>
+      <stop offset="1" stop-color="#86c5ee" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="apertureGlow" cx="49%" cy="47%" r="49%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.7"/>
+      <stop offset="0.46" stop-color="#e8faff" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#77bee8" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="frostedCore" cx="47%" cy="44%" r="55%">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.82"/>
+      <stop offset="0.48" stop-color="#edfaff" stop-opacity="0.5"/>
+      <stop offset="0.78" stop-color="#a9dcf5" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="sweepA" x1="216" y1="214" x2="789" y2="778" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="0.28" stop-color="#dff7ff" stop-opacity="0.74"/>
+      <stop offset="0.58" stop-color="#7fbde9" stop-opacity="0.52"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.9"/>
+    </linearGradient>
+
+    <linearGradient id="sweepB" x1="781" y1="205" x2="257" y2="794" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#eefbff" stop-opacity="0.48"/>
+      <stop offset="0.34" stop-color="#89cff4" stop-opacity="0.32"/>
+      <stop offset="0.72" stop-color="#ffffff" stop-opacity="0.82"/>
+      <stop offset="1" stop-color="#b4e9fb" stop-opacity="0.42"/>
+    </linearGradient>
+
+    <linearGradient id="facetStroke" x1="218" y1="190" x2="812" y2="817" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.94"/>
+      <stop offset="0.45" stop-color="#9bd3f3" stop-opacity="0.58"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.78"/>
+    </linearGradient>
+
+    <linearGradient id="facetFillA" x1="236" y1="188" x2="756" y2="822" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.5"/>
+      <stop offset="0.42" stop-color="#b7e7fb" stop-opacity="0.24"/>
+      <stop offset="0.72" stop-color="#3f88c8" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.32"/>
+    </linearGradient>
+
+    <linearGradient id="facetFillB" x1="765" y1="209" x2="226" y2="814" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.34"/>
+      <stop offset="0.34" stop-color="#5aa8dc" stop-opacity="0.2"/>
+      <stop offset="0.74" stop-color="#dff8ff" stop-opacity="0.38"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.2"/>
+    </linearGradient>
+
+    <path
+      id="crystalAperture"
+      d="M512 118
+         L764 264
+         L764 628
+         L512 862
+         L260 628
+         L260 264Z"
+    />
+
+    <clipPath id="crystalClip">
+      <use href="#crystalAperture"/>
+    </clipPath>
+
+    <mask id="apertureMask" maskUnits="userSpaceOnUse" x="96" y="96" width="832" height="832">
+      <rect width="1024" height="1024" fill="black"/>
+      <use href="#crystalAperture" fill="white"/>
+    </mask>
+
+    <filter id="crystalDepth" x="-24%" y="-24%" width="148%" height="148%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="26" stdDeviation="22" flood-color="#2a6596" flood-opacity="0.18"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#ffffff" flood-opacity="0.24"/>
+    </filter>
+  </defs>
+
+  <g filter="url(#crystalDepth)">
+    <g mask="url(#apertureMask)">
+      <circle cx="512" cy="512" r="372" fill="url(#orbBody)"/>
+      <circle cx="512" cy="512" r="326" fill="url(#innerLight)" opacity="0.92"/>
+
+      <g clip-path="url(#crystalClip)">
+        <path
+          d="M216 595c88 47 185 32 275-44 87-74 169-188 310-166-38-95-137-163-253-163-176 0-319 126-332 373Z"
+          fill="url(#sweepB)"
+          opacity="0.72"
+        />
+        <path
+          d="M219 582c135 28 236-15 315-128 77-112 167-164 275-151-60-75-158-123-273-123-194 0-352 150-356 335 10 29 23 52 39 67Z"
+          fill="none"
+          stroke="#ffffff"
+          stroke-linecap="round"
+          stroke-width="28"
+          opacity="0.52"
+        />
+        <path
+          d="M800 430c-130-27-227 17-305 128-78 112-172 165-291 146 59 88 166 146 288 146 197 0 357-152 361-338-12-35-30-64-53-82Z"
+          fill="url(#sweepA)"
+          opacity="0.78"
+        />
+        <path
+          d="M798 430c-111-4-192 48-256 155-75 126-165 177-300 149 67 74 164 116 269 116 190 0 345-145 358-329-15-39-38-70-71-91Z"
+          fill="none"
+          stroke="#f8fdff"
+          stroke-linecap="round"
+          stroke-width="20"
+          opacity="0.52"
+        />
+        <circle cx="512" cy="512" r="265" fill="url(#apertureGlow)"/>
+        <circle cx="512" cy="512" r="208" fill="url(#frostedCore)" opacity="0.38"/>
+
+        <g fill="url(#facetFillA)" stroke="#ffffff" stroke-linejoin="round" stroke-opacity="0.34">
+          <path d="M260 264 512 118 450 340Z"/>
+          <path d="M512 118 764 264 560 330Z" opacity="0.58"/>
+          <path d="M764 264 764 628 650 512Z" opacity="0.48"/>
+          <path d="M764 628 512 862 570 680Z" opacity="0.5"/>
+          <path d="M512 862 260 628 430 650Z" opacity="0.46"/>
+          <path d="M260 628 260 264 370 512Z" opacity="0.5"/>
+          <path d="M450 340 560 330 512 512Z" opacity="0.34"/>
+          <path d="M650 512 570 680 512 512Z" opacity="0.36"/>
+          <path d="M430 650 370 512 512 512Z" opacity="0.38"/>
+        </g>
+
+        <g fill="url(#facetFillB)" stroke="#d8f5ff" stroke-linejoin="round" stroke-opacity="0.26">
+          <path d="M389 318 535 319 459 466Z"/>
+          <path d="M535 319 626 390 512 512Z" opacity="0.42"/>
+          <path d="M626 390 678 505 548 545Z" opacity="0.46"/>
+          <path d="M641 661 579 680 548 545Z" opacity="0.4"/>
+          <path d="M482 672 410 628 512 512Z" opacity="0.44"/>
+          <path d="M355 548 356 454 459 466Z" opacity="0.5"/>
+          <path d="M535 319 512 118 764 264Z" opacity="0.24"/>
+          <path d="M410 628 260 628 512 862Z" opacity="0.24"/>
+        </g>
+
+        <g fill="none" stroke="url(#facetStroke)" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="8">
+          <path d="M260 264 512 118 764 264" stroke-width="7" opacity="0.58"/>
+          <path d="M260 628 512 862 764 628" stroke-width="6" opacity="0.44"/>
+          <path d="M260 264 389 318 535 319 764 264" stroke-width="5" opacity="0.48"/>
+          <path d="M356 454 459 466 512 512 548 545 641 661" stroke-width="5" opacity="0.34"/>
+          <path d="M389 318 459 466 410 628 260 628" stroke-width="4" opacity="0.34"/>
+          <path d="M626 390 548 545 512 862" stroke-width="4" opacity="0.3"/>
+          <path d="M764 264 678 505 764 628" stroke-width="4" opacity="0.3"/>
+          <path d="M260 264 355 548 260 628" stroke-width="4" opacity="0.3"/>
+          <path d="M260 628 410 628 512 862" stroke-width="3" opacity="0.28"/>
+          <path d="M764 264 626 390 764 628" stroke-width="3" opacity="0.32"/>
+        </g>
+
+        <g fill="#ffffff" opacity="0.78">
+          <circle cx="330" cy="325" r="5"/>
+          <circle cx="426" cy="246" r="3.5"/>
+          <circle cx="711" cy="341" r="4"/>
+          <circle cx="759" cy="593" r="3.5"/>
+          <circle cx="371" cy="705" r="4"/>
+          <circle cx="553" cy="777" r="2.5"/>
+        </g>
+      </g>
+    </g>
+
+    <use href="#crystalAperture" fill="none" stroke="url(#facetStroke)" stroke-width="5" stroke-linejoin="miter" stroke-miterlimit="8" opacity="0.56"/>
+    <use href="#crystalAperture" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="miter" stroke-miterlimit="8" opacity="0.58"/>
+  </g>
+</svg>
