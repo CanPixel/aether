@@ -6959,6 +6959,7 @@ button {
   line-height: 1.25;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
 }
 
 .crystallizer-empty {
@@ -7043,6 +7044,7 @@ button {
 
 .crystallizer-empty h2 {
   margin: 0;
+  margin-top: -30px;
   color: #334155;
   font-family: 'New York', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
   font-size: 25px;
@@ -7372,7 +7374,7 @@ button {
   border-left: 2px solid color-mix(in srgb, var(--layer-accent) 42%, transparent);
   padding-left: 9px;
   color: #64748b;
-  font-size: 11px;
+  font-size: 10px;
   font-style: normal;
   font-weight: 650;
   line-height: 1.38;

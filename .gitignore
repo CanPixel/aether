@@ -29,3 +29,5 @@ aether-web
 public/old
 
 build/dmg-background.tiff
+
+*.gguf

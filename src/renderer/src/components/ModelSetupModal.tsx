@@ -1,6 +1,8 @@
 import { Check, CircleCheck, CloudDownload, ExternalLink, ShieldCheck, Wind, Waves } from 'lucide-react'
-import { Quantum } from 'ldrs/react'
+import { LineWobble, Quantum, Ripples } from 'ldrs/react'
+import 'ldrs/react/LineWobble.css'
 import 'ldrs/react/Quantum.css'
+import 'ldrs/react/Ripples.css'
 import { ModelDownloadChoice, ModelDownloadProgress } from '../../../shared/aether'
 
 const MODEL_SETUP_OPTIONS: Array<{
@@ -17,15 +19,15 @@ const MODEL_SETUP_OPTIONS: Array<{
     title: 'Answers like a breeze',
     description: 'Smaller, faster. Good for everyday capture, search, page summaries, and quick grounded answers.',
     size: '3.35 GB',
-    source: 'Gemma 4 E2B QAT Q4_0'
+    source: 'powered by Gemma 4 E2B QAT Q4_0'
   },
   {
     id: 'wise',
     name: 'AiON WiSE',
-    title: 'Deeper local reasoning',
+    title: 'Deeper reasoning flow',
     description: 'Larger, slower. Richer synthesis, iCE maps, and longer answers.',
     size: '5.15 GB',
-    source: 'Gemma 4 E4B QAT Q4_0'
+    source: 'powered by Gemma 4 E4B QAT Q4_0'
   }
 ]
 
@@ -64,6 +66,16 @@ function formatBytes(bytes?: number): string {
 function progressPercent(current?: number, total?: number): number {
   if (!current || !total || total <= 0) return 0
   return Math.max(0, Math.min(100, (current / total) * 100))
+}
+
+function ModelProgressLoader({ id }: { id: string }): React.JSX.Element {
+  if (id === 'lite') {
+    return <LineWobble size={22} stroke={3} speed={1.5} color="currentColor" />
+  }
+  if (id === 'wise') {
+    return <Ripples size={24} speed={1.65} color="currentColor" />
+  }
+  return <Quantum size={18} speed={1.35} color="currentColor" />
 }
 
 type ModelSetupModalProps = {
@@ -183,9 +195,9 @@ export function ModelSetupModal({
               <small>
                 {coreInstalled
                   ? 'Already contained locally'
-                  : 'The misty semantic search core · 610 MB'}
+                  : 'The misty semantic search core · 639 MB'}
               </small>
-              <code>Qwen3 Embedding 0.6B</code>
+              <code>Qwen3 Embedding 0.6B Q8_0</code>
             </div>
 
             <div className="model-access-card">
@@ -247,7 +259,7 @@ export function ModelSetupModal({
                       {item.status === 'complete' || item.status === 'skipped' ? (
                         <CircleCheck />
                       ) : item.status === 'downloading' ? (
-                        <Quantum size={18} speed={1.35} color="currentColor" />
+                        <ModelProgressLoader id={item.id} />
                       ) : (
                         <CloudDownload />
                       )}

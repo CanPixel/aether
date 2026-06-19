@@ -293,7 +293,7 @@ export function IntelligencePanel({
           </div>
         </section>
 
-        {busy === 'Asking Æther' &&
+        {busy === 'Asking ÆTHER' &&
           (streamingAnswer ? (
             <section className="panel-section mode-section answer-section">
               <div className="section-heading">
@@ -314,7 +314,7 @@ export function IntelligencePanel({
             <AnswerLoading phase={askPhase} onCancel={onCancelAsk} />
           ))}
 
-        {chatResult && busy !== 'Asking Æther' && (
+        {chatResult && busy !== 'Asking ÆTHER' && (
           <section className="panel-section mode-section answer-section">
             <div className="section-heading" style={{ marginBottom: chatResult ? '10px' : '0' }}>
               <h2>Answer</h2>
@@ -803,11 +803,19 @@ function AnswerCard({
       </div>
       <p className="answer-metrics-subtitle">{formatAnswerMetrics(result)}</p>
       <div className="citation-list">
-        {result.citations.map((citation, index) => (
-          <button key={citation.id} onClick={() => onOpenCitation(citation)} type="button">
-            [{index + 1}] {citation.title} - {getCaptureHost(citation.url)}
-          </button>
-        ))}
+        {result.citations.map((citation, index) => {
+          const citationNumber = index + 1
+          const claimText = claimTextForCitation(result.answer, citationNumber)
+          return (
+            <button
+              key={citation.id}
+              onClick={() => onOpenCitation(citation, claimText)}
+              type="button"
+            >
+              [{citationNumber}] {citation.title} - {getCaptureHost(citation.url)}
+            </button>
+          )
+        })}
       </div>
       <footer>
         <span>{result.citations.length} local citations</span>
@@ -892,6 +900,28 @@ function renderAnswerMarkdown(
 
   flushLists()
   return blocks
+}
+
+function markerContainsCitation(marker: string, citationNumber: number): boolean {
+  return marker
+    .slice(1, -1)
+    .split(',')
+    .some((value) => Number(value.trim()) === citationNumber)
+}
+
+function claimTextForCitation(answer: string, citationNumber: number): string | undefined {
+  const normalized = answer.replace(/\s+/g, ' ').trim()
+  if (!normalized) return undefined
+  const sentences = normalized.match(/[^.!?]+(?:[.!?]+|$)/g) ?? [normalized]
+
+  for (const sentence of sentences) {
+    const markers = sentence.match(/\[(?:\d+\s*,\s*)*\d+\]/g) ?? []
+    if (markers.some((marker) => markerContainsCitation(marker, citationNumber))) {
+      return stripInlineMarkup(sentence)
+    }
+  }
+
+  return undefined
 }
 
 // Strip inline markup so the remaining text reads as a plain claim sentence, which

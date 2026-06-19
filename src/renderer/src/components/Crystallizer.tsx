@@ -30,7 +30,8 @@ import {
   SavedIcebergSummary
 } from '../../../shared/aether'
 import { formatVisibleModelName, inferIcebergIcon } from '../utils/aether-ui'
-import { ChevronRightIcon, SpinnerIcon } from './icons'
+import { ChevronRightIcon } from './icons'
+import { Quantum } from "ldrs/react"
 
 type LayerDefinition = {
   level: number
@@ -496,7 +497,7 @@ export function Crystallizer({
               <h1 style={{ fontSize: '23px', fontStyle: 'normal' }}>
                 Information Complexity Explorer
               </h1>
-              <span className="crystallizer-brand-subtitle">Knowledge Crystallizer</span>
+              <span className="crystallizer-brand-subtitle">Topics Crystallizer</span>
             </div>
           </div>
         </div>
@@ -513,7 +514,7 @@ export function Crystallizer({
             />
           </div>
           <button disabled={loading || Boolean(busy) || !keyword.trim()} type="submit">
-            {loading ? <SpinnerIcon /> : <Snowflake />}
+            {loading ? <Quantum size={18} speed={1.35} color="currentColor" /> : <Snowflake />}
             <span>{loading ? 'Crystallizing' : 'Crystallize'}</span>
           </button>
           {hasUnsavedResult && (
@@ -783,7 +784,7 @@ export function Crystallizer({
                     <span key={index} style={{ '--particle-index': index } as CSSProperties} />
                   ))}
                 </div>
-                <SpinnerIcon />
+                <Quantum size={25} speed={1.35} color="currentColor" />
                 <h2>Crystallizing</h2>
               </div>
             </div>
@@ -834,7 +835,7 @@ export function Crystallizer({
                   )}
                 </div>
               )}
-              <small>{activeSelectedItem.description}</small>
+              <small style={{ fontSize: '10px' }}>{activeSelectedItem.description}</small>
               {activeSelectedItem.reason && (
                 <em className="crystallizer-depth-reason">{activeSelectedItem.reason}</em>
               )}
@@ -943,7 +944,7 @@ export function Crystallizer({
             )}
           </div>
 
-          <span className="atlas-heading dock-footer">Local-first Semantic Cartography</span>
+          <span className="atlas-heading dock-footer">Semantic Cartography</span>
         </aside>
       </section>
 

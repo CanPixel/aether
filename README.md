@@ -58,7 +58,7 @@ Required:
 
 Recommended first-stage model setup:
 
-- Embeddings: official `Qwen/Qwen3-Embedding-0.6B-GGUF` Q8 GGUF by default, with `nomic-embed-text` GGUF as a lighter fallback. `embeddinggemma` remains supported for manual installs but is gated and not the default distribution path.
+- Embeddings: official `Qwen/Qwen3-Embedding-0.6B-GGUF` Q8 GGUF by default. `embeddinggemma` remains supported for manual installs but is gated.
 - Chat/iCE: a Gemma chat GGUF. Official Google Gemma 4 QAT GGUF releases are available for the Gemma 4 family; use an instruction-tuned file such as `gemma-4-E4B-it-qat-q4_0-gguf` or a larger variant if the machine has enough memory.
 
 Chosen models:
@@ -92,12 +92,12 @@ Model discovery:
 
 Default model behavior:
 
-- Embeddings prefer filenames containing `qwen3-embedding`, `embeddinggemma`, `embedding-gemma`, `nomic-embed-text`, `embedding`, or `embed`.
+- Embeddings prefer filenames containing `qwen3-embedding`, `embeddinggemma`, `embedding-gemma`, `embedding`, or `embed`.
 - Chat model preference is filenames containing `gemma4`, `gemma-4`, `gemma3`, `gemma-3`, `gemma-2b`, `2b`, `gemma`, or `qwen`, then the first non-embedding GGUF.
 - The model menu can update the selected embedding and chat models.
 - Chat generation uses the GGUF's embedded chat template when present, preserving Gemma 4 system/user message formatting instead of flattening everything into one prompt. Sampling keeps conservative temperatures while aligning top-k/top-p with the Gemma 4 Ollama defaults.
 
-Fresh installs download the official ungated Qwen3 Embedding Q8 GGUF into the app-data model directory. For manual development installs, place `Qwen3-Embedding-0.6B-Q8_0.gguf` under `aether-models/embeddings/Qwen3-Embedding-0.6B-GGUF/`.
+Fresh installs download the official ungated Qwen3 Embedding 0.6B Q8 GGUF into the app-data model directory. For manual development installs, place `Qwen3-Embedding-0.6B-Q8_0.gguf` under `aether-models/embeddings/Qwen3-Embedding-0.6B-GGUF/`.
 
 ## Quick Start
 
@@ -799,7 +799,7 @@ export AETHER_EMBEDDING_MODEL=/absolute/path/to/embeddinggemma-300m
 
 ### Missing embedding model
 
-Add the official `google/embeddinggemma-300m` safetensors folder to `./aether-models/embeddings/embeddinggemma-300m/`, or add an embedding GGUF such as `embeddinggemma` or `nomic-embed-text` to `./aether-models/embeddings/`.
+Add `Qwen3-Embedding-0.6B-Q8_0.gguf` to `./aether-models/embeddings/Qwen3-Embedding-0.6B-GGUF/`, or add another embedding GGUF to `./aether-models/embeddings/`. The official `google/embeddinggemma-300m` safetensors folder is still supported for manual gated-model testing.
 
 ### Chat model unavailable
 

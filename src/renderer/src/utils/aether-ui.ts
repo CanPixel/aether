@@ -88,7 +88,6 @@ function formatLocalModelName(model?: string | null): string | null {
 
   if (normalized.includes('qwen3-embedding')) return 'Qwen3 Embedding 0.6B'
   if (normalized.includes('embeddinggemma')) return 'EmbeddingGemma 300M'
-  if (normalized.includes('nomic-embed-text')) return 'Nomic Embed Text'
   if (normalized.includes('gemma-4-e4b')) return 'Gemma 4 Balanced'
   if (normalized.includes('gemma-4-e2b')) {
     return isCommunity ? 'Gemma 4 E2B - Compact (community)' : 'Gemma 4 Lite'
@@ -116,8 +115,7 @@ function formatBrandedModelName(
   if (
     role === 'embedding' ||
     normalized.includes('qwen3-embedding') ||
-    normalized.includes('embeddinggemma') ||
-    normalized.includes('nomic-embed-text')
+    normalized.includes('embeddinggemma')
   ) {
     return 'AiON MiST' //AiON - FRiDGE - GLACiER - FROSTBiTE - LiQUID - RiFT - MiST - MiNT
   }

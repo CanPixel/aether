@@ -3,7 +3,7 @@ mod embeddinggemma;
 use chrono::{DateTime, Utc};
 use encoding_rs::UTF_8;
 use llama_cpp_2::{
-    context::params::{LlamaContextParams, LlamaPoolingType},
+    context::params::{LlamaAttentionType, LlamaContextParams, LlamaPoolingType},
     llama_backend::LlamaBackend,
     llama_batch::LlamaBatch,
     model::{params::LlamaModelParams, AddBos, LlamaChatMessage, LlamaModel},
@@ -1738,6 +1738,13 @@ fn scroll_to_text_script() -> &'static str {
   const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const source = normalize(sourceText);
   if (!source) return;
+  const EXACT_HL = 'aether-source-exact';
+  const STYLE_ID = 'aether-source-style';
+  const supportsHighlight =
+    typeof CSS !== 'undefined' &&
+    CSS.highlights &&
+    typeof Highlight !== 'undefined' &&
+    typeof Range !== 'undefined';
 
   const words = source.split(' ').filter(Boolean).slice(0, 180);
   const snippets = [];
@@ -1758,7 +1765,31 @@ fn scroll_to_text_script() -> &'static str {
   }
   snippets.sort((left, right) => right.length - left.length);
 
+  const ensureStyle = () => {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent =
+      '::highlight(aether-source-exact){background-color:rgba(255,224,102,0.72);color:inherit;}' +
+      'mark[data-aether-source-range]{background-color:rgba(255,224,102,0.72);color:inherit;border-radius:2px;padding:0;}';
+    (document.head || document.documentElement).appendChild(style);
+  };
+
+  const clearExactHighlights = () => {
+    if (supportsHighlight) {
+      try { CSS.highlights.delete(EXACT_HL); } catch (error) {}
+    }
+    document.querySelectorAll('mark[data-aether-source-range]').forEach((mark) => {
+      const parent = mark.parentNode;
+      if (!parent) return;
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      parent.removeChild(mark);
+      parent.normalize();
+    });
+  };
+
   const restorePreviousHighlights = () => {
+    clearExactHighlights();
     document.querySelectorAll('[data-aether-source-highlight="true"]').forEach((element) => {
       element.style.outline = element.dataset.aetherPreviousOutline || '';
       element.style.boxShadow = element.dataset.aetherPreviousBoxShadow || '';
@@ -1768,6 +1799,115 @@ fn scroll_to_text_script() -> &'static str {
       element.removeAttribute('data-aether-previous-box-shadow');
       element.removeAttribute('data-aether-previous-background-color');
     });
+  };
+
+  const textNodeAccepted = (node) => {
+    if (!node.nodeValue) return false;
+    const parent = node.parentElement;
+    if (!parent) return false;
+    const tag = parent.tagName;
+    return tag !== 'SCRIPT' && tag !== 'STYLE' && tag !== 'NOSCRIPT' && tag !== 'TEXTAREA';
+  };
+
+  const collectTextIndex = () => {
+    const root = document.body || document.documentElement;
+    if (!root) return null;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        return textNodeAccepted(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
+    });
+    const map = [];
+    let text = '';
+    let node;
+    while ((node = walker.nextNode())) {
+      const value = node.nodeValue || '';
+      for (let index = 0; index < value.length; index += 1) {
+        const char = value[index];
+        if (/\s/.test(char)) {
+          if (text && !text.endsWith(' ')) {
+            text += ' ';
+            map.push({ node, offset: index });
+          }
+        } else {
+          text += char.toLowerCase();
+          map.push({ node, offset: index });
+        }
+      }
+    }
+    while (text.endsWith(' ')) {
+      text = text.slice(0, -1);
+      map.pop();
+    }
+    return { text, map };
+  };
+
+  const rangeFromIndex = (index, length, map) => {
+    const start = map[index];
+    const end = map[index + length - 1];
+    if (!start || !end) return null;
+    try {
+      const range = document.createRange();
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset + 1);
+      return range;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const findRangeMatch = () => {
+    const index = collectTextIndex();
+    if (!index) return null;
+    for (const snippet of snippets) {
+      const at = index.text.indexOf(snippet);
+      if (at === -1) continue;
+      const range = rangeFromIndex(at, snippet.length, index.map);
+      if (range) return range;
+    }
+    return null;
+  };
+
+  const scrollRangeIntoView = (range) => {
+    try {
+      const rects = range.getClientRects();
+      const rect = rects.length ? rects[0] : range.getBoundingClientRect();
+      if (rect && Number.isFinite(rect.top)) {
+        const top = rect.top + window.scrollY - window.innerHeight * 0.42;
+        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+        return;
+      }
+    } catch (error) {}
+    const node = range.startContainer;
+    const element = node.nodeType === 1 ? node : node.parentElement;
+    if (element && element.scrollIntoView) {
+      element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+    }
+  };
+
+  const highlightRange = (range) => {
+    restorePreviousHighlights();
+    ensureStyle();
+    let highlighted = false;
+    if (supportsHighlight) {
+      try {
+        const exact = new Highlight();
+        exact.add(range);
+        CSS.highlights.set(EXACT_HL, exact);
+        highlighted = true;
+      } catch (error) {}
+    }
+    if (!highlighted) {
+      try {
+        const mark = document.createElement('mark');
+        mark.setAttribute('data-aether-source-range', 'true');
+        range.surroundContents(mark);
+        highlighted = true;
+      } catch (error) {}
+    }
+    scrollRangeIntoView(range);
+    window.setTimeout(clearExactHighlights, 12000);
+    return highlighted;
   };
 
   const isVisible = (element) => {
@@ -1822,6 +1962,8 @@ fn scroll_to_text_script() -> &'static str {
   let attempts = 0;
   const retry = () => {
     attempts += 1;
+    const range = findRangeMatch();
+    if (range && highlightRange(range)) return;
     const match = findMatch();
     if (match) {
       highlight(match);
@@ -5271,7 +5413,7 @@ async fn local_embed_with_progress(
     let catalog = model_catalog(&state.paths, &settings.local_model);
     let model_path = catalog.embedding_model.ok_or_else(|| {
         format!(
-            "No local embedding model found. Add an embedding GGUF such as Qwen3 Embedding or Nomic Embed Text to {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
+            "No local embedding model found. Install AiON MiST/Qwen3 Embedding, add another embedding GGUF to {}, or set {AETHER_EMBEDDING_MODEL_ENV}.",
             state.paths.models_path.display()
         )
     })?;
@@ -5495,7 +5637,11 @@ impl NativeModelRuntime {
             tokenized_inputs.push(tokens);
         }
 
-        let max_sequences = embedding_batch_size().min(16);
+        let max_sequences = if is_qwen3_embedding_model(model_path) {
+            1
+        } else {
+            embedding_batch_size().min(16)
+        };
         let max_batch_tokens = embedding_batch_token_limit();
         let mut input_index = 0;
         let mut batches = Vec::new();
@@ -5546,7 +5692,8 @@ impl NativeModelRuntime {
             .with_embeddings(true)
             .with_offload_kqv(offload_embedding_ops)
             .with_op_offload(offload_embedding_ops)
-            .with_pooling_type(LlamaPoolingType::Mean);
+            .with_attention_type(embedding_attention_type(model_path))
+            .with_pooling_type(embedding_pooling_type(model_path));
         let mut ctx = model
             .new_context(backend, ctx_params)
             .map_err(|error| error.to_string())?;
@@ -5573,7 +5720,13 @@ impl NativeModelRuntime {
                     .add_sequence(tokens, sequence_index as i32, false)
                     .map_err(|error| error.to_string())?;
             }
-            ctx.encode(&mut batch).map_err(|error| error.to_string())?;
+            // Qwen3 Embedding is decoder-style; the llama_encode path segfaults in
+            // llm_build_qwen3 on macOS with llama-cpp-2 0.1.146.
+            if qwen3_embedding_decode(model_path) {
+                ctx.decode(&mut batch).map_err(|error| error.to_string())?;
+            } else {
+                ctx.encode(&mut batch).map_err(|error| error.to_string())?;
+            }
 
             for sequence_index in 0..batch_sequence_count {
                 let embedding = ctx
@@ -6219,13 +6372,13 @@ fn model_catalog(paths: &DataPaths, settings: &LocalModelSettings) -> ModelCatal
     let chat_model = pick_chat_model(&models, settings);
     if models.is_empty() {
         errors.push(format!(
-            "No local models found. Add GGUF models such as Qwen3 Embedding, Nomic Embed Text, or Gemma 4 to {} or set {AETHER_MODEL_DIR_ENV}.",
+            "No local models found. Use Model Setup to install AiON MiST/Qwen3 Embedding and Gemma 4, add compatible GGUF models to {}, or set {AETHER_MODEL_DIR_ENV}.",
             paths.models_path.display()
         ));
     } else {
         if embedding_model.is_none() {
             errors.push(format!(
-                "No embedding model selected. Put Qwen3 Embedding, Nomic Embed Text, another embedding GGUF, or official EmbeddingGemma files in {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
+                "No embedding model selected. Put Qwen3 Embedding, another embedding GGUF, or official EmbeddingGemma files in {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
                 paths.models_path.join("embeddings").display()
             ));
         }
@@ -6431,13 +6584,35 @@ fn embedding_model_score(path: &Path) -> i32 {
     } else if label.contains("q8") {
         score += 150;
     }
-    if label.contains("nomic") {
-        score += 250;
-    }
     if is_safetensors_embedding_model(path) {
         score -= 500;
     }
     score
+}
+
+fn embedding_pooling_type(path: &Path) -> LlamaPoolingType {
+    if is_qwen3_embedding_model(path) {
+        LlamaPoolingType::Last
+    } else {
+        LlamaPoolingType::Mean
+    }
+}
+
+fn embedding_attention_type(path: &Path) -> LlamaAttentionType {
+    if is_qwen3_embedding_model(path) {
+        LlamaAttentionType::Causal
+    } else {
+        LlamaAttentionType::Unspecified
+    }
+}
+
+fn is_qwen3_embedding_model(path: &Path) -> bool {
+    let label = model_label(path).to_lowercase();
+    label.contains("qwen3-embedding")
+}
+
+fn qwen3_embedding_decode(path: &Path) -> bool {
+    is_qwen3_embedding_model(path)
 }
 
 fn is_gguf_model(path: &Path) -> bool {
@@ -6470,7 +6645,7 @@ fn is_embedding_model_name(path: &Path) -> bool {
         return true;
     }
     let label = model_label(path).to_lowercase();
-    label.contains("embed") || label.contains("embedding") || label.contains("nomic")
+    label.contains("embed") || label.contains("embedding")
 }
 
 fn is_mmproj_model(path: &Path) -> bool {
