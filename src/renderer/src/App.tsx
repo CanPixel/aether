@@ -21,6 +21,8 @@ import {
   HubShortcutSummary,
   IcebergItem,
   IcebergResult,
+  ModelDownloadChoice,
+  ModelDownloadProgress,
   SearchEngineId,
   SearchResult,
   SemanticTrailItem,
@@ -42,7 +44,22 @@ import { GlobeIcon, CloudIcon, GearIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { QuickAction } from './types/ui'
 import { formatVisibleModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
-import { SearchIcon, ChevronUp, Snowflake, ChevronDown, Waves, Wind } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  CircleCheck,
+  CloudDownload,
+  Cpu,
+  LoaderCircle,
+  SearchIcon,
+  ShieldCheck,
+  Snowflake,
+  Sparkles,
+  Waves,
+  Wind,
+  Zap
+} from 'lucide-react'
 
 // Sentinel URL for a blank tab that shows the ÆTHER start page instead of loading a
 // page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
@@ -325,6 +342,61 @@ function getErrorMessage(error: unknown): string {
     .replace(/^Error:\s*/i, '')
 }
 
+const MODEL_SETUP_OPTIONS: Array<{
+  id: ModelDownloadChoice
+  name: string
+  title: string
+  description: string
+  size: string
+  source: string
+}> = [
+  {
+    id: 'lite',
+    name: 'AiON LiTE',
+    title: 'Fast local reasoning',
+    description: 'Compact Gemma 4 E2B QAT for everyday capture, search, and grounded answers.',
+    size: '3.35 GB',
+    source: 'google/gemma-4-E2B-it-qat-q4_0-gguf'
+  },
+  {
+    id: 'wise',
+    name: 'AiON WiSE',
+    title: 'Deeper local synthesis',
+    description: 'Larger Gemma 4 E4B QAT for richer iCE maps and longer-form synthesis.',
+    size: '5.15 GB',
+    source: 'google/gemma-4-E4B-it-qat-q4_0-gguf'
+  }
+]
+
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return '0 MB'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  const fractionDigits = value >= 10 || unitIndex < 2 ? 0 : 1
+  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`
+}
+
+function progressPercent(current?: number, total?: number): number {
+  if (!current || !total || total <= 0) return 0
+  return Math.max(0, Math.min(100, (current / total) * 100))
+}
+
+function upsertModelProgress(
+  current: ModelDownloadProgress[],
+  progress: ModelDownloadProgress
+): ModelDownloadProgress[] {
+  const index = current.findIndex((item) => item.id === progress.id)
+  if (index === -1) return [...current, progress]
+  const next = [...current]
+  next[index] = { ...next[index], ...progress }
+  return next
+}
+
 function App(): React.JSX.Element {
   const [apps, setApps] = useState<AppSummary[]>([])
   const [tabs, setTabs] = useState<BrowserTabSummary[]>([])
@@ -396,6 +468,11 @@ function App(): React.JSX.Element {
   const [findTotal, setFindTotal] = useState(0)
   const [collectionDialog, setCollectionDialog] = useState<CollectionDialogState>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [modelSetupDismissed, setModelSetupDismissed] = useState(false)
+  const [selectedSetupModels, setSelectedSetupModels] = useState<ModelDownloadChoice[]>(['lite'])
+  const [modelDownloadProgress, setModelDownloadProgress] = useState<ModelDownloadProgress[]>([])
+  const [modelSetupError, setModelSetupError] = useState<string | null>(null)
+  const [modelSetupComplete, setModelSetupComplete] = useState(false)
   const addressInputRef = useRef<HTMLInputElement>(null)
   const findInputRef = useRef<HTMLInputElement>(null)
   const toastIdRef = useRef(0)
@@ -440,6 +517,14 @@ function App(): React.JSX.Element {
   const isStartPage = activeTab?.url === START_PAGE_URL
   const canUseCurrentPage = Boolean(activeTab?.url) && !isStartPage
   const chatBlocked = status ? !status.runtimeReady || !status.chatModel : false
+  const modelSetupNeeded = Boolean(status && (!status.chatModel || !status.embeddingModel))
+  const modelSetupBusy = Boolean(
+    busy === 'Installing local models' ||
+      modelDownloadProgress.some(
+        (progress) => progress.status === 'queued' || progress.status === 'downloading'
+      )
+  )
+  const modelSetupVisible = modelSetupNeeded && !modelSetupDismissed
   const quickActions = useMemo<QuickAction[]>(() => getQuickActions(activeTab), [activeTab])
   const activeTabUrl = activeTab?.url ?? ''
   useEffect(() => {
@@ -801,6 +886,71 @@ function App(): React.JSX.Element {
 
     return unsubscribe
   }, [showToast])
+
+  useEffect(() => {
+    const unsubscribe = window.aether.events.onModelDownloadProgress((progress) => {
+      setModelDownloadProgress((current) => upsertModelProgress(current, progress))
+      if (progress.status === 'error') {
+        setModelSetupError(progress.message ?? 'Model download failed.')
+      }
+    })
+
+    return unsubscribe
+  }, [])
+
+  useEffect(() => {
+    if (!modelSetupVisible) return
+    void window.aether.layout.setModalOverlayOpen(true).catch(() => undefined)
+  }, [modelSetupVisible])
+
+  function toggleSetupModel(model: ModelDownloadChoice): void {
+    if (modelSetupBusy) return
+    setSelectedSetupModels((current) =>
+      current.includes(model)
+        ? current.filter((item) => item !== model)
+        : [...current, model].sort((first, second) =>
+            first === second ? 0 : first === 'lite' ? -1 : second === 'lite' ? 1 : 0
+          )
+    )
+  }
+
+  async function closeModelSetup(): Promise<void> {
+    if (modelSetupBusy) return
+    setModelSetupDismissed(true)
+    await window.aether.layout.setModalOverlayOpen(Boolean(settingsOpen || collectionDialog))
+  }
+
+  async function startModelSetup(): Promise<void> {
+    if (selectedSetupModels.length === 0) {
+      setModelSetupError('Choose AiON LiTE, AiON WiSE, or both.')
+      return
+    }
+
+    setBusy('Installing local models')
+    setNotice(null)
+    setModelSetupError(null)
+    setModelSetupComplete(false)
+    setModelDownloadProgress([])
+    showToast({ message: 'Installing local models', tone: 'info', durationMs: 0 })
+
+    try {
+      const nextStatus = await window.aether.system.downloadModels({
+        chatModels: selectedSetupModels
+      })
+      setStatus(nextStatus)
+      setModelSetupComplete(true)
+      setNotice('AiON local models installed.')
+      window.setTimeout(() => {
+        void closeModelSetup()
+      }, 900)
+    } catch (error) {
+      const message = getErrorMessage(error)
+      setModelSetupError(message)
+      setNotice(message)
+    } finally {
+      setBusy(null)
+    }
+  }
 
   async function openDashboard(): Promise<void> {
     await window.aether.dashboard.open()
@@ -1699,7 +1849,6 @@ function App(): React.JSX.Element {
             </button>
           </div>
         ) : <></>)}
-
         </nav>
         <button
           className="app-button settings-button"
@@ -1911,6 +2060,24 @@ function App(): React.JSX.Element {
         />
       )}
 
+      {modelSetupVisible && (
+        <ModelSetupModal
+          busy={modelSetupBusy}
+          complete={modelSetupComplete}
+          error={modelSetupError}
+          modelDir={status?.modelDir ?? ''}
+          progress={modelDownloadProgress}
+          selectedModels={selectedSetupModels}
+          onClose={() => {
+            void closeModelSetup()
+          }}
+          onStart={() => {
+            void startModelSetup()
+          }}
+          onToggleModel={toggleSetupModel}
+        />
+      )}
+
       {settingsOpen && (
         <SettingsModal
           busy={busy}
@@ -2030,6 +2197,187 @@ function FindBar({
       <button aria-label="Close find" className="find-close-button" onClick={onClose} type="button">
         ×
       </button>
+    </div>
+  )
+}
+
+function ModelSetupModal({
+  busy,
+  complete,
+  error,
+  modelDir,
+  progress,
+  selectedModels,
+  onClose,
+  onStart,
+  onToggleModel
+}: {
+  busy: boolean
+  complete: boolean
+  error: string | null
+  modelDir: string
+  progress: ModelDownloadProgress[]
+  selectedModels: ModelDownloadChoice[]
+  onClose: () => void
+  onStart: () => void
+  onToggleModel: (model: ModelDownloadChoice) => void
+}): React.JSX.Element {
+  const progressTotal = [...progress]
+    .reverse()
+    .find((item) => item.overallTotalBytes)?.overallTotalBytes
+  const progressDownloaded = progress.reduce(
+    (max, item) => Math.max(max, item.overallDownloadedBytes),
+    0
+  )
+  const overallPercent = complete ? 100 : progressPercent(progressDownloaded, progressTotal)
+  const canStart = selectedModels.length > 0 && !busy && !complete
+
+  return (
+    <div className="model-setup-overlay" role="presentation">
+      <section
+        className="model-setup-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="model-setup-title"
+      >
+        <div className="model-setup-glass" aria-hidden="true" />
+        <div className="model-setup-hero">
+          <div className="model-setup-copy">
+            <span className="model-setup-kicker">
+              <Sparkles aria-hidden="true" />
+              Local intelligence
+            </span>
+            <h1 id="model-setup-title">AiON Assembly</h1>
+            <p>
+              Choose the local model pack for this device. AiON MiST installs with every selection
+              for private semantic search.
+            </p>
+          </div>
+          <div className="model-setup-crystal" aria-hidden="true">
+            <img alt="" src="/aether-plusless-crystal.png" />
+          </div>
+        </div>
+
+        <div className="model-setup-grid">
+          <div className="model-setup-options" aria-label="AiON model choices">
+            {MODEL_SETUP_OPTIONS.map((option) => {
+              const selected = selectedModels.includes(option.id)
+              return (
+                <label className={`model-choice ${selected ? 'selected' : ''}`} key={option.id}>
+                  <input
+                    checked={selected}
+                    disabled={busy}
+                    onChange={() => onToggleModel(option.id)}
+                    type="checkbox"
+                  />
+                  <span className="model-choice-check" aria-hidden="true">
+                    <Check />
+                  </span>
+                  <span className="model-choice-icon" aria-hidden="true">
+                    {option.id === 'lite' ? <Zap /> : <Cpu />}
+                  </span>
+                  <span className="model-choice-copy">
+                    <strong>{option.name}</strong>
+                    <em>{option.title}</em>
+                    <small>{option.description}</small>
+                    <code>{option.source}</code>
+                  </span>
+                  <span className="model-choice-size">{option.size}</span>
+                </label>
+              )
+            })}
+          </div>
+
+          <aside className="model-setup-side">
+            <div className="model-core-card">
+              <span>
+                <ShieldCheck aria-hidden="true" />
+                Required core
+              </span>
+              <strong>AiON MiST</strong>
+              <small>EmbeddingGemma 300M Q8 · 318 MB</small>
+              <code>google/embeddinggemma-300m-gguf</code>
+            </div>
+
+            <div className="model-dir-card">
+              <span>Install location</span>
+              <code>{modelDir || 'App data model directory'}</code>
+            </div>
+          </aside>
+        </div>
+
+        <div className={`model-setup-progress ${progress.length ? 'active' : ''}`}>
+          <div className="model-progress-heading">
+            <span>
+              {complete ? 'Ready' : busy ? 'Installing' : progress.length ? 'Prepared' : 'Waiting'}
+            </span>
+            <strong>
+              {progressTotal
+                ? `${formatBytes(progressDownloaded)} / ${formatBytes(progressTotal)}`
+                : complete
+                  ? 'Complete'
+                  : 'Select a pack'}
+            </strong>
+          </div>
+          <div
+            className="model-progress-meter"
+            aria-label="Overall model download progress"
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={Math.round(overallPercent)}
+            role="progressbar"
+          >
+            <span style={{ transform: `scaleX(${overallPercent / 100})` }} />
+          </div>
+
+          {progress.length > 0 ? (
+            <div className="model-progress-list">
+              {progress.map((item) => {
+                const itemPercent =
+                  item.status === 'complete' || item.status === 'skipped'
+                    ? 100
+                    : progressPercent(item.downloadedBytes, item.totalBytes)
+                return (
+                  <div className={`model-progress-row ${item.status}`} key={item.id}>
+                    <span className="model-progress-icon" aria-hidden="true">
+                      {item.status === 'complete' || item.status === 'skipped' ? (
+                        <CircleCheck />
+                      ) : item.status === 'downloading' ? (
+                        <LoaderCircle />
+                      ) : (
+                        <CloudDownload />
+                      )}
+                    </span>
+                    <span className="model-progress-copy">
+                      <strong>{item.label}</strong>
+                      <small>{item.message ?? item.filename}</small>
+                    </span>
+                    <span className="model-progress-size">
+                      {item.totalBytes
+                        ? `${formatBytes(item.downloadedBytes)} / ${formatBytes(item.totalBytes)}`
+                        : formatBytes(item.downloadedBytes)}
+                    </span>
+                    <span className="model-progress-line" aria-hidden="true">
+                      <i style={{ transform: `scaleX(${itemPercent / 100})` }} />
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
+        </div>
+
+        {error && <p className="model-setup-error">{error}</p>}
+
+        <footer className="model-setup-actions">
+          <button disabled={busy} onClick={onClose} type="button">
+            {complete ? 'Done' : 'Later'}
+          </button>
+          <button className="primary-button" disabled={!canStart} onClick={onStart} type="button">
+            {busy ? 'Installing' : complete ? 'Installed' : 'Begin Install'}
+          </button>
+        </footer>
+      </section>
     </div>
   )
 }

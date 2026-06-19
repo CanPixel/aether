@@ -131,6 +131,16 @@ function getLayer(level: number): LayerDefinition {
   return LAYERS.find((layer) => layer.level === level) ?? LAYERS[LAYERS.length - 1]
 }
 
+function formatDepthScore(item: IcebergItem): string | null {
+  return typeof item.depthScore === 'number' ? `Depth ${Math.round(item.depthScore)}` : null
+}
+
+function formatConfidence(item: IcebergItem): string | null {
+  if (typeof item.confidence !== 'number') return null
+  const normalized = item.confidence <= 1 ? item.confidence * 100 : item.confidence
+  return `Confidence ${Math.round(normalized)}%`
+}
+
 function getCenteredPan(zoom: number): { x: number; y: number } {
   const icebergCenterX = (ICEBERG_BOUNDS.minX + ICEBERG_BOUNDS.maxX) / 2
   const icebergCenterY = (ICEBERG_BOUNDS.minY + ICEBERG_BOUNDS.maxY) / 2
@@ -814,7 +824,20 @@ export function Crystallizer({
               </p>
               <h2>{activeSelectedItem.name}</h2>
               <span>{getLayer(activeSelectedItem.level).caption}</span>
+              {(formatDepthScore(activeSelectedItem) || formatConfidence(activeSelectedItem)) && (
+                <div className="crystallizer-depth-meta">
+                  {formatDepthScore(activeSelectedItem) && (
+                    <strong>{formatDepthScore(activeSelectedItem)}</strong>
+                  )}
+                  {formatConfidence(activeSelectedItem) && (
+                    <span>{formatConfidence(activeSelectedItem)}</span>
+                  )}
+                </div>
+              )}
               <small>{activeSelectedItem.description}</small>
+              {activeSelectedItem.reason && (
+                <em className="crystallizer-depth-reason">{activeSelectedItem.reason}</em>
+              )}
               <button
                 className="explore-web-button"
                 onClick={() => {

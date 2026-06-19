@@ -22,7 +22,7 @@ use std::{
         atomic::{AtomicBool, Ordering as AtomicOrdering},
         Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 #[cfg(desktop)]
 use tauri::{
@@ -35,6 +35,7 @@ use tauri::{
     WindowEvent,
 };
 use tauri_plugin_opener::OpenerExt;
+use tokio::io::AsyncWriteExt;
 use tokio::task;
 use url::Url;
 
@@ -56,9 +57,13 @@ const AETHER_CAPTURE_PAGE_MENU_ID: &str = "aether-capture-page";
 const AETHER_FIND_REQUESTED_EVENT: &str = "aether:find-requested";
 const AETHER_FIND_RESULT_EVENT: &str = "aether:find-result";
 const AETHER_CHAT_STREAM_EVENT: &str = "aether:chat-stream";
+const AETHER_MODEL_DOWNLOAD_PROGRESS_EVENT: &str = "aether:model-download-progress";
 const AETHER_MODEL_DIR_ENV: &str = "AETHER_MODEL_DIR";
 const AETHER_CHAT_MODEL_ENV: &str = "AETHER_CHAT_MODEL";
 const AETHER_EMBEDDING_MODEL_ENV: &str = "AETHER_EMBEDDING_MODEL";
+const HF_TOKEN_ENV: &str = "HF_TOKEN";
+const HUGGINGFACE_HUB_TOKEN_ENV: &str = "HUGGINGFACE_HUB_TOKEN";
+const HUGGING_FACE_HUB_TOKEN_ENV: &str = "HUGGING_FACE_HUB_TOKEN";
 const AETHER_LLM_CONTEXT_ENV: &str = "AETHER_LLM_CTX";
 const AETHER_LLM_BATCH_TOKENS_ENV: &str = "AETHER_LLM_BATCH_TOKENS";
 const AETHER_LLM_GPU_ENV: &str = "AETHER_LLM_GPU";
@@ -92,7 +97,7 @@ const START_PAGE_URL: &str = "aether://start";
 const SAFETENSORS_CAPTURE_CHUNK_SIZE: usize = DEFAULT_CAPTURE_CHUNK_SIZE;
 const SAFETENSORS_CAPTURE_CHUNK_OVERLAP: usize = DEFAULT_CAPTURE_CHUNK_OVERLAP;
 const DEFAULT_GENERATION_TOKENS: usize = 900;
-const DEFAULT_ICEBERG_GENERATION_TOKENS: usize = 2800;
+const DEFAULT_ICEBERG_GENERATION_TOKENS: usize = 4200;
 const DEFAULT_TOP_K: i32 = 64;
 const DEFAULT_TOP_P: f32 = 0.95;
 const PREFERRED_CHAT_MODEL_HINTS: [&str; 8] = [
@@ -165,6 +170,10 @@ const NATIVE_WEBVIEW_SCROLLBAR_SCRIPT: &str = r##"
 })();
 "##;
 const ICEBERG_LEVEL_LANES: [f64; 5] = [13.0, 87.0, 28.0, 72.0, 42.0];
+const ICEBERG_LEVEL_COUNT: u8 = 5;
+const ICEBERG_MIN_ITEMS: usize = 12;
+const ICEBERG_MAX_ITEMS: usize = 45;
+const ICEBERG_MAX_ITEMS_PER_LEVEL: usize = 10;
 
 type Cmd<T> = Result<T, String>;
 
@@ -716,6 +725,22 @@ struct IcebergItem {
     level: u8,
     x: f64,
     y: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    depth_score: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    familiarity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    specificity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    jargon_density: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prerequisite_depth: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    obscurity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    confidence: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -906,6 +931,29 @@ struct UpdateModelsInput {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct DownloadModelsInput {
+    chat_models: Vec<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelDownloadProgress {
+    id: String,
+    label: String,
+    filename: String,
+    status: String,
+    downloaded_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_bytes: Option<u64>,
+    overall_downloaded_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    overall_total_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct StatusToastInput {
     message: String,
     tone: String,
@@ -1041,6 +1089,7 @@ struct BrowserPageSnapshot {
 impl Backend {
     fn new(app_data_dir: PathBuf) -> Self {
         let db_path = app_data_dir.join("aether-realms");
+        let models_path = default_models_path(&app_data_dir);
         Self {
             paths: DataPaths {
                 chunks_path: db_path.join(format!("{CHUNKS_TABLE}.json")),
@@ -1049,7 +1098,7 @@ impl Backend {
                 settings_path: app_data_dir.join("aether-settings").join("settings.json"),
                 icebergs_path: app_data_dir.join("aether-icebergs").join("icebergs.json"),
                 air_exports_path: app_data_dir.join("aether-air"),
-                models_path: project_models_path(),
+                models_path,
             },
             tabs: Mutex::new(TabState::new()),
             #[cfg(desktop)]
@@ -2208,6 +2257,7 @@ pub fn run() {
             aether_system_settings,
             aether_system_update_settings,
             aether_system_update_models,
+            aether_system_download_models,
             aether_layout_set_panel_collapsed,
             aether_layout_set_modal_overlay_open,
             aether_layout_show_status_toast
@@ -3262,6 +3312,16 @@ async fn aether_system_update_models(
             Some(model.trim().to_string()).filter(|item| !item.is_empty());
     }
     save_json(&state.paths.settings_path, &settings).await?;
+    system_status(&state).await
+}
+
+#[tauri::command]
+async fn aether_system_download_models(
+    app: AppHandle,
+    state: State<'_, Backend>,
+    input: DownloadModelsInput,
+) -> Cmd<SystemStatus> {
+    download_managed_models(&app, &state, input).await?;
     system_status(&state).await
 }
 
@@ -5703,6 +5763,363 @@ impl NativeModelRuntime {
     }
 }
 
+#[derive(Clone)]
+struct ModelDownloadSpec {
+    id: &'static str,
+    label: &'static str,
+    repository: &'static str,
+    revision: &'static str,
+    filename: &'static str,
+    destination: PathBuf,
+    expected_bytes: u64,
+}
+
+impl ModelDownloadSpec {
+    fn source_url(&self) -> String {
+        format!(
+            "https://huggingface.co/{}/resolve/{}/{}?download=true",
+            self.repository, self.revision, self.filename
+        )
+    }
+}
+
+async fn download_managed_models(
+    app: &AppHandle,
+    state: &State<'_, Backend>,
+    input: DownloadModelsInput,
+) -> Cmd<()> {
+    let specs = selected_model_downloads(&state.paths, &input)?;
+    let overall_total = specs
+        .iter()
+        .map(|spec| spec.expected_bytes)
+        .reduce(|first, second| first.saturating_add(second));
+    let mut overall_downloaded = 0u64;
+
+    for spec in &specs {
+        if let Some(existing_bytes) =
+            completed_model_bytes(&spec.destination, spec.expected_bytes).await
+        {
+            overall_downloaded = overall_downloaded.saturating_add(existing_bytes);
+            emit_model_download_progress(
+                app,
+                spec,
+                "skipped",
+                existing_bytes,
+                Some(spec.expected_bytes),
+                overall_downloaded,
+                overall_total,
+                Some("Already installed".to_string()),
+            );
+            continue;
+        }
+
+        emit_model_download_progress(
+            app,
+            spec,
+            "queued",
+            0,
+            Some(spec.expected_bytes),
+            overall_downloaded,
+            overall_total,
+            Some("Preparing download".to_string()),
+        );
+
+        match download_model_file(app, &state.client, spec, overall_downloaded, overall_total).await
+        {
+            Ok(downloaded_bytes) => {
+                overall_downloaded = overall_downloaded.saturating_add(downloaded_bytes);
+                emit_model_download_progress(
+                    app,
+                    spec,
+                    "complete",
+                    downloaded_bytes,
+                    Some(downloaded_bytes),
+                    overall_downloaded,
+                    overall_total,
+                    Some("Installed".to_string()),
+                );
+            }
+            Err(error) => {
+                emit_model_download_progress(
+                    app,
+                    spec,
+                    "error",
+                    0,
+                    Some(spec.expected_bytes),
+                    overall_downloaded,
+                    overall_total,
+                    Some(error.clone()),
+                );
+                return Err(error);
+            }
+        }
+    }
+
+    persist_downloaded_model_selection(&state.paths, &specs).await
+}
+
+fn selected_model_downloads(
+    paths: &DataPaths,
+    input: &DownloadModelsInput,
+) -> Cmd<Vec<ModelDownloadSpec>> {
+    let mut specs = vec![managed_model_spec(paths, "mist")?];
+    let mut selected = HashSet::new();
+
+    for model in &input.chat_models {
+        let normalized = model.trim().to_lowercase();
+        if normalized.is_empty() {
+            continue;
+        }
+        if !selected.insert(normalized.clone()) {
+            continue;
+        }
+        specs.push(managed_model_spec(paths, &normalized)?);
+    }
+
+    if specs.iter().all(|spec| spec.id == "mist") {
+        return Err("Choose AiON LiTE, AiON WiSE, or both before installing.".to_string());
+    }
+
+    Ok(specs)
+}
+
+fn managed_model_spec(paths: &DataPaths, id: &str) -> Cmd<ModelDownloadSpec> {
+    match id {
+        "mist" => Ok(ModelDownloadSpec {
+            id: "mist",
+            label: "AiON MiST",
+            repository: "google/embeddinggemma-300m-gguf",
+            revision: "main",
+            filename: "embeddinggemma-300M-Q8_0.gguf",
+            destination: paths
+                .models_path
+                .join("embeddings")
+                .join("embeddinggemma-300m-gguf")
+                .join("embeddinggemma-300M-Q8_0.gguf"),
+            expected_bytes: 333_590_944,
+        }),
+        "lite" => Ok(ModelDownloadSpec {
+            id: "lite",
+            label: "AiON LiTE",
+            repository: "google/gemma-4-E2B-it-qat-q4_0-gguf",
+            revision: "1894d1fc0a19d86697abd40483f5983c867df03f",
+            filename: "gemma-4-E2B_q4_0-it.gguf",
+            destination: paths
+                .models_path
+                .join("chat")
+                .join("gemma-4-E2B-it-qat-q4_0-gguf")
+                .join("gemma-4-E2B_q4_0-it.gguf"),
+            expected_bytes: 3_349_514_112,
+        }),
+        "wise" => Ok(ModelDownloadSpec {
+            id: "wise",
+            label: "AiON WiSE",
+            repository: "google/gemma-4-E4B-it-qat-q4_0-gguf",
+            revision: "bb3b92e6f031fa438b409f898dd9f14f499a0cb0",
+            filename: "gemma-4-E4B_q4_0-it.gguf",
+            destination: paths
+                .models_path
+                .join("chat")
+                .join("gemma-4-E4B-it-qat-q4_0-gguf")
+                .join("gemma-4-E4B_q4_0-it.gguf"),
+            expected_bytes: 5_154_939_136,
+        }),
+        _ => Err(format!("Unknown AiON model selection: {id}")),
+    }
+}
+
+async fn completed_model_bytes(path: &Path, expected_bytes: u64) -> Option<u64> {
+    let metadata = tokio::fs::metadata(path).await.ok()?;
+    let len = metadata.len();
+    if metadata.is_file() && len == expected_bytes {
+        Some(len)
+    } else {
+        None
+    }
+}
+
+async fn download_model_file(
+    app: &AppHandle,
+    client: &Client,
+    spec: &ModelDownloadSpec,
+    overall_base_bytes: u64,
+    overall_total_bytes: Option<u64>,
+) -> Cmd<u64> {
+    let parent = spec
+        .destination
+        .parent()
+        .ok_or_else(|| format!("Invalid model destination: {}", spec.destination.display()))?;
+    tokio::fs::create_dir_all(parent).await.map_err(|error| {
+        format!(
+            "Could not create model directory {}: {error}",
+            parent.display()
+        )
+    })?;
+
+    let temp_path = spec
+        .destination
+        .with_file_name(format!("{}.part", spec.filename));
+    let _ = tokio::fs::remove_file(&temp_path).await;
+
+    let mut request = client.get(spec.source_url());
+    if let Some(token) = huggingface_token() {
+        request = request.bearer_auth(token);
+    }
+
+    let mut response = request
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach Hugging Face for {}: {error}", spec.label))?;
+    let status = response.status();
+    if !status.is_success() {
+        return Err(huggingface_download_error(spec, status.as_u16()));
+    }
+
+    let total_bytes = response.content_length().or(Some(spec.expected_bytes));
+    let mut file = tokio::fs::File::create(&temp_path).await.map_err(|error| {
+        format!(
+            "Could not create temporary model file {}: {error}",
+            temp_path.display()
+        )
+    })?;
+    let mut downloaded_bytes = 0u64;
+    let mut last_emit = Instant::now();
+
+    emit_model_download_progress(
+        app,
+        spec,
+        "downloading",
+        downloaded_bytes,
+        total_bytes,
+        overall_base_bytes,
+        overall_total_bytes,
+        Some("Downloading from Hugging Face".to_string()),
+    );
+
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("Download interrupted for {}: {error}", spec.label))?
+    {
+        file.write_all(&chunk)
+            .await
+            .map_err(|error| format!("Could not write {}: {error}", spec.filename))?;
+        downloaded_bytes = downloaded_bytes.saturating_add(chunk.len() as u64);
+
+        if last_emit.elapsed() >= Duration::from_millis(160) {
+            emit_model_download_progress(
+                app,
+                spec,
+                "downloading",
+                downloaded_bytes,
+                total_bytes,
+                overall_base_bytes.saturating_add(downloaded_bytes),
+                overall_total_bytes,
+                None,
+            );
+            last_emit = Instant::now();
+        }
+    }
+
+    file.flush()
+        .await
+        .map_err(|error| format!("Could not finalize {}: {error}", spec.filename))?;
+    drop(file);
+
+    if let Some(total) = total_bytes {
+        if downloaded_bytes != total {
+            let _ = tokio::fs::remove_file(&temp_path).await;
+            return Err(format!(
+                "Downloaded {} bytes for {}, expected {}.",
+                downloaded_bytes, spec.label, total
+            ));
+        }
+    }
+
+    let _ = tokio::fs::remove_file(&spec.destination).await;
+    tokio::fs::rename(&temp_path, &spec.destination)
+        .await
+        .map_err(|error| {
+            format!(
+                "Could not move {} into {}: {error}",
+                temp_path.display(),
+                spec.destination.display()
+            )
+        })?;
+
+    Ok(downloaded_bytes)
+}
+
+async fn persist_downloaded_model_selection(
+    paths: &DataPaths,
+    specs: &[ModelDownloadSpec],
+) -> Cmd<()> {
+    let mut settings = load_settings(&paths.settings_path).await?;
+    if let Some(embedding) = specs.iter().find(|spec| spec.id == "mist") {
+        settings.local_model.embedding_model = Some(embedding.destination.display().to_string());
+    }
+    if let Some(chat) = specs
+        .iter()
+        .rev()
+        .find(|spec| spec.id == "lite" || spec.id == "wise")
+    {
+        settings.local_model.chat_model = Some(chat.destination.display().to_string());
+    }
+    save_json(&paths.settings_path, &settings).await
+}
+
+fn huggingface_token() -> Option<String> {
+    [
+        HF_TOKEN_ENV,
+        HUGGINGFACE_HUB_TOKEN_ENV,
+        HUGGING_FACE_HUB_TOKEN_ENV,
+    ]
+    .iter()
+    .find_map(|var| env::var(var).ok())
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty())
+}
+
+fn huggingface_download_error(spec: &ModelDownloadSpec, status: u16) -> String {
+    let auth_hint = if status == 401 || status == 403 {
+        format!(
+            " Accept the model terms on Hugging Face and launch ÆTHER with {HF_TOKEN_ENV} or {HUGGINGFACE_HUB_TOKEN_ENV} set if this file is gated."
+        )
+    } else {
+        String::new()
+    };
+    format!(
+        "Could not download {} from official Hugging Face source {}/{} ({status}).{}",
+        spec.label, spec.repository, spec.filename, auth_hint
+    )
+}
+
+fn emit_model_download_progress(
+    app: &AppHandle,
+    spec: &ModelDownloadSpec,
+    status: &str,
+    downloaded_bytes: u64,
+    total_bytes: Option<u64>,
+    overall_downloaded_bytes: u64,
+    overall_total_bytes: Option<u64>,
+    message: Option<String>,
+) {
+    let _ = app.emit(
+        AETHER_MODEL_DOWNLOAD_PROGRESS_EVENT,
+        ModelDownloadProgress {
+            id: spec.id.to_string(),
+            label: spec.label.to_string(),
+            filename: spec.filename.to_string(),
+            status: status.to_string(),
+            downloaded_bytes,
+            total_bytes,
+            overall_downloaded_bytes,
+            overall_total_bytes,
+            message,
+        },
+    );
+}
+
 fn model_catalog(paths: &DataPaths, settings: &LocalModelSettings) -> ModelCatalog {
     let mut errors = Vec::new();
     let model_dirs = [
@@ -5803,6 +6220,14 @@ fn collect_safetensors_embedding_models(root: &Path, models: &mut Vec<PathBuf>) 
         if is_safetensors_embedding_model(&path) {
             models.push(path);
         }
+    }
+}
+
+fn default_models_path(app_data_dir: &Path) -> PathBuf {
+    if cfg!(debug_assertions) {
+        project_models_path()
+    } else {
+        app_data_dir.join("aether-models")
     }
 }
 
@@ -6538,22 +6963,43 @@ fn build_iceberg_prompt(keyword: &str) -> String {
 
 Return JSON only with this exact shape:
 {{
+  "recommendedItemCount": 24,
   "items": [
-    {{ "name": "Visible phrase", "description": "One short explanation.", "level": 1 }},
-    {{ "name": "Another phrase", "description": "One short explanation.", "level": 1 }}
+    {{
+      "name": "Visible phrase",
+      "description": "One short explanation.",
+      "familiarity": 85,
+      "specificity": 20,
+      "jargonDensity": 15,
+      "prerequisiteDepth": 10,
+      "obscurity": 12,
+      "confidence": 0.86,
+      "reason": "Common public entry point."
+    }}
   ]
 }}
 
 Rules:
-- level must be an integer from 1 to 5.
-- level 1 is broad, familiar, or introductory.
-- level 5 is obscure, technical, hidden, or specialist knowledge.
-- Return exactly 25 items total.
-- Return exactly 5 items for each level.
+- Choose recommendedItemCount based on topic scope: 12-18 for narrow topics, 20-30 for medium topics, 32-45 for broad domains.
+- Return between 12 and 45 usable items. Do not force exactly equal layer coverage.
+- Do not include more than 10 items that would clearly belong to the same depth band.
 - Use concise item names that fit on a node.
 - Every item must include a non-empty description.
+- Scores are integers from 0-100, never 1-10. Confidence is 0.0-1.0.
+- familiarity: how likely a general audience already knows this.
+- specificity: how narrow the concept is within the topic.
+- jargonDensity: how much specialist vocabulary is needed.
+- prerequisiteDepth: how much prior conceptual knowledge is required.
+- obscurity: how rarely this appears in mainstream explainers or beginner material.
+- reason: one short explanation for why the item sits at its depth.
+- Do not include level; the app will compute levels from the scoring rubric.
 - Do not include markdown, prose, or comments."#
     )
+}
+
+struct ScoredIcebergItem {
+    item: IcebergItem,
+    score: f64,
 }
 
 fn normalize_iceberg_items(response: &str) -> Cmd<Vec<IcebergItem>> {
@@ -6576,11 +7022,16 @@ fn normalize_iceberg_items(response: &str) -> Cmd<Vec<IcebergItem>> {
                 .map_err(|_| "Local model did not return valid iceberg JSON.".to_string())?
         }
     };
+    let requested_count = iceberg_requested_count(&parsed);
     let items_value = parsed.get("items").cloned().unwrap_or(parsed);
     let raw_items = items_value
         .as_array()
         .ok_or_else(|| "Local model did not return valid iceberg JSON.".to_string())?;
-    let mut by_level: HashMap<u8, Vec<IcebergItem>> = HashMap::new();
+    let target_count = requested_count
+        .unwrap_or(raw_items.len())
+        .clamp(ICEBERG_MIN_ITEMS, ICEBERG_MAX_ITEMS);
+    let mut candidates = Vec::<ScoredIcebergItem>::new();
+    let mut seen_names = HashSet::<String>::new();
     for raw in raw_items {
         let name = raw
             .get("name")
@@ -6595,33 +7046,216 @@ fn normalize_iceberg_items(response: &str) -> Cmd<Vec<IcebergItem>> {
         if name.is_empty() || description.is_empty() {
             continue;
         }
-        let level = raw
-            .get("level")
-            .and_then(|value| value.as_u64())
-            .unwrap_or(1)
-            .clamp(1, 5) as u8;
-        let level_items = by_level.entry(level).or_default();
-        if level_items.len() >= 5 {
+
+        let dedupe_key = slugify(name);
+        if dedupe_key.is_empty() || !seen_names.insert(dedupe_key) {
             continue;
         }
-        let index = level_items.len();
-        level_items.push(IcebergItem {
-            id: unique_slug(&format!("{level}-{}-{name}", index + 1), &[]),
-            name: name.to_string(),
-            description: description.to_string(),
-            level,
-            x: ICEBERG_LEVEL_LANES[index % ICEBERG_LEVEL_LANES.len()],
-            y: 120.0 + index as f64 * 44.0,
+
+        let fallback_level = iceberg_level_field(raw).unwrap_or(3);
+        let fallback_score = iceberg_fallback_score(fallback_level);
+        let familiarity = iceberg_metric_field(raw, &["familiarity"]);
+        let specificity = iceberg_metric_field(raw, &["specificity"]);
+        let jargon_density = iceberg_metric_field(raw, &["jargonDensity", "jargon_density"]);
+        let prerequisite_depth =
+            iceberg_metric_field(raw, &["prerequisiteDepth", "prerequisite_depth"]);
+        let obscurity = iceberg_metric_field(raw, &["obscurity"]);
+        let confidence = iceberg_confidence_field(raw);
+        let explicit_depth =
+            iceberg_metric_field(raw, &["depthScore", "depth_score", "complexityScore"]);
+        let score = explicit_depth.unwrap_or_else(|| {
+            iceberg_depth_score(
+                familiarity,
+                specificity,
+                jargon_density,
+                prerequisite_depth,
+                obscurity,
+                fallback_score,
+            )
+        });
+        let score = round_score(score.clamp(0.0, 100.0));
+        let level = iceberg_level_from_score(score);
+        let reason = iceberg_string_field(raw, &["reason", "rationale", "levelReason"])
+            .map(|reason| reason.chars().take(220).collect::<String>());
+
+        candidates.push(ScoredIcebergItem {
+            item: IcebergItem {
+                id: String::new(),
+                name: name.to_string(),
+                description: description.to_string(),
+                level,
+                x: 0.0,
+                y: 0.0,
+                depth_score: Some(score),
+                familiarity,
+                specificity,
+                jargon_density,
+                prerequisite_depth,
+                obscurity,
+                confidence,
+                reason,
+            },
+            score,
         });
     }
-    let normalized = (1..=5)
-        .flat_map(|level| by_level.remove(&level).unwrap_or_default())
-        .collect::<Vec<_>>();
+
+    candidates.sort_by(|left, right| {
+        left.item
+            .level
+            .cmp(&right.item.level)
+            .then_with(|| {
+                left.score
+                    .partial_cmp(&right.score)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .then_with(|| left.item.name.cmp(&right.item.name))
+    });
+
+    let mut normalized = Vec::<IcebergItem>::new();
+    let mut ids = Vec::<String>::new();
+    let mut by_level = HashMap::<u8, usize>::new();
+    for candidate in candidates {
+        if normalized.len() >= target_count {
+            break;
+        }
+        let level_count = by_level.entry(candidate.item.level).or_default();
+        if *level_count >= ICEBERG_MAX_ITEMS_PER_LEVEL {
+            continue;
+        }
+        let index = *level_count;
+        *level_count += 1;
+        let mut item = candidate.item;
+        item.id = unique_slug(&format!("{}-{}-{}", item.level, index + 1, item.name), &ids);
+        ids.push(item.id.clone());
+        item.x = ICEBERG_LEVEL_LANES[index % ICEBERG_LEVEL_LANES.len()];
+        item.y = 120.0 + index as f64 * 44.0;
+        normalized.push(item);
+    }
+
     if normalized.is_empty() {
         Err("Local model did not return any usable iceberg items.".to_string())
     } else {
         Ok(normalized)
     }
+}
+
+fn iceberg_requested_count(value: &serde_json::Value) -> Option<usize> {
+    let count = value
+        .get("recommendedItemCount")
+        .or_else(|| value.get("itemCount"))
+        .or_else(|| value.get("recommended_count"))
+        .and_then(|value| value.as_u64())?;
+    usize::try_from(count).ok()
+}
+
+fn iceberg_level_field(value: &serde_json::Value) -> Option<u8> {
+    let level = value
+        .get("level")
+        .or_else(|| value.get("proposedLevel"))
+        .or_else(|| value.get("depthLevel"))
+        .and_then(|value| value.as_u64())?;
+    Some((level as u8).clamp(1, ICEBERG_LEVEL_COUNT))
+}
+
+fn iceberg_metric_field(value: &serde_json::Value, names: &[&str]) -> Option<f64> {
+    names
+        .iter()
+        .find_map(|name| value.get(*name).and_then(json_number))
+        .map(normalize_iceberg_metric)
+}
+
+fn iceberg_confidence_field(value: &serde_json::Value) -> Option<f64> {
+    value
+        .get("confidence")
+        .and_then(json_number)
+        .map(normalize_confidence)
+}
+
+fn iceberg_string_field(value: &serde_json::Value, names: &[&str]) -> Option<String> {
+    names
+        .iter()
+        .find_map(|name| value.get(*name).and_then(|value| value.as_str()))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn json_number(value: &serde_json::Value) -> Option<f64> {
+    value
+        .as_f64()
+        .or_else(|| {
+            value
+                .as_str()
+                .and_then(|text| text.trim().parse::<f64>().ok())
+        })
+        .filter(|value| value.is_finite())
+}
+
+fn normalize_iceberg_metric(value: f64) -> f64 {
+    let normalized = if (0.0..=1.0).contains(&value) {
+        value * 100.0
+    } else {
+        value
+    };
+    round_score(normalized.clamp(0.0, 100.0))
+}
+
+fn normalize_confidence(value: f64) -> f64 {
+    let normalized = if value > 10.0 {
+        value / 100.0
+    } else if value > 1.0 {
+        value / 10.0
+    } else {
+        value
+    };
+    round_score(normalized.clamp(0.0, 1.0))
+}
+
+fn iceberg_fallback_score(level: u8) -> f64 {
+    match level.clamp(1, ICEBERG_LEVEL_COUNT) {
+        1 => 10.0,
+        2 => 30.0,
+        3 => 50.0,
+        4 => 70.0,
+        _ => 90.0,
+    }
+}
+
+fn iceberg_depth_score(
+    familiarity: Option<f64>,
+    specificity: Option<f64>,
+    jargon_density: Option<f64>,
+    prerequisite_depth: Option<f64>,
+    obscurity: Option<f64>,
+    fallback_score: f64,
+) -> f64 {
+    let familiarity = familiarity.unwrap_or(100.0 - fallback_score);
+    let specificity = specificity.unwrap_or(fallback_score);
+    let jargon_density = jargon_density.unwrap_or(fallback_score);
+    let prerequisite_depth = prerequisite_depth.unwrap_or(fallback_score);
+    let obscurity = obscurity.unwrap_or(fallback_score);
+
+    specificity * 0.3
+        + jargon_density * 0.25
+        + prerequisite_depth * 0.2
+        + obscurity * 0.15
+        + (100.0 - familiarity) * 0.1
+}
+
+fn iceberg_level_from_score(score: f64) -> u8 {
+    match score {
+        value if value < 20.0 => 1,
+        value if value < 40.0 => 2,
+        value if value < 60.0 => 3,
+        value if value < 80.0 => 4,
+        _ => 5,
+    }
+}
+
+fn clamp_optional_score(value: Option<f64>, min: f64, max: f64) -> Option<f64> {
+    value
+        .filter(|value| value.is_finite())
+        .map(|value| round_score(value.clamp(min, max)))
 }
 
 fn normalize_saved_items(items: Vec<IcebergItem>) -> Vec<IcebergItem> {
@@ -6631,7 +7265,18 @@ fn normalize_saved_items(items: Vec<IcebergItem>) -> Vec<IcebergItem> {
         .map(|mut item| {
             item.name = item.name.trim().to_string();
             item.description = item.description.trim().to_string();
-            item.level = item.level.clamp(1, 5);
+            item.level = item.level.clamp(1, ICEBERG_LEVEL_COUNT);
+            item.depth_score = clamp_optional_score(item.depth_score, 0.0, 100.0);
+            item.familiarity = clamp_optional_score(item.familiarity, 0.0, 100.0);
+            item.specificity = clamp_optional_score(item.specificity, 0.0, 100.0);
+            item.jargon_density = clamp_optional_score(item.jargon_density, 0.0, 100.0);
+            item.prerequisite_depth = clamp_optional_score(item.prerequisite_depth, 0.0, 100.0);
+            item.obscurity = clamp_optional_score(item.obscurity, 0.0, 100.0);
+            item.confidence = clamp_optional_score(item.confidence, 0.0, 1.0);
+            item.reason = item
+                .reason
+                .map(|reason| reason.trim().chars().take(220).collect::<String>())
+                .filter(|reason| !reason.is_empty());
             if item.id.trim().is_empty() {
                 item.id = unique_slug(&format!("{}-{}", item.level, item.name), &[]);
             }
@@ -7035,6 +7680,98 @@ mod tests {
         assert_eq!(semantic_score_from_distance(0.3), 75.0);
         assert_eq!(semantic_score_from_distance(1.2), 0.0);
         assert_eq!(semantic_score_from_distance(f64::INFINITY), 0.0);
+    }
+
+    #[test]
+    fn iceberg_normalizer_scores_layers_deterministically() {
+        let response = serde_json::json!({
+            "recommendedItemCount": 12,
+            "items": [
+                {
+                    "name": "Public overview",
+                    "description": "A familiar entry point.",
+                    "familiarity": 96,
+                    "specificity": 8,
+                    "jargonDensity": 4,
+                    "prerequisiteDepth": 6,
+                    "obscurity": 5,
+                    "confidence": 0.91,
+                    "reason": "Common public vocabulary."
+                },
+                {
+                    "name": "Specialist mechanism",
+                    "description": "A deep technical mechanism.",
+                    "familiarity": 9,
+                    "specificity": 94,
+                    "jargonDensity": 88,
+                    "prerequisiteDepth": 84,
+                    "obscurity": 91,
+                    "confidence": 0.78,
+                    "reason": "Requires specialist context."
+                }
+            ]
+        })
+        .to_string();
+
+        let items = normalize_iceberg_items(&response).expect("valid iceberg items");
+        let public = items
+            .iter()
+            .find(|item| item.name == "Public overview")
+            .expect("public item");
+        let specialist = items
+            .iter()
+            .find(|item| item.name == "Specialist mechanism")
+            .expect("specialist item");
+
+        assert_eq!(public.level, 1);
+        assert_eq!(specialist.level, 5);
+        assert!(
+            public.depth_score.unwrap_or_default() < specialist.depth_score.unwrap_or_default()
+        );
+        assert_eq!(
+            specialist.reason.as_deref(),
+            Some("Requires specialist context.")
+        );
+    }
+
+    #[test]
+    fn iceberg_normalizer_allows_variable_counts_above_old_cap() {
+        let items = (0..30)
+            .map(|index| {
+                let band = index / 6;
+                let score = match band {
+                    0 => 8,
+                    1 => 28,
+                    2 => 48,
+                    3 => 68,
+                    _ => 88,
+                } + (index % 6);
+                serde_json::json!({
+                    "name": format!("Fragment {index}"),
+                    "description": "A generated fragment.",
+                    "depthScore": score,
+                    "confidence": 0.8,
+                    "reason": "Test scoring."
+                })
+            })
+            .collect::<Vec<_>>();
+        let response = serde_json::json!({
+            "recommendedItemCount": 30,
+            "items": items
+        })
+        .to_string();
+
+        let normalized = normalize_iceberg_items(&response).expect("valid iceberg items");
+        assert_eq!(normalized.len(), 30);
+        assert!(normalized.len() > 25);
+
+        let mut counts = HashMap::<u8, usize>::new();
+        for item in normalized {
+            *counts.entry(item.level).or_default() += 1;
+        }
+        assert!(counts
+            .values()
+            .all(|count| *count <= ICEBERG_MAX_ITEMS_PER_LEVEL));
     }
 
     #[test]

@@ -263,6 +263,14 @@ export interface IcebergItem {
   level: number
   x: number
   y: number
+  depthScore?: number
+  familiarity?: number
+  specificity?: number
+  jargonDensity?: number
+  prerequisiteDepth?: number
+  obscurity?: number
+  confidence?: number
+  reason?: string
 }
 
 export interface IcebergResult {
@@ -314,6 +322,21 @@ export interface SystemStatus {
   libraryPath: string
   collections: CollectionSummary[]
   error?: string
+}
+
+export type ModelDownloadChoice = 'lite' | 'wise'
+export type ModelDownloadStatus = 'queued' | 'downloading' | 'skipped' | 'complete' | 'error'
+
+export interface ModelDownloadProgress {
+  id: string
+  label: string
+  filename: string
+  status: ModelDownloadStatus
+  downloadedBytes: number
+  totalBytes?: number
+  overallDownloadedBytes: number
+  overallTotalBytes?: number
+  message?: string
 }
 
 export interface AetherState {
@@ -437,6 +460,7 @@ export interface AetherApi {
     settings(): Promise<AppSettings>
     updateSettings(input: Partial<AppSettings>): Promise<AppSettings>
     updateModels(input: { embeddingModel?: string; chatModel?: string }): Promise<SystemStatus>
+    downloadModels(input: { chatModels: ModelDownloadChoice[] }): Promise<SystemStatus>
   }
   layout: {
     setIntelligencePanelCollapsed(collapsed: boolean): Promise<void>
@@ -446,6 +470,7 @@ export interface AetherApi {
   events: {
     onState(listener: (state: AetherState) => void): () => void
     onCaptureProgress(listener: (progress: CaptureProgress) => void): () => void
+    onModelDownloadProgress(listener: (progress: ModelDownloadProgress) => void): () => void
     onChatStream(listener: (event: ChatStreamEvent) => void): () => void
     onShortcut(listener: (shortcut: AetherShortcutId) => void): () => void
     onFindRequested(listener: () => void): () => void

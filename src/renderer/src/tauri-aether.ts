@@ -22,6 +22,7 @@ import {
   FlowGraphResult,
   HubShortcutSummary,
   IcebergResult,
+  ModelDownloadProgress,
   SaveIcebergInput,
   SavedIceberg,
   SavedIcebergSummary,
@@ -91,7 +92,8 @@ if (isTauri) {
       graph: (input) => call<FlowGraphResult>('aether_flow_graph', { input })
     },
     air: {
-      prepare: (input: AirDossierInput) => call<AirPreparedDossier>('aether_air_prepare', { input }),
+      prepare: (input: AirDossierInput) =>
+        call<AirPreparedDossier>('aether_air_prepare', { input }),
       render: (input: AirDossierInput) => call<AirRenderResult>('aether_air_render', { input }),
       listRecent: () => call<AirRecentFile[]>('aether_air_list_recent'),
       open: (path) => call<void>('aether_air_open', { path }),
@@ -114,7 +116,8 @@ if (isTauri) {
       status: () => call<SystemStatus>('aether_system_status'),
       settings: () => call<AppSettings>('aether_system_settings'),
       updateSettings: (input) => call<AppSettings>('aether_system_update_settings', { input }),
-      updateModels: (input) => call<SystemStatus>('aether_system_update_models', { input })
+      updateModels: (input) => call<SystemStatus>('aether_system_update_models', { input }),
+      downloadModels: (input) => call<SystemStatus>('aether_system_download_models', { input })
     },
     layout: {
       setIntelligencePanelCollapsed: (collapsed) =>
@@ -136,6 +139,15 @@ if (isTauri) {
       },
       onCaptureProgress: (listener: (progress: CaptureProgress) => void) => {
         const unlisten = listen<CaptureProgress>('aether:capture-progress', (event) =>
+          listener(event.payload)
+        )
+
+        return () => {
+          void unlisten.then((dispose) => dispose())
+        }
+      },
+      onModelDownloadProgress: (listener: (progress: ModelDownloadProgress) => void) => {
+        const unlisten = listen<ModelDownloadProgress>('aether:model-download-progress', (event) =>
           listener(event.payload)
         )
 
