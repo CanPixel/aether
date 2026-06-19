@@ -201,7 +201,7 @@ export function ModelSetupModal({
                   ? 'Already contained locally'
                   : 'The misty semantic search core · 639 MB'}
               </small>
-              <code>Qwen3 Embedding 0.6B Q8_0</code>
+              {!coreInstalled ? (<code>Qwen3 Embedding 0.6B Q8_0</code>) : <></>}
             </div>
 
             <div className="model-access-card">
