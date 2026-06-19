@@ -766,6 +766,21 @@ function buildAnswerClipboardText(result: ChatResult): string {
   return `${body}\n\nSources:\n${sources}`
 }
 
+function formatAnswerMetrics(result: ChatResult): string {
+  const tokensPerSecond = Number.isFinite(result.metrics.tokensPerSecond)
+    ? result.metrics.tokensPerSecond
+    : 0
+  const elapsedSeconds = Number.isFinite(result.metrics.elapsedSeconds)
+    ? result.metrics.elapsedSeconds
+    : 0
+  const tokenRate =
+    tokensPerSecond >= 10 ? tokensPerSecond.toFixed(0) : tokensPerSecond.toFixed(1)
+  const elapsed = elapsedSeconds >= 10 ? elapsedSeconds.toFixed(0) : elapsedSeconds.toFixed(1)
+  const chunksLabel = result.metrics.chunks === 1 ? 'chunk' : 'chunks'
+
+  return `${tokenRate} tok/s · ${result.metrics.chunks} ${chunksLabel} · ${elapsed}s`
+}
+
 function AnswerCard({
   result,
   onOpenCitation
@@ -786,6 +801,7 @@ function AnswerCard({
       <div className="answer-markdown">
         {renderAnswerMarkdown(result.answer, result.citations, onOpenCitation)}
       </div>
+      <p className="answer-metrics-subtitle">{formatAnswerMetrics(result)}</p>
       <div className="citation-list">
         {result.citations.map((citation, index) => (
           <button key={citation.id} onClick={() => onOpenCitation(citation)} type="button">

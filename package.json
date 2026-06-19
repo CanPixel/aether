@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "framer-motion": "^12.40.0",
+    "ldrs": "^1.1.9",
     "lucide-react": "^1.17.0"
   },
   "devDependencies": {

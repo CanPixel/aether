@@ -100,6 +100,8 @@ const DEFAULT_GENERATION_TOKENS: usize = 900;
 const DEFAULT_ICEBERG_GENERATION_TOKENS: usize = 4200;
 const DEFAULT_TOP_K: i32 = 64;
 const DEFAULT_TOP_P: f32 = 0.95;
+const QWEN3_EMBEDDING_RETRIEVAL_INSTRUCTION: &str =
+    "Given a web search query, retrieve relevant passages that answer the query";
 const PREFERRED_CHAT_MODEL_HINTS: [&str; 8] = [
     "gemma4", "gemma-4", "gemma3", "gemma-3", "gemma-2b", "2b", "gemma", "qwen",
 ];
@@ -582,6 +584,21 @@ struct ChatResult {
     answer: String,
     model: String,
     citations: Vec<SearchResult>,
+    metrics: ChatMetrics,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatMetrics {
+    generated_tokens: usize,
+    tokens_per_second: f64,
+    elapsed_seconds: f64,
+    chunks: usize,
+}
+
+struct ChatCompletion {
+    text: String,
+    generated_tokens: usize,
 }
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
@@ -933,6 +950,8 @@ struct UpdateModelsInput {
 #[serde(rename_all = "camelCase")]
 struct DownloadModelsInput {
     chat_models: Vec<String>,
+    #[serde(default)]
+    hf_token: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -3400,11 +3419,7 @@ async fn search_collection(
     }
     get_collection(&state.paths.library_path, &input.collection_id).await?;
     let settings = load_settings(&state.paths.settings_path).await?;
-    let query_vector = local_embed(state, &settings, vec![query])
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| "Local embedding model returned no embedding.".to_string())?;
+    let query_vector = local_embed_query(state, &settings, query).await?;
     with_vectors_read(state, |vectors| {
         let mut scored = vectors
             .chunks
@@ -3518,11 +3533,7 @@ async fn semantic_trail_generate(
     }
 
     let settings = load_settings(&state.paths.settings_path).await?;
-    let query_vector = local_embed(state, &settings, vec![embedding_query])
-        .await?
-        .into_iter()
-        .next()
-        .ok_or_else(|| "Local embedding model returned no embedding.".to_string())?;
+    let query_vector = local_embed_query(state, &settings, embedding_query).await?;
 
     let mut candidates = chunks
         .into_iter()
@@ -3610,11 +3621,8 @@ async fn suggest_capture_hub(
 
     let settings = load_settings(&state.paths.settings_path).await?;
     let embedding_query = semantic_trail_default_query(&captured);
-    let query_vector = match local_embed(state, &settings, vec![embedding_query]).await {
-        Ok(vectors) => match vectors.into_iter().next() {
-            Some(vector) => vector,
-            None => return Ok(None),
-        },
+    let query_vector = match local_embed_query(state, &settings, embedding_query).await {
+        Ok(vector) => vector,
         Err(_) => return Ok(None),
     };
 
@@ -3725,11 +3733,7 @@ async fn flow_graph_generate(
         HashMap::new()
     } else {
         let settings = load_settings(&state.paths.settings_path).await?;
-        let query_vector = local_embed(state, &settings, vec![query.clone()])
-            .await?
-            .into_iter()
-            .next()
-            .ok_or_else(|| "Local embedding model returned no embedding.".to_string())?;
+        let query_vector = local_embed_query(state, &settings, query.clone()).await?;
         sources
             .iter()
             .map(|source| {
@@ -4249,11 +4253,7 @@ async fn air_sources_for_topic(
             .collect::<Vec<_>>()
     } else {
         let settings = load_settings(&state.paths.settings_path).await?;
-        let query_vector = local_embed(state, &settings, vec![lens.to_string()])
-            .await?
-            .into_iter()
-            .next()
-            .ok_or_else(|| "Local embedding model returned no embedding.".to_string())?;
+        let query_vector = local_embed_query(state, &settings, lens.to_string()).await?;
         let mut scored = vectors
             .into_iter()
             .filter_map(|chunk| {
@@ -5025,7 +5025,7 @@ async fn semantic_rank_chunks(
     limit: usize,
 ) -> Option<Vec<(usize, f64)>> {
     let mut inputs = Vec::with_capacity(chunks.len() + 1);
-    inputs.push(prompt.to_string());
+    inputs.push(embedding_query_input(&state.paths, settings, prompt));
     inputs.extend(chunks.iter().cloned());
 
     let embeddings = local_embed(state, settings, inputs).await.ok()?;
@@ -5232,6 +5232,36 @@ async fn local_embed(
     local_embed_with_progress(state, settings, inputs, None).await
 }
 
+async fn local_embed_query(
+    state: &State<'_, Backend>,
+    settings: &UserSettings,
+    query: String,
+) -> Cmd<Vec<f32>> {
+    local_embed(
+        state,
+        settings,
+        vec![embedding_query_input(&state.paths, settings, &query)],
+    )
+    .await?
+    .into_iter()
+    .next()
+    .ok_or_else(|| "Local embedding model returned no embedding.".to_string())
+}
+
+fn embedding_query_input(paths: &DataPaths, settings: &UserSettings, query: &str) -> String {
+    let catalog = model_catalog(paths, &settings.local_model);
+    let Some(model_path) = catalog.embedding_model.as_deref() else {
+        return query.to_string();
+    };
+    let label = model_label(model_path).to_lowercase();
+
+    if label.contains("qwen3-embedding") {
+        return format!("Instruct: {QWEN3_EMBEDDING_RETRIEVAL_INSTRUCTION}\nQuery: {query}");
+    }
+
+    query.to_string()
+}
+
 async fn local_embed_with_progress(
     state: &State<'_, Backend>,
     settings: &UserSettings,
@@ -5241,7 +5271,7 @@ async fn local_embed_with_progress(
     let catalog = model_catalog(&state.paths, &settings.local_model);
     let model_path = catalog.embedding_model.ok_or_else(|| {
         format!(
-            "No local embedding model found. Add an embedding GGUF or official EmbeddingGemma safetensors folder to {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
+            "No local embedding model found. Add an embedding GGUF such as Qwen3 Embedding or Nomic Embed Text to {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
             state.paths.models_path.display()
         )
     })?;
@@ -5266,6 +5296,7 @@ async fn local_chat(
     citations: Vec<SearchResult>,
     stream: Option<ChatStreamEmitter>,
 ) -> Cmd<ChatResult> {
+    let started_at = Instant::now();
     let catalog = model_catalog(&state.paths, &settings.local_model);
     let model_path = catalog.chat_model.ok_or_else(|| {
         format!(
@@ -5280,7 +5311,7 @@ async fn local_chat(
     let runtime = Arc::clone(&state.native_runtime);
     let cancel = Arc::clone(&state.generation_cancelled);
     let model_label = model_label(&model_path);
-    let answer = task::spawn_blocking(move || {
+    let completion = task::spawn_blocking(move || {
         let mut runtime = runtime
             .lock()
             .map_err(|_| "Local model runtime is unavailable.".to_string())?;
@@ -5297,11 +5328,24 @@ async fn local_chat(
     })
     .await
     .map_err(|error| error.to_string())??;
-    let answer = normalize_answer_citations(&clean_model_output(&answer), citations.len());
+    let elapsed_seconds = started_at.elapsed().as_secs_f64();
+    let answer = normalize_answer_citations(&clean_model_output(&completion.text), citations.len());
+    let tokens_per_second = if completion.generated_tokens > 0 && elapsed_seconds > 0.0 {
+        completion.generated_tokens as f64 / elapsed_seconds
+    } else {
+        0.0
+    };
+    let chunks = citations.len();
     Ok(ChatResult {
         answer,
         model: model_label,
         citations,
+        metrics: ChatMetrics {
+            generated_tokens: completion.generated_tokens,
+            tokens_per_second,
+            elapsed_seconds,
+            chunks,
+        },
     })
 }
 
@@ -5324,7 +5368,7 @@ async fn local_generate_iceberg(
     let runtime = Arc::clone(&state.native_runtime);
     let cancel = Arc::clone(&state.generation_cancelled);
     let model_label = model_label(&model_path);
-    let generated = task::spawn_blocking(move || {
+    let completion = task::spawn_blocking(move || {
         let mut runtime = runtime
             .lock()
             .map_err(|_| "Local model runtime is unavailable.".to_string())?;
@@ -5339,6 +5383,7 @@ async fn local_generate_iceberg(
     })
     .await
     .map_err(|error| error.to_string())??;
+    let generated = completion.text;
     if state.generation_cancelled.load(AtomicOrdering::Relaxed) {
         return Err("Crystallization stopped.".to_string());
     }
@@ -5620,7 +5665,7 @@ impl NativeModelRuntime {
         temperature: f32,
         cancel: &AtomicBool,
         on_token: Option<Box<dyn FnMut(&str) + Send>>,
-    ) -> Cmd<String> {
+    ) -> Cmd<ChatCompletion> {
         self.ensure_model(NativeModelKind::Chat, model_path)?;
         let rendered = {
             let model = &self
@@ -5648,7 +5693,7 @@ impl NativeModelRuntime {
         add_bos: AddBos,
         cancel: &AtomicBool,
         mut on_token: Option<Box<dyn FnMut(&str) + Send>>,
-    ) -> Cmd<String> {
+    ) -> Cmd<ChatCompletion> {
         let backend = self
             .backend
             .as_ref()
@@ -5719,6 +5764,7 @@ impl NativeModelRuntime {
         ]);
         let mut decoder = UTF_8.new_decoder();
         let mut output = String::new();
+        let mut generated_tokens = 0usize;
         let mut streamed_len = 0usize;
         let mut batch = LlamaBatch::new(1, 1);
         let mut position = tokens.len() as i32;
@@ -5731,6 +5777,7 @@ impl NativeModelRuntime {
             if model.is_eog_token(token) {
                 break;
             }
+            generated_tokens = generated_tokens.saturating_add(1);
             let piece = model
                 .token_to_piece(token, &mut decoder, true, None)
                 .map_err(|error| error.to_string())?;
@@ -5759,7 +5806,10 @@ impl NativeModelRuntime {
             return Err("Generation stopped.".to_string());
         }
 
-        Ok(output)
+        Ok(ChatCompletion {
+            text: output,
+            generated_tokens,
+        })
     }
 }
 
@@ -5789,6 +5839,13 @@ async fn download_managed_models(
     input: DownloadModelsInput,
 ) -> Cmd<()> {
     let specs = selected_model_downloads(&state.paths, &input)?;
+    let hf_token = input
+        .hf_token
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(huggingface_token);
     let overall_total = specs
         .iter()
         .map(|spec| spec.expected_bytes)
@@ -5824,7 +5881,15 @@ async fn download_managed_models(
             Some("Preparing download".to_string()),
         );
 
-        match download_model_file(app, &state.client, spec, overall_downloaded, overall_total).await
+        match download_model_file(
+            app,
+            &state.client,
+            spec,
+            overall_downloaded,
+            overall_total,
+            hf_token.as_deref(),
+        )
+        .await
         {
             Ok(downloaded_bytes) => {
                 overall_downloaded = overall_downloaded.saturating_add(downloaded_bytes);
@@ -5876,10 +5941,6 @@ fn selected_model_downloads(
         specs.push(managed_model_spec(paths, &normalized)?);
     }
 
-    if specs.iter().all(|spec| spec.id == "mist") {
-        return Err("Choose AiON LiTE, AiON WiSE, or both before installing.".to_string());
-    }
-
     Ok(specs)
 }
 
@@ -5888,15 +5949,15 @@ fn managed_model_spec(paths: &DataPaths, id: &str) -> Cmd<ModelDownloadSpec> {
         "mist" => Ok(ModelDownloadSpec {
             id: "mist",
             label: "AiON MiST",
-            repository: "google/embeddinggemma-300m-gguf",
-            revision: "main",
-            filename: "embeddinggemma-300M-Q8_0.gguf",
+            repository: "Qwen/Qwen3-Embedding-0.6B-GGUF",
+            revision: "370f27d7550e0def9b39c1f16d3fbaa13aa67728",
+            filename: "Qwen3-Embedding-0.6B-Q8_0.gguf",
             destination: paths
                 .models_path
                 .join("embeddings")
-                .join("embeddinggemma-300m-gguf")
-                .join("embeddinggemma-300M-Q8_0.gguf"),
-            expected_bytes: 333_590_944,
+                .join("Qwen3-Embedding-0.6B-GGUF")
+                .join("Qwen3-Embedding-0.6B-Q8_0.gguf"),
+            expected_bytes: 639_150_592,
         }),
         "lite" => Ok(ModelDownloadSpec {
             id: "lite",
@@ -5944,6 +6005,7 @@ async fn download_model_file(
     spec: &ModelDownloadSpec,
     overall_base_bytes: u64,
     overall_total_bytes: Option<u64>,
+    hf_token: Option<&str>,
 ) -> Cmd<u64> {
     let parent = spec
         .destination
@@ -5962,7 +6024,7 @@ async fn download_model_file(
     let _ = tokio::fs::remove_file(&temp_path).await;
 
     let mut request = client.get(spec.source_url());
-    if let Some(token) = huggingface_token() {
+    if let Some(token) = hf_token {
         request = request.bearer_auth(token);
     }
 
@@ -6083,7 +6145,7 @@ fn huggingface_token() -> Option<String> {
 fn huggingface_download_error(spec: &ModelDownloadSpec, status: u16) -> String {
     let auth_hint = if status == 401 || status == 403 {
         format!(
-            " Accept the model terms on Hugging Face and launch ÆTHER with {HF_TOKEN_ENV} or {HUGGINGFACE_HUB_TOKEN_ENV} set if this file is gated."
+            " Accept the model terms on Hugging Face, then paste a Hugging Face read token in setup. Advanced users can also launch ÆTHER with {HF_TOKEN_ENV} or {HUGGINGFACE_HUB_TOKEN_ENV} set."
         )
     } else {
         String::new()
@@ -6157,13 +6219,13 @@ fn model_catalog(paths: &DataPaths, settings: &LocalModelSettings) -> ModelCatal
     let chat_model = pick_chat_model(&models, settings);
     if models.is_empty() {
         errors.push(format!(
-            "No local models found. Add GGUF models or official EmbeddingGemma safetensors to {} or set {AETHER_MODEL_DIR_ENV}.",
+            "No local models found. Add GGUF models such as Qwen3 Embedding, Nomic Embed Text, or Gemma 4 to {} or set {AETHER_MODEL_DIR_ENV}.",
             paths.models_path.display()
         ));
     } else {
         if embedding_model.is_none() {
             errors.push(format!(
-                "No embedding model selected. Put official EmbeddingGemma safetensors, embeddinggemma GGUF, or nomic-embed-text GGUF in {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
+                "No embedding model selected. Put Qwen3 Embedding, Nomic Embed Text, another embedding GGUF, or official EmbeddingGemma files in {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
                 paths.models_path.join("embeddings").display()
             ));
         }
@@ -6355,6 +6417,9 @@ fn embedding_model_score(path: &Path) -> i32 {
     let mut score = 0;
     if is_gguf_model(path) {
         score += 1_000;
+    }
+    if label.contains("qwen3-embedding") {
+        score += 650;
     }
     if label.contains("embeddinggemma") || label.contains("embedding-gemma") {
         score += 500;

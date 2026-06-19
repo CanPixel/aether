@@ -4542,6 +4542,14 @@ button {
   font-style: italic;
 }
 
+.answer-metrics-subtitle {
+  margin: -2px 0 10px;
+  color: rgba(78, 95, 120, 0.66);
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1.3;
+}
+
 .answer-divider {
   height: 0;
   margin: 14px 0;
@@ -7941,9 +7949,18 @@ button {
   text-transform: uppercase;
 }
 
-.model-setup-kicker svg {
+.model-setup-kicker svg,
+.model-setup-spark {
   width: 14px;
   height: 14px;
+}
+
+.model-setup-spark {
+  border-radius: 999px;
+  background: radial-gradient(circle, #62d8c6 0 28%, rgba(98, 216, 198, 0.18) 34% 100%);
+  box-shadow:
+    0 0 0 4px rgba(98, 216, 198, 0.12),
+    0 0 18px rgba(80, 181, 216, 0.28);
 }
 
 .model-setup-copy h1 {
@@ -8037,6 +8054,18 @@ button {
   transform: translateY(-1px);
 }
 
+.model-choice.installed {
+  border-color: rgba(72, 153, 119, 0.24);
+  background:
+    linear-gradient(130deg, rgba(250, 255, 252, 0.86), rgba(232, 249, 244, 0.58)),
+    rgba(255, 255, 255, 0.68);
+  cursor: default;
+}
+
+.model-choice.installed:hover {
+  transform: none;
+}
+
 .model-choice.selected {
   border-color: rgba(53, 154, 185, 0.46);
   background:
@@ -8078,6 +8107,12 @@ button {
   border-color: rgba(43, 146, 112, 0.3);
   background: linear-gradient(145deg, rgba(223, 255, 247, 0.96), rgba(84, 190, 157, 0.82));
   color: #ffffff;
+}
+
+.model-choice.installed .model-choice-check {
+  border-color: rgba(43, 146, 112, 0.26);
+  background: rgba(225, 255, 244, 0.76);
+  color: #2b926f;
 }
 
 .model-choice-check svg {
@@ -8131,6 +8166,7 @@ button {
 
 .model-choice-copy code,
 .model-core-card code,
+.model-access-card code,
 .model-dir-card code {
   overflow-wrap: anywhere;
   color: #31587b;
@@ -8151,6 +8187,12 @@ button {
   white-space: nowrap;
 }
 
+.model-choice.installed .model-choice-size {
+  border-color: rgba(43, 146, 112, 0.2);
+  background: rgba(232, 255, 247, 0.72);
+  color: #2b7d64;
+}
+
 .model-setup-side {
   display: grid;
   gap: 12px;
@@ -8158,6 +8200,7 @@ button {
 }
 
 .model-core-card,
+.model-access-card,
 .model-dir-card {
   display: grid;
   align-content: start;
@@ -8172,6 +8215,7 @@ button {
 }
 
 .model-core-card span,
+.model-access-card > span,
 .model-dir-card span {
   display: flex;
   align-items: center;
@@ -8198,6 +8242,63 @@ button {
   color: #637895;
   font-size: 12px;
   font-weight: 680;
+}
+
+.model-core-card.installed {
+  border-color: rgba(43, 146, 112, 0.2);
+  background:
+    linear-gradient(145deg, rgba(250, 255, 252, 0.86), rgba(233, 250, 245, 0.6)),
+    rgba(255, 255, 255, 0.62);
+}
+
+.model-core-card.installed small,
+.model-choice.installed .model-choice-copy code {
+  color: #2b7d64;
+}
+
+.model-access-card {
+  gap: 10px;
+}
+
+.model-access-card p {
+  margin: 0;
+  color: #566f8c;
+  font-size: 12px;
+  font-weight: 640;
+  line-height: 1.45;
+}
+
+.model-access-links {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.model-access-links a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(88, 150, 194, 0.2);
+  border-radius: 12px;
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #276f9b;
+  font-size: 11px;
+  font-weight: 860;
+  text-decoration: none;
+}
+
+.model-access-links a:hover {
+  border-color: rgba(58, 143, 183, 0.32);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.model-access-links svg {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
 }
 
 .model-setup-progress {
@@ -8588,6 +8689,44 @@ button {
 
 .settings-field.developer-mode-field {
   margin-top: 14px;
+}
+
+.settings-model-setup-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.settings-model-setup-copy {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-model-setup-copy svg {
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+}
+
+.settings-model-setup-copy span {
+  display: grid;
+  gap: 3px;
+}
+
+.settings-model-setup-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.settings-model-setup-copy small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 .settings-field label {

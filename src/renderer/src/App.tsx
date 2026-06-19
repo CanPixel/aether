@@ -40,25 +40,24 @@ import { Crystallizer } from './components/Crystallizer'
 import { Dashboard } from './components/Dashboard'
 import { FlowView } from './components/FlowView'
 import { AirView } from './components/AirView'
-import { GlobeIcon, CloudIcon, GearIcon } from './components/icons'
+import { GlobeIcon, CloudIcon, GearIcon, AetherSigilIcon } from './components/icons'
 import { IntelligencePanel } from './components/IntelligencePanel'
+import { ModelSetupModal } from './components/ModelSetupModal'
 import { QuickAction } from './types/ui'
 import { formatVisibleModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
 import {
-  Check,
   ChevronDown,
   ChevronUp,
-  CircleCheck,
-  CloudDownload,
-  Cpu,
-  LoaderCircle,
   SearchIcon,
-  ShieldCheck,
   Snowflake,
-  Sparkles,
   Waves,
   Wind,
-  Zap
+
+/*   ZodiacAquarius,
+  SunSnow,
+  ThermometerSnowflake,
+  Bubbles,
+  DiamondPlus */
 } from 'lucide-react'
 
 // Sentinel URL for a blank tab that shows the ÆTHER start page instead of loading a
@@ -342,50 +341,6 @@ function getErrorMessage(error: unknown): string {
     .replace(/^Error:\s*/i, '')
 }
 
-const MODEL_SETUP_OPTIONS: Array<{
-  id: ModelDownloadChoice
-  name: string
-  title: string
-  description: string
-  size: string
-  source: string
-}> = [
-  {
-    id: 'lite',
-    name: 'AiON LiTE',
-    title: 'Fast local reasoning',
-    description: 'Compact Gemma 4 E2B QAT for everyday capture, search, and grounded answers.',
-    size: '3.35 GB',
-    source: 'google/gemma-4-E2B-it-qat-q4_0-gguf'
-  },
-  {
-    id: 'wise',
-    name: 'AiON WiSE',
-    title: 'Deeper local synthesis',
-    description: 'Larger Gemma 4 E4B QAT for richer iCE maps and longer-form synthesis.',
-    size: '5.15 GB',
-    source: 'google/gemma-4-E4B-it-qat-q4_0-gguf'
-  }
-]
-
-function formatBytes(bytes?: number): string {
-  if (!bytes || bytes <= 0) return '0 MB'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let value = bytes
-  let unitIndex = 0
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024
-    unitIndex += 1
-  }
-  const fractionDigits = value >= 10 || unitIndex < 2 ? 0 : 1
-  return `${value.toFixed(fractionDigits)} ${units[unitIndex]}`
-}
-
-function progressPercent(current?: number, total?: number): number {
-  if (!current || !total || total <= 0) return 0
-  return Math.max(0, Math.min(100, (current / total) * 100))
-}
-
 function upsertModelProgress(
   current: ModelDownloadProgress[],
   progress: ModelDownloadProgress
@@ -395,6 +350,22 @@ function upsertModelProgress(
   const next = [...current]
   next[index] = { ...next[index], ...progress }
   return next
+}
+
+function installedSetupModelsFromStatus(status: SystemStatus | null): ModelDownloadChoice[] {
+  if (!status) return []
+  const installed = new Set<ModelDownloadChoice>()
+  for (const model of status.chatModels) {
+    const normalized = model.toLowerCase()
+    if (normalized.includes('gemma-4-e2b')) installed.add('lite')
+    if (normalized.includes('gemma-4-e4b')) installed.add('wise')
+  }
+  return [...installed]
+}
+
+function setupCoreInstalled(status: SystemStatus | null): boolean {
+  if (!status) return false
+  return status.embeddingModels.some((model) => model.toLowerCase().includes('qwen3-embedding'))
 }
 
 function App(): React.JSX.Element {
@@ -469,6 +440,7 @@ function App(): React.JSX.Element {
   const [collectionDialog, setCollectionDialog] = useState<CollectionDialogState>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [modelSetupDismissed, setModelSetupDismissed] = useState(false)
+  const [modelSetupRequested, setModelSetupRequested] = useState(false)
   const [selectedSetupModels, setSelectedSetupModels] = useState<ModelDownloadChoice[]>(['lite'])
   const [modelDownloadProgress, setModelDownloadProgress] = useState<ModelDownloadProgress[]>([])
   const [modelSetupError, setModelSetupError] = useState<string | null>(null)
@@ -517,6 +489,8 @@ function App(): React.JSX.Element {
   const isStartPage = activeTab?.url === START_PAGE_URL
   const canUseCurrentPage = Boolean(activeTab?.url) && !isStartPage
   const chatBlocked = status ? !status.runtimeReady || !status.chatModel : false
+  const installedSetupModels = useMemo(() => installedSetupModelsFromStatus(status), [status])
+  const modelSetupCoreInstalled = setupCoreInstalled(status)
   const modelSetupNeeded = Boolean(status && (!status.chatModel || !status.embeddingModel))
   const modelSetupBusy = Boolean(
     busy === 'Installing local models' ||
@@ -524,7 +498,7 @@ function App(): React.JSX.Element {
         (progress) => progress.status === 'queued' || progress.status === 'downloading'
       )
   )
-  const modelSetupVisible = modelSetupNeeded && !modelSetupDismissed
+  const modelSetupVisible = modelSetupRequested || (modelSetupNeeded && !modelSetupDismissed)
   const quickActions = useMemo<QuickAction[]>(() => getQuickActions(activeTab), [activeTab])
   const activeTabUrl = activeTab?.url ?? ''
   useEffect(() => {
@@ -904,7 +878,7 @@ function App(): React.JSX.Element {
   }, [modelSetupVisible])
 
   function toggleSetupModel(model: ModelDownloadChoice): void {
-    if (modelSetupBusy) return
+    if (modelSetupBusy || installedSetupModels.includes(model)) return
     setSelectedSetupModels((current) =>
       current.includes(model)
         ? current.filter((item) => item !== model)
@@ -917,12 +891,26 @@ function App(): React.JSX.Element {
   async function closeModelSetup(): Promise<void> {
     if (modelSetupBusy) return
     setModelSetupDismissed(true)
+    setModelSetupRequested(false)
     await window.aether.layout.setModalOverlayOpen(Boolean(settingsOpen || collectionDialog))
   }
 
+  async function openModelSetupFromSettings(): Promise<void> {
+    setSettingsOpen(false)
+    setModelSetupDismissed(false)
+    setModelSetupRequested(true)
+    setModelSetupError(null)
+    setModelSetupComplete(false)
+    setModelDownloadProgress([])
+    await window.aether.layout.setModalOverlayOpen(true)
+  }
+
   async function startModelSetup(): Promise<void> {
-    if (selectedSetupModels.length === 0) {
-      setModelSetupError('Choose AiON LiTE, AiON WiSE, or both.')
+    const modelsToInstall = selectedSetupModels.filter(
+      (model) => !installedSetupModels.includes(model)
+    )
+    if (modelsToInstall.length === 0 && modelSetupCoreInstalled) {
+      setModelSetupError('All selected AiON models are already installed.')
       return
     }
 
@@ -935,7 +923,7 @@ function App(): React.JSX.Element {
 
     try {
       const nextStatus = await window.aether.system.downloadModels({
-        chatModels: selectedSetupModels
+        chatModels: modelsToInstall
       })
       setStatus(nextStatus)
       setModelSetupComplete(true)
@@ -1824,7 +1812,7 @@ function App(): React.JSX.Element {
           </button>
 
           {(settings.developerMode ? (
-          <div>
+          <>
             <button
               className={`app-button flow-button tooltip-host ${flowOpen ? 'active' : ''}`}
               data-tooltip="Flow"
@@ -1847,7 +1835,7 @@ function App(): React.JSX.Element {
               <Wind />
               <span className="app-dot" aria-hidden="true" />
             </button>
-          </div>
+          </>
         ) : <></>)}
         </nav>
         <button
@@ -2064,7 +2052,9 @@ function App(): React.JSX.Element {
         <ModelSetupModal
           busy={modelSetupBusy}
           complete={modelSetupComplete}
+          coreInstalled={modelSetupCoreInstalled}
           error={modelSetupError}
+          installedModels={installedSetupModels}
           modelDir={status?.modelDir ?? ''}
           progress={modelDownloadProgress}
           selectedModels={selectedSetupModels}
@@ -2085,6 +2075,7 @@ function App(): React.JSX.Element {
           onClose={closeSettings}
           onDefaultSearchEngineChange={updateDefaultSearchEngine}
           onDeveloperModeChange={updateDeveloperMode}
+          onOpenModelSetup={openModelSetupFromSettings}
         />
       )}
     </main>
@@ -2201,199 +2192,20 @@ function FindBar({
   )
 }
 
-function ModelSetupModal({
-  busy,
-  complete,
-  error,
-  modelDir,
-  progress,
-  selectedModels,
-  onClose,
-  onStart,
-  onToggleModel
-}: {
-  busy: boolean
-  complete: boolean
-  error: string | null
-  modelDir: string
-  progress: ModelDownloadProgress[]
-  selectedModels: ModelDownloadChoice[]
-  onClose: () => void
-  onStart: () => void
-  onToggleModel: (model: ModelDownloadChoice) => void
-}): React.JSX.Element {
-  const progressTotal = [...progress]
-    .reverse()
-    .find((item) => item.overallTotalBytes)?.overallTotalBytes
-  const progressDownloaded = progress.reduce(
-    (max, item) => Math.max(max, item.overallDownloadedBytes),
-    0
-  )
-  const overallPercent = complete ? 100 : progressPercent(progressDownloaded, progressTotal)
-  const canStart = selectedModels.length > 0 && !busy && !complete
-
-  return (
-    <div className="model-setup-overlay" role="presentation">
-      <section
-        className="model-setup-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="model-setup-title"
-      >
-        <div className="model-setup-glass" aria-hidden="true" />
-        <div className="model-setup-hero">
-          <div className="model-setup-copy">
-            <span className="model-setup-kicker">
-              <Sparkles aria-hidden="true" />
-              Local intelligence
-            </span>
-            <h1 id="model-setup-title">AiON Assembly</h1>
-            <p>
-              Choose the local model pack for this device. AiON MiST installs with every selection
-              for private semantic search.
-            </p>
-          </div>
-          <div className="model-setup-crystal" aria-hidden="true">
-            <img alt="" src="/aether-plusless-crystal.png" />
-          </div>
-        </div>
-
-        <div className="model-setup-grid">
-          <div className="model-setup-options" aria-label="AiON model choices">
-            {MODEL_SETUP_OPTIONS.map((option) => {
-              const selected = selectedModels.includes(option.id)
-              return (
-                <label className={`model-choice ${selected ? 'selected' : ''}`} key={option.id}>
-                  <input
-                    checked={selected}
-                    disabled={busy}
-                    onChange={() => onToggleModel(option.id)}
-                    type="checkbox"
-                  />
-                  <span className="model-choice-check" aria-hidden="true">
-                    <Check />
-                  </span>
-                  <span className="model-choice-icon" aria-hidden="true">
-                    {option.id === 'lite' ? <Zap /> : <Cpu />}
-                  </span>
-                  <span className="model-choice-copy">
-                    <strong>{option.name}</strong>
-                    <em>{option.title}</em>
-                    <small>{option.description}</small>
-                    <code>{option.source}</code>
-                  </span>
-                  <span className="model-choice-size">{option.size}</span>
-                </label>
-              )
-            })}
-          </div>
-
-          <aside className="model-setup-side">
-            <div className="model-core-card">
-              <span>
-                <ShieldCheck aria-hidden="true" />
-                Required core
-              </span>
-              <strong>AiON MiST</strong>
-              <small>EmbeddingGemma 300M Q8 · 318 MB</small>
-              <code>google/embeddinggemma-300m-gguf</code>
-            </div>
-
-            <div className="model-dir-card">
-              <span>Install location</span>
-              <code>{modelDir || 'App data model directory'}</code>
-            </div>
-          </aside>
-        </div>
-
-        <div className={`model-setup-progress ${progress.length ? 'active' : ''}`}>
-          <div className="model-progress-heading">
-            <span>
-              {complete ? 'Ready' : busy ? 'Installing' : progress.length ? 'Prepared' : 'Waiting'}
-            </span>
-            <strong>
-              {progressTotal
-                ? `${formatBytes(progressDownloaded)} / ${formatBytes(progressTotal)}`
-                : complete
-                  ? 'Complete'
-                  : 'Select a pack'}
-            </strong>
-          </div>
-          <div
-            className="model-progress-meter"
-            aria-label="Overall model download progress"
-            aria-valuemax={100}
-            aria-valuemin={0}
-            aria-valuenow={Math.round(overallPercent)}
-            role="progressbar"
-          >
-            <span style={{ transform: `scaleX(${overallPercent / 100})` }} />
-          </div>
-
-          {progress.length > 0 ? (
-            <div className="model-progress-list">
-              {progress.map((item) => {
-                const itemPercent =
-                  item.status === 'complete' || item.status === 'skipped'
-                    ? 100
-                    : progressPercent(item.downloadedBytes, item.totalBytes)
-                return (
-                  <div className={`model-progress-row ${item.status}`} key={item.id}>
-                    <span className="model-progress-icon" aria-hidden="true">
-                      {item.status === 'complete' || item.status === 'skipped' ? (
-                        <CircleCheck />
-                      ) : item.status === 'downloading' ? (
-                        <LoaderCircle />
-                      ) : (
-                        <CloudDownload />
-                      )}
-                    </span>
-                    <span className="model-progress-copy">
-                      <strong>{item.label}</strong>
-                      <small>{item.message ?? item.filename}</small>
-                    </span>
-                    <span className="model-progress-size">
-                      {item.totalBytes
-                        ? `${formatBytes(item.downloadedBytes)} / ${formatBytes(item.totalBytes)}`
-                        : formatBytes(item.downloadedBytes)}
-                    </span>
-                    <span className="model-progress-line" aria-hidden="true">
-                      <i style={{ transform: `scaleX(${itemPercent / 100})` }} />
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          ) : null}
-        </div>
-
-        {error && <p className="model-setup-error">{error}</p>}
-
-        <footer className="model-setup-actions">
-          <button disabled={busy} onClick={onClose} type="button">
-            {complete ? 'Done' : 'Later'}
-          </button>
-          <button className="primary-button" disabled={!canStart} onClick={onStart} type="button">
-            {busy ? 'Installing' : complete ? 'Installed' : 'Begin Install'}
-          </button>
-        </footer>
-      </section>
-    </div>
-  )
-}
-
 function SettingsModal({
   busy,
   settings,
   onClose,
   onDefaultSearchEngineChange,
-  onDeveloperModeChange
+  onDeveloperModeChange,
+  onOpenModelSetup
 }: {
   busy: string | null
   settings: AppSettings
   onClose: () => Promise<void>
   onDefaultSearchEngineChange: (value: SearchEngineId) => Promise<void>
   onDeveloperModeChange: (value: boolean) => Promise<void>
+  onOpenModelSetup: () => Promise<void>
 }): React.JSX.Element {
   const searchEngines: Array<{ id: SearchEngineId; name: string; description: string }> = [
     { id: 'google', name: 'Google', description: 'Broad default web search.' },
@@ -2497,6 +2309,26 @@ function SettingsModal({
               <small>Show technical model names and implementation details in AiON.</small>
             </span>
           </label>
+        </div>
+
+        <div className="settings-field settings-model-setup-field">
+          <div className="settings-model-setup-copy">
+            <AetherSigilIcon size={28} />
+            <span>
+              <strong>Local AI models</strong>
+              <small>Install, repair, or inspect AiON model packs.</small>
+            </span>
+          </div>
+          <button
+            className="crystal-button"
+            disabled={Boolean(busy)}
+            onClick={() => {
+              void onOpenModelSetup()
+            }}
+            type="button"
+          >
+            Open Model Setup
+          </button>
         </div>
 
         <div className="settings-shortcuts" aria-label="Keyboard shortcuts">

@@ -176,9 +176,14 @@ export function AetherGlyphIcon(): React.JSX.Element {
   )
 }
 
-export function AetherSigilIcon(): React.JSX.Element {
+interface AetherSigilIconProps {
+  size?: number | string
+  className?: string
+}
+
+export function AetherSigilIcon({ size = 20, className }: AetherSigilIconProps): React.JSX.Element {
   return (
-    <svg aria-hidden="true" viewBox="2 2 20 20">
+    <svg style={{ width: size, height: size }} className={className} aria-hidden="true" viewBox="2 2 20 20">
       <path
         d="M12 3.5c3.2 2.3 5.5 5 7 8.5-1.5 3.5-3.8 6.2-7 8.5-3.2-2.3-5.5-5-7-8.5 1.5-3.5 3.8-6.2 7-8.5Z"
         fill="none"

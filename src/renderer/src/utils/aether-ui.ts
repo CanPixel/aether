@@ -86,6 +86,7 @@ function formatLocalModelName(model?: string | null): string | null {
   const fullModel = model.toLowerCase()
   const isCommunity = /q4_k_m|lmstudio|community/.test(fullModel)
 
+  if (normalized.includes('qwen3-embedding')) return 'Qwen3 Embedding 0.6B'
   if (normalized.includes('embeddinggemma')) return 'EmbeddingGemma 300M'
   if (normalized.includes('nomic-embed-text')) return 'Nomic Embed Text'
   if (normalized.includes('gemma-4-e4b')) return 'Gemma 4 Balanced'
@@ -114,6 +115,7 @@ function formatBrandedModelName(
 
   if (
     role === 'embedding' ||
+    normalized.includes('qwen3-embedding') ||
     normalized.includes('embeddinggemma') ||
     normalized.includes('nomic-embed-text')
   ) {

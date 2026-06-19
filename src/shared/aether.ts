@@ -201,6 +201,14 @@ export interface ChatResult {
   answer: string
   model: string
   citations: SearchResult[]
+  metrics: ChatMetrics
+}
+
+export interface ChatMetrics {
+  generatedTokens: number
+  tokensPerSecond: number
+  elapsedSeconds: number
+  chunks: number
 }
 
 export type AirLensKind = 'topic' | 'flow' | 'hub' | 'answer' | 'iceberg'
@@ -460,7 +468,10 @@ export interface AetherApi {
     settings(): Promise<AppSettings>
     updateSettings(input: Partial<AppSettings>): Promise<AppSettings>
     updateModels(input: { embeddingModel?: string; chatModel?: string }): Promise<SystemStatus>
-    downloadModels(input: { chatModels: ModelDownloadChoice[] }): Promise<SystemStatus>
+    downloadModels(input: {
+      chatModels: ModelDownloadChoice[]
+      hfToken?: string
+    }): Promise<SystemStatus>
   }
   layout: {
     setIntelligencePanelCollapsed(collapsed: boolean): Promise<void>
