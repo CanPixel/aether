@@ -67,8 +67,8 @@ type CrystallizerProps = {
 
 const CANVAS_WIDTH = 2200
 const CANVAS_HEIGHT = 1800
-const NODE_WIDTH = 352
-const NODE_HEIGHT = 136
+const NODE_WIDTH = 286
+const NODE_HEIGHT = 82
 const MIN_ZOOM = 0.74
 const MAX_ZOOM = 2.25
 const FITTED_ZOOM = 0.74
@@ -248,19 +248,6 @@ export function Crystallizer({
     selectedItem && visibleItems.some((item) => item.id === selectedItem.id)
       ? selectedItem
       : (visibleItems[0] ?? null)
-  const layeredVisiblePositionedItems = useMemo(() => {
-    const selectedId = activeSelectedItem?.id ?? null
-
-    return visiblePositionedItems
-      .map((positionedItem, index) => ({ index, positionedItem }))
-      .sort(
-        (first, second) =>
-          Number(first.positionedItem.item.id === selectedId) -
-            Number(second.positionedItem.item.id === selectedId) ||
-          first.index - second.index
-      )
-      .map(({ positionedItem }) => positionedItem)
-  }, [activeSelectedItem?.id, visiblePositionedItems])
   const hasResults = Boolean(result?.items.length)
   const hasUnsavedResult = Boolean(result && !savedId)
   const hasSavedAtlases = savedIcebergs.length > 0
@@ -739,7 +726,7 @@ export function Crystallizer({
                 </path>
               ))}
 
-              {layeredVisiblePositionedItems.map(({ item, displayX, displayY }, index) => {
+              {visiblePositionedItems.map(({ item, displayX, displayY }, index) => {
                 const layer = getLayer(item.level)
                 const selected = activeSelectedItem?.id === item.id
                 const hovered = hoveredItemId === item.id
@@ -776,7 +763,7 @@ export function Crystallizer({
                         x={-NODE_WIDTH / 2}
                         y={-NODE_HEIGHT / 2}
                       >
-                        <button className="ice-node" title={item.description} type="button">
+                        <button className="ice-node" type="button">
                           <span>{item.level}</span>
                           <strong>{item.name}</strong>
                           <small>{item.description}</small>
