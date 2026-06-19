@@ -7856,6 +7856,10 @@ button {
   animation: settings-overlay-in 260ms ease both;
 }
 
+#model-setup-title {
+  font-size: 58px;
+}
+
 .model-setup-overlay {
   position: fixed;
   inset: 0;

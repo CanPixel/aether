@@ -140,10 +140,14 @@ export function ModelSetupModal({
               <span className="model-setup-spark" aria-hidden="true" />
               Local intelligence
             </span>
-            <h1 id="model-setup-title">AiON Assembly</h1>
+            <h1 id="model-setup-title">AiON Launch</h1>
             <p>
-              Choose the local model pack for this device. AiON MiST installs with every selection
-              for private semantic search.
+              Choose the local model pack for ascending
+              <br></br>
+              <small style={{ fontWeight: '700' }}>
+                AiON MiST installs with every selection
+                for private semantic search
+              </small>
             </p>
           </div>
           <div className="model-setup-crystal" aria-hidden="true">
