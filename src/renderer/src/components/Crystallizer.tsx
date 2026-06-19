@@ -31,7 +31,8 @@ import {
 } from '../../../shared/aether'
 import { formatVisibleModelName, inferIcebergIcon } from '../utils/aether-ui'
 import { ChevronRightIcon } from './icons'
-import { Quantum } from "ldrs/react"
+import { TextShimmer } from './loading-ui/TextShimmer'
+import { Quantum } from 'ldrs/react'
 
 type LayerDefinition = {
   level: number
@@ -48,6 +49,11 @@ type PositionedTopic = {
   displayY: number
 }
 
+type DepthPath = {
+  from: PositionedTopic
+  to: PositionedTopic
+}
+
 type CrystallizerProps = {
   busy: string | null
   openedIceberg: SavedIceberg | null
@@ -61,8 +67,8 @@ type CrystallizerProps = {
 
 const CANVAS_WIDTH = 2200
 const CANVAS_HEIGHT = 1800
-const NODE_WIDTH = 286
-const NODE_HEIGHT = 82
+const NODE_WIDTH = 352
+const NODE_HEIGHT = 136
 const MIN_ZOOM = 0.74
 const MAX_ZOOM = 2.25
 const FITTED_ZOOM = 0.74
@@ -242,6 +248,19 @@ export function Crystallizer({
     selectedItem && visibleItems.some((item) => item.id === selectedItem.id)
       ? selectedItem
       : (visibleItems[0] ?? null)
+  const layeredVisiblePositionedItems = useMemo(() => {
+    const selectedId = activeSelectedItem?.id ?? null
+
+    return visiblePositionedItems
+      .map((positionedItem, index) => ({ index, positionedItem }))
+      .sort(
+        (first, second) =>
+          Number(first.positionedItem.item.id === selectedId) -
+            Number(second.positionedItem.item.id === selectedId) ||
+          first.index - second.index
+      )
+      .map(({ positionedItem }) => positionedItem)
+  }, [activeSelectedItem?.id, visiblePositionedItems])
   const hasResults = Boolean(result?.items.length)
   const hasUnsavedResult = Boolean(result && !savedId)
   const hasSavedAtlases = savedIcebergs.length > 0
@@ -255,7 +274,7 @@ export function Crystallizer({
     }
     return counts
   }, [result])
-  const semanticThreads = useMemo(() => {
+  const depthPaths = useMemo(() => {
     if (activeLayer !== 'all') return []
 
     return LAYERS.slice(0, -1)
@@ -280,7 +299,7 @@ export function Crystallizer({
           return target ? { from: topic, to: target } : null
         })
       })
-      .filter((thread): thread is { from: PositionedTopic; to: PositionedTopic } => Boolean(thread))
+      .filter((path): path is DepthPath => Boolean(path))
   }, [activeLayer, positionedItems])
 
   async function generate(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -698,9 +717,9 @@ export function Crystallizer({
                 </g>
               ))}
 
-              {semanticThreads.map((thread, index) => (
+              {depthPaths.map((thread, index) => (
                 <path
-                  className={`semantic-thread ${
+                  className={`depth-thread ${
                     focusedItemId &&
                     (thread.from.item.id === focusedItemId || thread.to.item.id === focusedItemId)
                       ? 'is-highlighted'
@@ -713,10 +732,14 @@ export function Crystallizer({
                   }`}
                   key={`${thread.from.item.id}-${thread.to.item.id}`}
                   style={{ '--reveal-index': index } as CSSProperties}
-                />
+                >
+                  <title>
+                    {`Nearest next-layer path: ${thread.from.item.name} to ${thread.to.item.name}`}
+                  </title>
+                </path>
               ))}
 
-              {visiblePositionedItems.map(({ item, displayX, displayY }, index) => {
+              {layeredVisiblePositionedItems.map(({ item, displayX, displayY }, index) => {
                 const layer = getLayer(item.level)
                 const selected = activeSelectedItem?.id === item.id
                 const hovered = hoveredItemId === item.id
@@ -753,7 +776,7 @@ export function Crystallizer({
                         x={-NODE_WIDTH / 2}
                         y={-NODE_HEIGHT / 2}
                       >
-                        <button className="ice-node" type="button">
+                        <button className="ice-node" title={item.description} type="button">
                           <span>{item.level}</span>
                           <strong>{item.name}</strong>
                           <small>{item.description}</small>
@@ -777,15 +800,23 @@ export function Crystallizer({
 
           {loading && (
             <div className="crystallizer-empty crystallizing">
-              <div className="crystallizer-state-card">
+              <div className="crystallizer-state-card crystallizing-card">
+                <div className="crystallizer-god-rays" aria-hidden="true" />
+                <div className="crystallizer-prismatic-aura" aria-hidden="true" />
                 <div className="answer-loading-haze" aria-hidden="true" />
                 <div className="answer-loading-ring" aria-hidden="true">
-                  {Array.from({ length: 14 }).map((_, index) => (
+                  {Array.from({ length: 12 }).map((_, index) => (
                     <span key={index} style={{ '--particle-index': index } as CSSProperties} />
                   ))}
                 </div>
-                <Quantum size={25} speed={1.35} color="currentColor" />
-                <h2>Crystallizing</h2>
+                <div className="crystallizer-quantum-core">
+                  <Quantum size={30} speed={1.35} color="currentColor" />
+                </div>
+                <h2 className="crystallizer-loading-title">
+                  <TextShimmer className="crystallizer-shimmer-text" duration={2.8} spread={58}>
+                    Crystallizing
+                  </TextShimmer>
+                </h2>
               </div>
             </div>
           )}
