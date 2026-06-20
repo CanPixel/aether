@@ -31,7 +31,7 @@ import {
 } from '../../../shared/aether'
 import { formatVisibleModelName, inferIcebergIcon } from '../utils/aether-ui'
 import { ChevronRightIcon } from './icons'
-import { TextShimmer } from './loading-ui/TextShimmer'
+import { CrystallizingOrb } from './CrystallizingOrb'
 import { Quantum } from 'ldrs/react'
 
 type LayerDefinition = {
@@ -788,22 +788,7 @@ export function Crystallizer({
           {loading && (
             <div className="crystallizer-empty crystallizing">
               <div className="crystallizer-state-card crystallizing-card">
-                <div className="crystallizer-god-rays" aria-hidden="true" />
-                <div className="crystallizer-prismatic-aura" aria-hidden="true" />
-                <div className="answer-loading-haze" aria-hidden="true" />
-                <div className="answer-loading-ring" aria-hidden="true">
-                  {Array.from({ length: 12 }).map((_, index) => (
-                    <span key={index} style={{ '--particle-index': index } as CSSProperties} />
-                  ))}
-                </div>
-                <div className="crystallizer-quantum-core">
-                  <Quantum size={30} speed={1.35} color="currentColor" />
-                </div>
-                <h2 className="crystallizer-loading-title">
-                  <TextShimmer className="crystallizer-shimmer-text" duration={2.8} spread={58}>
-                    Crystallizing
-                  </TextShimmer>
-                </h2>
+                <CrystallizingOrb title="Crystallizing" />
               </div>
             </div>
           )}
@@ -961,15 +946,13 @@ export function Crystallizer({
               </div>
             )}
           </div>
-
-          <span className="atlas-heading dock-footer">Semantic Cartography</span>
         </aside>
       </section>
 
       <div style={{ position: 'absolute', bottom: '10px', left: '12px' }}>
         <span className="atlas-heading">
           <Compass size={15} />
-          Complexity Atlas
+          Semantic Cartography
         </span>
       </div>
 

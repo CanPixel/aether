@@ -3819,6 +3819,18 @@ button {
   margin-bottom: 10px;
 }
 
+.semantic-trail-help {
+  margin-top: -2px;
+  color: #66809a;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+#semantic-trail-query {
+  font-size: 11px;
+}
+
 .semantic-trail-description {
   display: grid;
   gap: 3px;
@@ -4394,7 +4406,7 @@ button {
 .answer-loading {
   position: relative;
   display: grid;
-  min-height: 164px;
+  min-height: 204px;
   place-items: center;
   margin-top: 10px;
   overflow: hidden;
@@ -4406,6 +4418,23 @@ button {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.82),
     0 16px 42px rgba(84, 160, 199, 0.12);
+}
+
+.crystallizing-orb {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 100%;
+  min-height: 190px;
+  place-items: center;
+  overflow: hidden;
+  color: #10a9d2;
+  isolation: isolate;
+}
+
+.answer-crystallizing-orb {
+  min-height: 184px;
+  padding: 18px 16px 44px;
 }
 
 .answer-loading-haze,
@@ -4478,24 +4507,16 @@ button {
   animation-delay: calc(var(--particle-index) * -260ms);
 }
 
-.answer-loading-copy {
+.crystallizing-orb-subtitle {
   position: relative;
-  z-index: 1;
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  color: var(--ink);
-}
-
-.answer-loading-copy strong {
-  font-size: 13px;
-  font-weight: 840;
-}
-
-.answer-loading-copy span {
+  z-index: 3;
+  max-width: min(260px, 86%);
+  margin: 5px auto 0;
   color: var(--muted);
   font-size: 11px;
   font-weight: 720;
+  line-height: 1.35;
+  text-align: center;
 }
 
 .answer-card {
@@ -4738,26 +4759,33 @@ button {
 }
 
 .panel-footer {
-  display: flex;
+  display: grid;
   flex: 0 0 auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
   margin-top: 2px;
   border-top: 1px solid var(--line);
   padding-top: 10px;
   padding-bottom: 4px;
 }
 
-.panel-footer span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.panel-status-text {
+  grid-column: 1 / -1;
+  min-width: 0;
+  color: rgba(82, 97, 115, 0.9);
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .inline-model-selector {
   display: grid;
-  flex: 0 0 min(180px, 58%);
+  grid-column: 2;
+  justify-self: end;
+  width: min(180px, 100%);
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 6px;
@@ -4816,7 +4844,8 @@ button {
 
 .model-settings-button {
   display: inline-flex;
-  flex: 0 0 auto;
+  grid-column: 2;
+  justify-self: end;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -6964,15 +6993,15 @@ button {
   --text-shimmer-duration: 2.4s;
   --text-shimmer-spread: 48px;
   display: inline-block;
-  background: repeating-linear-gradient(
+  background: linear-gradient(
     100deg,
     var(--text-shimmer-base) 0%,
-    var(--text-shimmer-base) calc(42% - var(--text-shimmer-spread)),
+    var(--text-shimmer-base) calc(44% - var(--text-shimmer-spread)),
     var(--text-shimmer-highlight) 50%,
-    var(--text-shimmer-base) calc(58% + var(--text-shimmer-spread)),
+    var(--text-shimmer-base) calc(56% + var(--text-shimmer-spread)),
     var(--text-shimmer-base) 100%
   );
-  background-size: 180% 100%;
+  background-size: 300% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -7156,16 +7185,21 @@ button {
   animation: crystallizerAuraPulse 3.8s ease-in-out infinite;
 }
 
-.crystallizer-empty.crystallizing .answer-loading-haze,
-.crystallizer-empty.crystallizing .answer-loading-ring {
+.crystallizing-orb .answer-loading-haze,
+.crystallizing-orb .answer-loading-ring {
   border-radius: inherit;
 }
 
-.crystallizer-empty.crystallizing .answer-loading-ring {
+.crystallizing-orb .answer-loading-ring {
   inset: 24px;
   z-index: 2;
   opacity: 0.96;
   filter: drop-shadow(0 0 18px rgba(56, 189, 248, 0.3));
+}
+
+.answer-crystallizing-orb .answer-loading-ring {
+  inset: 22px;
+  margin-top: -58px;
 }
 
 .crystallizer-quantum-core {
@@ -7221,6 +7255,20 @@ button {
   margin-top: 12px;
   font-size: 27px;
   letter-spacing: 0;
+}
+
+.answer-crystallizing-orb .crystallizer-loading-title {
+  margin-top: 10px;
+}
+
+.answer-crystallizing-orb .crystallizer-loading-title .text-shimmer {
+  font-size: 18px;
+  font-weight: 760;
+}
+
+.answer-crystallizing-orb .crystallizer-quantum-core {
+  width: 68px;
+  height: 68px;
 }
 
 .crystallizer-shimmer-text {
@@ -8000,10 +8048,10 @@ button {
 
 @keyframes textShimmer {
   0% {
-    background-position: 180% 0;
+    background-position: 140% 0;
   }
   100% {
-    background-position: 0 0;
+    background-position: -140% 0;
   }
 }
 

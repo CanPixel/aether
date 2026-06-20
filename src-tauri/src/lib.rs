@@ -7228,6 +7228,7 @@ Return JSON only with this exact shape:
     {{
       "name": "Visible phrase",
       "description": "One short explanation.",
+      "depthScore": 12,
       "familiarity": 85,
       "specificity": 20,
       "jargonDensity": 15,
@@ -7241,11 +7242,14 @@ Return JSON only with this exact shape:
 
 Rules:
 - Choose recommendedItemCount based on topic scope: 12-18 for narrow topics, 20-30 for medium topics, 32-45 for broad domains.
-- Return between 12 and 45 usable items. Do not force exactly equal layer coverage.
+- Return between 12 and 45 usable items.
+- Cover all five iceberg layers whenever the topic has enough material. Include at least one item intentionally scored for each depth band: 0-19, 20-39, 40-59, 60-79, and 80-100.
+- Prefer 2-5 genuinely obscure or specialist items for the 80-100 band instead of stopping at intermediate concepts.
 - Do not include more than 10 items that would clearly belong to the same depth band.
 - Use concise item names that fit on a node.
 - Every item must include a non-empty description.
 - Scores are integers from 0-100, never 1-10. Confidence is 0.0-1.0.
+- depthScore: intended iceberg depth, where 0-19 is public surface knowledge and 80-100 is obscure, specialist, prerequisite-heavy, or rarely explained.
 - familiarity: how likely a general audience already knows this.
 - specificity: how narrow the concept is within the topic.
 - jargonDensity: how much specialist vocabulary is needed.
@@ -7257,6 +7261,7 @@ Rules:
     )
 }
 
+#[derive(Clone)]
 struct ScoredIcebergItem {
     item: IcebergItem,
     score: f64,
@@ -7359,7 +7364,60 @@ fn normalize_iceberg_items(response: &str) -> Cmd<Vec<IcebergItem>> {
         });
     }
 
+    stretch_iceberg_candidate_levels(&mut candidates);
+
     candidates.sort_by(|left, right| {
+        left.item
+            .level
+            .cmp(&right.item.level)
+            .then_with(|| {
+                left.score
+                    .partial_cmp(&right.score)
+                    .unwrap_or(Ordering::Equal)
+            })
+            .then_with(|| left.item.name.cmp(&right.item.name))
+    });
+
+    let mut buckets = HashMap::<u8, Vec<ScoredIcebergItem>>::new();
+    for candidate in candidates {
+        buckets.entry(candidate.item.level).or_default().push(candidate);
+    }
+
+    let mut selected = Vec::<ScoredIcebergItem>::new();
+    let mut by_level = HashMap::<u8, usize>::new();
+
+    for level in 1..=ICEBERG_LEVEL_COUNT {
+        if selected.len() >= target_count {
+            break;
+        }
+        if let Some(candidate) = take_iceberg_candidate(&mut buckets, level) {
+            *by_level.entry(level).or_default() += 1;
+            selected.push(candidate);
+        }
+    }
+
+    while selected.len() < target_count {
+        let mut added_any = false;
+        for level in 1..=ICEBERG_LEVEL_COUNT {
+            if selected.len() >= target_count {
+                break;
+            }
+            if by_level.get(&level).copied().unwrap_or_default() >= ICEBERG_MAX_ITEMS_PER_LEVEL {
+                continue;
+            }
+            if let Some(candidate) = take_iceberg_candidate(&mut buckets, level) {
+                *by_level.entry(level).or_default() += 1;
+                selected.push(candidate);
+                added_any = true;
+            }
+        }
+
+        if !added_any {
+            break;
+        }
+    }
+
+    selected.sort_by(|left, right| {
         left.item
             .level
             .cmp(&right.item.level)
@@ -7373,15 +7431,9 @@ fn normalize_iceberg_items(response: &str) -> Cmd<Vec<IcebergItem>> {
 
     let mut normalized = Vec::<IcebergItem>::new();
     let mut ids = Vec::<String>::new();
-    let mut by_level = HashMap::<u8, usize>::new();
-    for candidate in candidates {
-        if normalized.len() >= target_count {
-            break;
-        }
-        let level_count = by_level.entry(candidate.item.level).or_default();
-        if *level_count >= ICEBERG_MAX_ITEMS_PER_LEVEL {
-            continue;
-        }
+    let mut layout_counts = HashMap::<u8, usize>::new();
+    for candidate in selected {
+        let level_count = layout_counts.entry(candidate.item.level).or_default();
         let index = *level_count;
         *level_count += 1;
         let mut item = candidate.item;
@@ -7396,6 +7448,64 @@ fn normalize_iceberg_items(response: &str) -> Cmd<Vec<IcebergItem>> {
         Err("Local model did not return any usable iceberg items.".to_string())
     } else {
         Ok(normalized)
+    }
+}
+
+fn stretch_iceberg_candidate_levels(candidates: &mut [ScoredIcebergItem]) {
+    if candidates.len() < ICEBERG_LEVEL_COUNT as usize {
+        return;
+    }
+
+    let present_levels = candidates
+        .iter()
+        .map(|candidate| candidate.item.level)
+        .collect::<HashSet<_>>();
+    if present_levels.len() >= ICEBERG_LEVEL_COUNT as usize {
+        return;
+    }
+
+    // Small local models often compress everything into middle scores. For iCE,
+    // the useful ranking is relative to the requested topic, so spread a usable
+    // set across all five bands instead of returning empty deep layers.
+    let mut indices = (0..candidates.len()).collect::<Vec<_>>();
+    indices.sort_by(|left, right| {
+        candidates[*left]
+            .score
+            .partial_cmp(&candidates[*right].score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| candidates[*left].item.name.cmp(&candidates[*right].item.name))
+    });
+    let total = candidates.len();
+    for (rank, index) in indices.into_iter().enumerate() {
+        let level = ((rank * ICEBERG_LEVEL_COUNT as usize) / total + 1)
+            .min(ICEBERG_LEVEL_COUNT as usize) as u8;
+        let score = iceberg_score_for_level_band(candidates[index].score, level);
+        candidates[index].score = score;
+        candidates[index].item.level = level;
+        candidates[index].item.depth_score = Some(score);
+    }
+}
+
+fn iceberg_score_for_level_band(score: f64, level: u8) -> f64 {
+    let level = level.clamp(1, ICEBERG_LEVEL_COUNT);
+    let lower = f64::from(level.saturating_sub(1)) * 20.0;
+    let upper = if level == ICEBERG_LEVEL_COUNT {
+        100.0
+    } else {
+        f64::from(level) * 20.0 - 1.0
+    };
+    round_score(score.clamp(lower, upper))
+}
+
+fn take_iceberg_candidate(
+    buckets: &mut HashMap<u8, Vec<ScoredIcebergItem>>,
+    level: u8,
+) -> Option<ScoredIcebergItem> {
+    let bucket = buckets.get_mut(&level)?;
+    if bucket.is_empty() {
+        None
+    } else {
+        Some(bucket.remove(0))
     }
 }
 
@@ -8032,6 +8142,37 @@ mod tests {
         assert!(counts
             .values()
             .all(|count| *count <= ICEBERG_MAX_ITEMS_PER_LEVEL));
+    }
+
+    #[test]
+    fn iceberg_normalizer_stretches_compressed_scores_across_layers() {
+        let items = (0..15)
+            .map(|index| {
+                serde_json::json!({
+                    "name": format!("Compressed fragment {index}"),
+                    "description": "A generated fragment with conservative scoring.",
+                    "depthScore": 22 + index,
+                    "confidence": 0.8,
+                    "reason": "Test compressed scoring."
+                })
+            })
+            .collect::<Vec<_>>();
+        let response = serde_json::json!({
+            "recommendedItemCount": 15,
+            "items": items
+        })
+        .to_string();
+
+        let normalized = normalize_iceberg_items(&response).expect("valid iceberg items");
+        let levels = normalized
+            .iter()
+            .map(|item| item.level)
+            .collect::<HashSet<_>>();
+
+        assert_eq!(levels.len(), ICEBERG_LEVEL_COUNT as usize);
+        assert!(normalized
+            .iter()
+            .any(|item| item.level == 5 && item.depth_score.unwrap_or_default() >= 80.0));
     }
 
     #[test]

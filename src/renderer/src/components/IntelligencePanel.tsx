@@ -1,5 +1,4 @@
 import {
-  CSSProperties,
   FormEvent,
   useEffect,
   useRef,
@@ -17,6 +16,7 @@ import {
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
 import { formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aether-ui'
+import { CrystallizingOrb } from './CrystallizingOrb'
 import { AetherSigilIcon, ChevronRightIcon, GearIcon } from './icons'
 import { Droplet, Waves } from 'lucide-react'
 
@@ -118,6 +118,7 @@ export function IntelligencePanel({
         ? !semanticTrailResult.root.url && semanticTrailResult.query.trim() === normalizedTrailQuery
         : Boolean(semanticTrailResult.root.url))
   )
+  const footerStatus = busy ?? notice
 /*   const trailBlockReason = dashboardOpen || !canUseCurrentPage
     ? 'Open a web page first'
     : !status?.embeddingModel
@@ -382,22 +383,24 @@ export function IntelligencePanel({
             style={!trailPanelOpen ? { pointerEvents: 'none' } : undefined}
           >
             <div className="semantic-trail-description">
-              <strong>Map nearby knowledge</strong>
+              {/* <strong>Map nearby knowledge</strong> */}
               <span>
-                Flow compares your active page or Focus topic against captured sources and updates
-                automatically.
+                Flow streams past captured knowledge that's related.<br></br>
               </span>
             </div>
             <div className="semantic-trail-form">
               <label htmlFor="semantic-trail-query" className="semantic-trail-label">
                 Focus (Optional)
               </label>
+              <span className="semantic-trail-help">
+                Type a topic to channel the flow toward a specific theme.
+              </span>
               <input
                 id="semantic-trail-query"
                 aria-label="Flow query"
                 value={semanticTrailQuery}
                 onChange={(event) => onSemanticTrailQueryChange(event.target.value)}
-                placeholder="Leave blank to use this page, or type a topic to steer Flow..."
+                placeholder="Filter the stream by a specific topic or theme..."
               />
             </div>
             {busy === 'Building Flow' ? (
@@ -412,7 +415,11 @@ export function IntelligencePanel({
         </section>
 
         <footer className="panel-footer">
-          <span>{busy ?? notice ?? ''}</span>
+          {footerStatus && (
+            <span className="panel-status-text" title={footerStatus}>
+              {footerStatus}
+            </span>
+          )}
           {developerMode ? (
             <button
               className="model-settings-button tooltip-host"
@@ -488,8 +495,8 @@ function SemanticTrailView({
 
       {result.items.length === 0 ? (
         <div className="semantic-trail-empty">
-          No matching sources captured yet. Flow will update automatically when you visit or
-          capture related pages.
+          No matching sources.
+          Try typing a broader focus topic or capturing related pages.
         </div>
       ) : (
         <div className="semantic-trail-list">
@@ -540,18 +547,21 @@ function AnswerLoading({
   phase: string | null
   onCancel: () => void
 }): React.JSX.Element {
+  const loadingPhase = phase ?? 'Gathering local context'
+
   return (
-    <div className="answer-loading" role="status" aria-live="polite">
-      <div className="answer-loading-haze" aria-hidden="true" />
-      <div className="answer-loading-ring" aria-hidden="true">
-        {Array.from({ length: 14 }).map((_, index) => (
-          <span key={index} style={{ '--particle-index': index } as CSSProperties} />
-        ))}
-      </div>
-      <div className="answer-loading-copy">
-        <strong>Composing answer</strong>
-        <span>{phase ?? 'Gathering local context'}</span>
-      </div>
+    <div
+      className="answer-loading"
+      role="status"
+      aria-live="polite"
+      aria-label={`Composing answer. ${loadingPhase}`}
+    >
+      <CrystallizingOrb
+        className="answer-crystallizing-orb"
+        title="Composing answer"
+        subtitle={loadingPhase}
+        particleCount={14}
+      />
       <button
         className="answer-stop-button responsive-button"
         onClick={onCancel}

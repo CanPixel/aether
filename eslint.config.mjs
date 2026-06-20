@@ -6,7 +6,19 @@ import eslintPluginReactHooks from 'eslint-plugin-react-hooks'
 import eslintPluginReactRefresh from 'eslint-plugin-react-refresh'
 
 export default defineConfig(
-  { ignores: ['**/node_modules', '**/dist', '**/out', 'src-tauri/**', 'ICE/**'] },
+  {
+    ignores: [
+      '**/node_modules',
+      '**/dist',
+      '**/out',
+      'src-tauri/**',
+      'ICE/**',
+      '.design-sync/**',
+      '.ds-sync/**',
+      'aether-ds/**',
+      'ds-bundle/**'
+    ]
+  },
   js.configs.recommended,
   tseslint.configs.recommended,
   {
