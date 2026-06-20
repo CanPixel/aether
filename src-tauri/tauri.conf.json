@@ -28,7 +28,11 @@
   "bundle": {
     "active": true,
     "targets": ["app"],
-    "icon": ["../resources/icon.png", "../build/icon.icns"],
+    "icon": [
+      "../resources/icon.png",
+      "../build/icon.icns",
+      "../public/aether-plusless-crystal-favicon.ico"
+    ],
     "macOS": {
       "minimumSystemVersion": "10.15",
       "dmg": {
