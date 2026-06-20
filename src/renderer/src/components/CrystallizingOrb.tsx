@@ -13,7 +13,7 @@ export function CrystallizingOrb({
   title,
   subtitle,
   className,
-  particleCount = 12
+  particleCount = 14
 }: CrystallizingOrbProps): React.JSX.Element {
   return (
     <div
@@ -28,15 +28,17 @@ export function CrystallizingOrb({
           <span key={index} style={{ '--particle-index': index } as CSSProperties} />
         ))}
       </div>
-      <div className="crystallizer-quantum-core">
-        <Quantum size={30} speed={1.35} color="currentColor" />
+      <div className="crystallizing-orb-content">
+        <div className="crystallizer-quantum-core">
+          <Quantum size={30} speed={1.35} color="currentColor" />
+        </div>
+        <h2 className="crystallizer-loading-title">
+          <TextShimmer className="crystallizer-shimmer-text" duration={2.8} spread={58}>
+            {title}
+          </TextShimmer>
+        </h2>
+        {subtitle && <p className="crystallizing-orb-subtitle">{subtitle}</p>}
       </div>
-      <h2 className="crystallizer-loading-title">
-        <TextShimmer className="crystallizer-shimmer-text" duration={2.8} spread={58}>
-          {title}
-        </TextShimmer>
-      </h2>
-      {subtitle && <p className="crystallizing-orb-subtitle">{subtitle}</p>}
     </div>
   )
 }

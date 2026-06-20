@@ -4427,14 +4427,23 @@ button {
   width: 100%;
   min-height: 190px;
   place-items: center;
-  overflow: hidden;
+  overflow: visible;
   color: #10a9d2;
   isolation: isolate;
 }
 
 .answer-crystallizing-orb {
-  min-height: 184px;
-  padding: 18px 16px 44px;
+  min-height: 198px;
+  padding: 16px 16px 42px;
+}
+
+.crystallizing-orb-content {
+  position: relative;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  text-align: center;
 }
 
 .answer-loading-haze,
@@ -4763,7 +4772,7 @@ button {
   flex: 0 0 auto;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px 12px;
+  gap: 12px;
   margin-top: 2px;
   border-top: 1px solid var(--line);
   padding-top: 10px;
@@ -4771,13 +4780,13 @@ button {
 }
 
 .panel-status-text {
-  grid-column: 1 / -1;
+  grid-column: 1;
   min-width: 0;
   color: rgba(82, 97, 115, 0.9);
   font-size: 11px;
   font-weight: 720;
   line-height: 1.35;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   white-space: normal;
 }
 
@@ -7108,6 +7117,7 @@ button {
   min-width: min(430px, 78vw);
   min-height: 236px;
   border-color: rgba(186, 230, 253, 0.54);
+  padding: 0;
   color: #10a9d2;
   background:
     radial-gradient(circle at 50% 26%, rgba(255, 255, 255, 0.98), transparent 36%),
@@ -7121,6 +7131,11 @@ button {
   isolation: isolate;
 }
 
+.crystallizer-empty.crystallizing .crystallizing-orb {
+  min-height: 236px;
+  padding: 28px 42px;
+}
+
 .crystallizer-empty.crystallizing .crystallizer-state-card::before {
   animation: answerHaze 6.5s linear infinite;
 }
@@ -7128,14 +7143,15 @@ button {
 .crystallizer-empty.crystallizing .crystallizer-state-card::after {
   position: absolute;
   z-index: 1;
-  inset: 12px;
+  inset: 0;
   content: '';
-  border-radius: 16px;
+  border-radius: inherit;
   background:
-    linear-gradient(112deg, transparent 8%, rgba(255, 255, 255, 0.42) 16%, transparent 27%),
-    linear-gradient(248deg, transparent 17%, rgba(125, 211, 252, 0.25) 28%, transparent 44%);
-  filter: blur(0.2px);
-  opacity: 0.72;
+    radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.42), transparent 35%),
+    linear-gradient(112deg, transparent 8%, rgba(255, 255, 255, 0.28) 16%, transparent 30%),
+    linear-gradient(248deg, transparent 14%, rgba(125, 211, 252, 0.2) 34%, transparent 62%);
+  filter: blur(0.4px);
+  opacity: 0.68;
   pointer-events: none;
   animation: crystallizerGlassGleam 4.8s ease-in-out infinite;
 }
@@ -7191,15 +7207,15 @@ button {
 }
 
 .crystallizing-orb .answer-loading-ring {
-  inset: 24px;
   z-index: 2;
   opacity: 0.96;
   filter: drop-shadow(0 0 18px rgba(56, 189, 248, 0.3));
+  margin-top: -55px;
 }
 
 .answer-crystallizing-orb .answer-loading-ring {
-  inset: 22px;
-  margin-top: -58px;
+  inset: 0;
+  margin-top: 0;
 }
 
 .crystallizer-quantum-core {
@@ -7248,17 +7264,17 @@ button {
 
 .crystallizer-loading-title {
   z-index: 3;
-  margin-top: 12px;
+  margin: 6px 0 0;
 }
 
 .crystallizer-empty h2.crystallizer-loading-title {
-  margin-top: 12px;
+  margin-top: 6px;
   font-size: 27px;
   letter-spacing: 0;
 }
 
 .answer-crystallizing-orb .crystallizer-loading-title {
-  margin-top: 10px;
+  margin-top: 4px;
 }
 
 .answer-crystallizing-orb .crystallizer-loading-title .text-shimmer {
