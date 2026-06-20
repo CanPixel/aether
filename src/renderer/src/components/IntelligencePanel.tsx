@@ -350,7 +350,7 @@ export function IntelligencePanel({
             style={!trailPanelOpen ? { pointerEvents: 'none' } : undefined}
           >
             <div className="semantic-trail-empty">
-              Flow finds captured knowledge that's related.
+              Flow streams past captured knowledge that's related. 
             </div>
             <form
               className="semantic-trail-form"
@@ -363,14 +363,14 @@ export function IntelligencePanel({
                 Focus (Optional)
               </label>
               <span className="semantic-trail-help">
-                Typed text becomes the search lens.
+                Type a topic to channel the flow toward a specific theme.
               </span>
               <input
                 id="semantic-trail-query"
                 aria-label="Flow query"
                 value={semanticTrailQuery}
                 onChange={(event) => onSemanticTrailQueryChange(event.target.value)}
-                placeholder="Focus the search on a specific topic or theme..."
+                placeholder="Filter the stream by a specific topic or theme..."
               />
               <button disabled={Boolean(busy) || trailBlocked} type="submit">
                 Build Flow
@@ -461,7 +461,7 @@ function SemanticTrailView({
       {result.items.length === 0 ? (
         <div className="semantic-trail-empty">
           No matching sources. 
-          Try typing a broader focus topic or capturing related pages to build your network.
+          Try typing a broader focus topic or capturing related pages.
         </div>
       ) : (
         <div className="semantic-trail-list">
