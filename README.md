@@ -18,12 +18,12 @@ Current major capabilities:
 - AiON sidepanel provides local search and Ask mode over selected knowledge context.
 - AiON Ask supports populated knowledge hubs, current-page context, or both.
 - Browser quick actions can prompt AiON against the current page with one click.
-- AI answers render as selectable markdown with copy support and clickable citations.
+- AI answers render as selectable markdown with copy support, compact generation metrics, and clickable citations.
 - Flow maps captured hubs and sources into a semantic relation graph with query lenses, node inspection, and source/hub actions.
 - AiR renders selected research context into one local Obsidian-friendly Markdown dossier.
 - iCE, the Information Complexity Explorer, generates iceberg-style complexity maps for a topic using the local chat model.
 - Settings supports default search engine selection, Developer Mode, and shortcut reference.
-- Local model menu supports runtime status and model selection for GGUF chat models plus GGUF or official safetensors embedding models.
+- Local model setup can download recommended ungated model files, and the local model menu supports runtime status and model selection for GGUF chat models plus GGUF or official safetensors embedding models.
 
 ## Privacy Boundary
 
@@ -97,7 +97,7 @@ Default model behavior:
 - The model menu can update the selected embedding and chat models.
 - Chat generation uses the GGUF's embedded chat template when present, preserving Gemma 4 system/user message formatting instead of flattening everything into one prompt. Sampling keeps conservative temperatures while aligning top-k/top-p with the Gemma 4 Ollama defaults.
 
-Fresh installs download the official ungated Qwen3 Embedding 0.6B Q8 GGUF into the app-data model directory. For manual development installs, place `Qwen3-Embedding-0.6B-Q8_0.gguf` under `aether-models/embeddings/Qwen3-Embedding-0.6B-GGUF/`.
+Fresh installs can use the in-app setup flow to download recommended ungated model files into the app-data model directory. The setup flow is also available from Settings for manual repair or model installation. For manual development installs, place `Qwen3-Embedding-0.6B-Q8_0.gguf` under `aether-models/embeddings/Qwen3-Embedding-0.6B-GGUF/`.
 
 ## Quick Start
 
@@ -412,9 +412,10 @@ AiON is the local intelligence sidepanel.
 - If populated hubs exist, rows show icon, hub name, and capture count.
 - Current page context can be toggled with a larger button-style control.
 - Answers are markdown-rendered, selectable, copyable, and citation-backed.
+- Completed answers include a small metrics subtitle with token rate, chunk count, and elapsed time.
 - Duplicate citation URLs are deduplicated before display.
 - Citation clicks open the source in a browser tab.
-- The embedded Flow panel can build a current-page semantic trail from local captures.
+- The embedded Flow panel auto-updates a semantic trail from the active page or an optional Focus topic.
 - Developer Mode exposes expanded local chat and embedding model controls.
 
 ### Flow
@@ -424,6 +425,7 @@ Flow is a semantic relationship surface for the local knowledge library.
 It includes:
 
 - Query input for building a semantic lens across captured sources.
+- Automatic embedded AiON trails that refresh from the active page or a typed Focus topic.
 - A force-directed relation map with hub, source, and query nodes.
 - Calmer graph styling with spacious node placement and lightweight animated water-current treatment.
 - An inspector for selected nodes, related matches, and confidence scores.
@@ -468,6 +470,7 @@ The iCE canvas includes:
 
 - Topic search input.
 - In-process local model generation.
+- Depth scoring that encourages all five layers to be represented when the topic has enough usable material.
 - Manual saving and reopening of generated atlases.
 - Zoom in/out/reset controls.
 - Smooth view reset and zoom transitions.
@@ -562,7 +565,7 @@ Search flow:
 
 Flow graph flow:
 
-1. User opens Flow or builds the embedded AiON Flow trail.
+1. User opens Flow, or the embedded AiON Flow trail refreshes automatically from the active page or Focus topic.
 2. Optional query text is embedded as a semantic lens.
 3. Captured sources and hubs are deduplicated from the local library and chunk store.
 4. The backend returns typed graph nodes, semantic edges, containment edges, query-match edges, and scored matches.
@@ -575,7 +578,7 @@ Ask flow:
 3. If current page is included, the active page is extracted and added as context.
 4. Duplicate source citations are merged.
 5. The local chat model receives a grounded prompt.
-6. AiON renders the markdown answer and citation badges.
+6. AiON renders the markdown answer, compact metrics subtitle, and citation badges.
 
 The intended answer behavior is grounded: when hub context is used, the model should answer from supplied context rather than inventing unsupported facts.
 
@@ -874,7 +877,6 @@ Likely next improvements:
 - Better authenticated-app compatibility coverage.
 - Capture selected text or a selected DOM region.
 - More precise token-aware chunking.
-- Built-in model download/import flow for recommended GGUFs.
 - Richer iCE export/share behavior.
 - More complete settings surface.
 
