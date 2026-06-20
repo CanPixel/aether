@@ -242,7 +242,7 @@ export function IntelligencePanel({
         <header className="panel-header">
           <div>
             <p>AiON • Local Knowledge</p>
-            <h1>Talk to the web you explored.</h1>
+            <h1>Talk to the web you explored</h1>
           </div>
           <div className="panel-header-actions">
             <StatusPill status={status} />
