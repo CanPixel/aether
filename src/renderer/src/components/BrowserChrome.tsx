@@ -11,6 +11,12 @@ import {
 } from './icons'
 
 const CREATE_COLLECTION_VALUE = '__create_collection__'
+const DASHBOARD_ADDRESSES = new Set([
+  'æther://dashboard',
+  'ice://crystallizer',
+  'flow://semantic-graph',
+  'air://renderer'
+])
 
 type BrowserChromeProps = {
   activeTab?: BrowserTabSummary
@@ -90,6 +96,9 @@ export function BrowserChrome({
   onTabMenuOpen
 }: BrowserChromeProps): React.JSX.Element {
   const startPageActive = activeTab?.url === 'aether://start'
+  const trimmedAddress = addressDraft.trim().toLowerCase()
+  const dashboardAddress = dashboardOpen && DASHBOARD_ADDRESSES.has(trimmedAddress)
+  const addressSubmittable = Boolean(activeTab && trimmedAddress && !dashboardAddress)
   const [tabMenu, setTabMenu] = useState<{ tabId: string; x: number; y: number } | null>(null)
   const menuTab = tabMenu ? tabs.find((tab) => tab.id === tabMenu.tabId) : undefined
 
@@ -178,14 +187,14 @@ export function BrowserChrome({
         <input
           ref={addressInputRef}
           aria-label="Address or search"
-          disabled={dashboardOpen || !activeTab}
+          disabled={!activeTab}
           value={addressDraft}
           onBlur={onAddressBlur}
           onChange={(event) => onAddressChange(event.target.value)}
           onFocus={onAddressFocus}
           placeholder="Search or enter website"
         />
-        <button type="submit" disabled={dashboardOpen || !activeTab || !addressDraft.trim()}>
+        <button type="submit" disabled={!addressSubmittable}>
           Go
         </button>
       </form>

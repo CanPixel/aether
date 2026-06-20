@@ -63,6 +63,12 @@ import {
 // Sentinel URL for a blank tab that shows the ÆTHER start page instead of loading a
 // page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
 const START_PAGE_URL = 'aether://start'
+const DASHBOARD_ADDRESSES = new Set([
+  'æther://dashboard',
+  'ice://crystallizer',
+  'flow://semantic-graph',
+  'air://renderer'
+])
 
 const SHORTCUT_HELP: Array<{ keys: string; action: string; scope: string }> = [
   { keys: 'Cmd/Ctrl + L', action: 'Focus address bar', scope: 'Browser' },
@@ -97,6 +103,10 @@ function getShortcutFromKeyboardEvent(event: KeyboardEvent): AetherShortcutId | 
   if (!event.altKey && event.shiftKey && key === 'c') return 'capture-page'
 
   return null
+}
+
+function isDashboardAddress(value: string): boolean {
+  return DASHBOARD_ADDRESSES.has(value.trim().toLowerCase())
 }
 
 function isBlockedShellShortcut(event: KeyboardEvent): boolean {
@@ -766,10 +776,8 @@ function App(): React.JSX.Element {
   async function runShortcut(shortcut: AetherShortcutId): Promise<void> {
     switch (shortcut) {
       case 'focus-address':
-        if (!dashboardOpen) {
-          addressInputRef.current?.focus()
-          addressInputRef.current?.select()
-        }
+        addressInputRef.current?.focus()
+        addressInputRef.current?.select()
         return
       case 'new-tab':
         await createTab()
@@ -1050,10 +1058,16 @@ function App(): React.JSX.Element {
 
   async function navigate(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault()
-    if (!activeTab) return
+    const target = addressDraft.trim()
+    if (!target) return
+    if (dashboardOpen && isDashboardAddress(target)) return
 
     try {
-      await window.aether.tabs.navigate(activeTab.id, addressValue)
+      if (activeTab) {
+        await window.aether.tabs.navigate(activeTab.id, target)
+      } else {
+        await createTab({ url: target })
+      }
       setDashboardOpen(false)
       addressInputRef.current?.blur()
     } catch (error) {
@@ -1914,8 +1928,9 @@ function App(): React.JSX.Element {
           onAddressBlur={() => setAddressFocused(false)}
           onAddressChange={setAddressDraft}
           onAddressFocus={() => {
-            setAddressDraft(addressValue)
+            setAddressDraft(dashboardOpen ? '' : addressValue)
             setAddressFocused(true)
+            window.setTimeout(() => addressInputRef.current?.select(), 0)
           }}
           onBack={goBack}
           onCloseAllTabs={closeAllTabs}

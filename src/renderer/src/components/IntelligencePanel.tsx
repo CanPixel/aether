@@ -560,7 +560,6 @@ function AnswerLoading({
         className="answer-crystallizing-orb"
         title="Composing answer"
         subtitle={loadingPhase}
-        particleCount={14}
       />
       <button
         className="answer-stop-button responsive-button"

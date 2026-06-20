@@ -1,4 +1,4 @@
-import { type CSSProperties } from 'react'
+/* import { type CSSProperties } from 'react' */
 import { Quantum } from 'ldrs/react'
 import { TextShimmer } from './loading-ui/TextShimmer'
 
@@ -6,14 +6,12 @@ type CrystallizingOrbProps = {
   title: string
   subtitle?: string
   className?: string
-  particleCount?: number
 }
 
 export function CrystallizingOrb({
   title,
   subtitle,
   className,
-  particleCount = 14
 }: CrystallizingOrbProps): React.JSX.Element {
   return (
     <div
@@ -23,11 +21,6 @@ export function CrystallizingOrb({
       <div className="crystallizer-god-rays" />
       <div className="crystallizer-prismatic-aura" />
       <div className="answer-loading-haze" />
-      <div className="answer-loading-ring">
-        {Array.from({ length: particleCount }).map((_, index) => (
-          <span key={index} style={{ '--particle-index': index } as CSSProperties} />
-        ))}
-      </div>
       <div className="crystallizing-orb-content">
         <div className="crystallizer-quantum-core">
           <Quantum size={30} speed={1.35} color="currentColor" />
