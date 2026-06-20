@@ -14,6 +14,11 @@ on:
     tags:
       - "v*"
 
+env:
+  CARGO_HTTP_MULTIPLEXING: "false"
+  CARGO_HTTP_TIMEOUT: "60"
+  CARGO_NET_RETRY: "10"
+
 jobs:
   linux:
     name: Linux (x86_64)

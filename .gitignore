@@ -34,6 +34,8 @@ build/dmg-background.tiff
 
 
 # For Claude Design
-aether-ds
-.design-sync
+aether-ds/*
+.design-sync/*
+.ds-sync/
+ds-bundle/
 
