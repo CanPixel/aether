@@ -426,6 +426,7 @@ function App(): React.JSX.Element {
   const suggestedHubUrlRef = useRef<string | null>(null)
   const manualHubUrlRef = useRef<string | null>(null)
   const activeTabUrlRef = useRef('')
+  const semanticTrailRequestRef = useRef(0)
   // Holds a suggestion that resolved while the hub <select> was open, to apply on close so
   // the dropdown's highlighted option never jumps out from under the user mid-interaction.
   const pendingHubSuggestionRef = useRef<{ url: string; collectionId: string } | null>(null)
@@ -536,11 +537,19 @@ function App(): React.JSX.Element {
       (!activeTabHubShortcut.favicon && activeTab?.favicon))
   )
   const activeSemanticTrailResult = useMemo(() => {
-    if (!semanticTrailResult || !activeTabUrl) return null
+    if (!semanticTrailResult) return null
+    const focusedQuery = semanticTrailQuery.trim()
+    if (!semanticTrailResult.root.url) {
+      return focusedQuery && semanticTrailResult.query.trim() === focusedQuery
+        ? semanticTrailResult
+        : null
+    }
+    if (focusedQuery) return null
+    if (!activeTabUrl) return null
     return normalizeComparableUrl(semanticTrailResult.root.url) === normalizeComparableUrl(activeTabUrl)
       ? semanticTrailResult
       : null
-  }, [activeTabUrl, semanticTrailResult])
+  }, [activeTabUrl, semanticTrailQuery, semanticTrailResult])
 
   const openFindBar = useCallback((): void => {
     if (dashboardOpen || isStartPage || !activeTab?.id) {
@@ -1391,29 +1400,45 @@ function App(): React.JSX.Element {
     setDashboardOpen(false)
   }
 
-  async function buildSemanticTrail(): Promise<void> {
-    if (dashboardOpen || !canUseCurrentPage) {
-      setNotice('Open a web page before building Flow.')
+  const buildSemanticTrail = useCallback(async (query = semanticTrailQuery): Promise<void> => {
+    const trimmedQuery = query.trim()
+    if (!trimmedQuery && (dashboardOpen || !canUseCurrentPage)) {
       return
     }
     if (!status?.embeddingModel) {
-      setNotice('Select a local embedding model before building Flow.')
       return
     }
 
-    await runTask('Building Flow', async () => {
+    const requestId = semanticTrailRequestRef.current + 1
+    const requestUrl = activeTabUrlRef.current
+    semanticTrailRequestRef.current = requestId
+    setBusy('Building Flow')
+    setNotice(null)
+
+    try {
       const result = await window.aether.semanticTrail.generate({
-        query: semanticTrailQuery.trim() || undefined,
+        query: trimmedQuery || undefined,
         limit: 12
       })
+      if (semanticTrailRequestRef.current !== requestId) return
+      if (
+        !trimmedQuery &&
+        requestUrl &&
+        normalizeComparableUrl(result.root.url) !== normalizeComparableUrl(activeTabUrlRef.current)
+      ) {
+        return
+      }
       setSemanticTrailResult(result)
-      setNotice(
-        result.items.length > 0
-          ? `Mapped ${result.items.length} sources into Flow.`
-          : 'No captured sources matched this page yet.'
-      )
-    })
-  }
+    } catch (error) {
+      if (semanticTrailRequestRef.current === requestId) {
+        setNotice(getErrorMessage(error))
+      }
+    } finally {
+      if (semanticTrailRequestRef.current === requestId) {
+        setBusy(null)
+      }
+    }
+  }, [canUseCurrentPage, dashboardOpen, semanticTrailQuery, status?.embeddingModel])
 
   async function buildFlowGraph(query = flowGraphQuery): Promise<void> {
     await runTask('Mapping Flow', async () => {
@@ -2019,6 +2044,7 @@ function App(): React.JSX.Element {
         streamingCitations={streamingCitations}
         semanticTrailQuery={semanticTrailQuery}
         semanticTrailResult={activeSemanticTrailResult}
+        activePageUrl={activeTabUrl}
         developerMode={settings.developerMode}
         status={status}
         onAsk={ask}

@@ -18,7 +18,7 @@ import {
 import { CollectionIcon } from '../utils/collection-icons'
 import { formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aether-ui'
 import { AetherSigilIcon, ChevronRightIcon, GearIcon } from './icons'
-import { Waves } from 'lucide-react'
+import { Droplet, Waves } from 'lucide-react'
 
 type IntelligencePanelProps = {
   busy: string | null
@@ -40,10 +40,11 @@ type IntelligencePanelProps = {
   streamingCitations: SearchResult[]
   semanticTrailQuery: string
   semanticTrailResult: SemanticTrailResult | null
+  activePageUrl: string
   developerMode: boolean
   onAsk: (event: FormEvent) => Promise<void>
   onAskPanelOpenChange: (value: boolean) => void
-  onBuildSemanticTrail: () => Promise<void>
+  onBuildSemanticTrail: (query?: string) => Promise<void>
   onCancelAsk: () => void
   onTogglePanel: () => Promise<void>
   onChatPromptChange: (value: string) => void
@@ -76,6 +77,7 @@ export function IntelligencePanel({
   streamingCitations,
   semanticTrailQuery,
   semanticTrailResult,
+  activePageUrl,
   developerMode,
   onAsk,
   onAskPanelOpenChange,
@@ -104,7 +106,18 @@ export function IntelligencePanel({
     : askCurrentPageOnly
       ? canUseCurrentPage
       : Boolean(askCollectionId) || (askIncludeCurrentPage && canUseCurrentPage)
-  const trailBlocked = dashboardOpen || !canUseCurrentPage || !status?.embeddingModel
+  const normalizedTrailQuery = semanticTrailQuery.trim()
+  const hasFocusLens = normalizedTrailQuery.length > 0
+  const trailBlocked =
+    !status?.embeddingModel ||
+    Boolean(busy) ||
+    (!hasFocusLens && (dashboardOpen || !canUseCurrentPage))
+  const hasCurrentTrail = Boolean(
+    semanticTrailResult &&
+      (hasFocusLens
+        ? !semanticTrailResult.root.url && semanticTrailResult.query.trim() === normalizedTrailQuery
+        : Boolean(semanticTrailResult.root.url))
+  )
 /*   const trailBlockReason = dashboardOpen || !canUseCurrentPage
     ? 'Open a web page first'
     : !status?.embeddingModel
@@ -126,6 +139,25 @@ export function IntelligencePanel({
     document.addEventListener('pointerdown', handlePointerDown, true)
     return () => document.removeEventListener('pointerdown', handlePointerDown, true)
   }, [settingsOpen])
+
+  useEffect(() => {
+    if (!trailPanelOpen || trailBlocked || hasCurrentTrail) return undefined
+
+    const timer = window.setTimeout(() => {
+      void onBuildSemanticTrail(normalizedTrailQuery)
+    }, 400)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [
+    activePageUrl,
+    hasCurrentTrail,
+    normalizedTrailQuery,
+    onBuildSemanticTrail,
+    trailBlocked,
+    trailPanelOpen
+  ])
 
   function handlePanelWheel(event: WheelEvent<HTMLElement>): void {
     const target = event.target instanceof HTMLElement ? event.target : null
@@ -349,33 +381,25 @@ export function IntelligencePanel({
             aria-hidden={!trailPanelOpen}
             style={!trailPanelOpen ? { pointerEvents: 'none' } : undefined}
           >
-            <div className="semantic-trail-empty">
-              Flow streams past captured knowledge that's related. 
+            <div className="semantic-trail-description">
+              <strong>Map nearby knowledge</strong>
+              <span>
+                Flow compares your active page or Focus topic against captured sources and updates
+                automatically.
+              </span>
             </div>
-            <form
-              className="semantic-trail-form"
-              onSubmit={async (event) => {
-                event.preventDefault()
-                await onBuildSemanticTrail()
-              }}
-            >
+            <div className="semantic-trail-form">
               <label htmlFor="semantic-trail-query" className="semantic-trail-label">
                 Focus (Optional)
               </label>
-              <span className="semantic-trail-help">
-                Type a topic to channel the flow toward a specific theme.
-              </span>
               <input
                 id="semantic-trail-query"
                 aria-label="Flow query"
                 value={semanticTrailQuery}
                 onChange={(event) => onSemanticTrailQueryChange(event.target.value)}
-                placeholder="Filter the stream by a specific topic or theme..."
+                placeholder="Leave blank to use this page, or type a topic to steer Flow..."
               />
-              <button disabled={Boolean(busy) || trailBlocked} type="submit">
-                Build Flow
-              </button>
-            </form>
+            </div>
             {busy === 'Building Flow' ? (
               <div className="semantic-trail-loading" role="status">
                 <strong>Ranking local sources</strong>
@@ -447,61 +471,66 @@ function SemanticTrailView({
   result: SemanticTrailResult
   onOpenItem: (item: SemanticTrailItem) => Promise<void>
 }): React.JSX.Element {
+  const isFocusLens = !result.root.url
+
   return (
     <article className="semantic-trail-card">
       <header className="semantic-trail-root">
         <div>
-          <span>Root page</span>
+          <span>{isFocusLens ? 'Focus Lens' : 'Active Page Context'}</span>
           <strong>{result.root.title}</strong>
-          <small>{result.root.host || getCaptureHost(result.root.url)}</small>
+          <small>
+            {isFocusLens ? 'Custom topic' : result.root.host || getCaptureHost(result.root.url)}
+          </small>
         </div>
         <p>{result.root.excerpt}</p>
       </header>
 
       {result.items.length === 0 ? (
         <div className="semantic-trail-empty">
-          No matching sources. 
-          Try typing a broader focus topic or capturing related pages.
+          No matching sources captured yet. Flow will update automatically when you visit or
+          capture related pages.
         </div>
       ) : (
         <div className="semantic-trail-list">
-          {result.items.map((item) => (
-            <button
-              className="semantic-trail-item"
-              key={item.id}
-              onClick={() => {
-                void onOpenItem(item)
-              }}
-              title={item.url}
-              type="button"
-            >
-              <span className="semantic-trail-score" aria-hidden="true">
-                <Waves size={16} />
-              </span>
-              <span className="semantic-trail-item-copy">
-                <span className="semantic-trail-item-meta">
-                  {item.collectionName} · {formatDate(item.capturedAt)}
+          {result.items.map((item) => {
+            const itemHost = item.host || getCaptureHost(item.url)
+            const rootHost = result.root.host || getCaptureHost(result.root.url)
+            const sameWebsite = Boolean(itemHost && rootHost && itemHost === rootHost)
+
+            return (
+              <button
+                className="semantic-trail-item"
+                key={item.id}
+                onClick={() => {
+                  void onOpenItem(item)
+                }}
+                title={item.url}
+                type="button"
+              >
+                <span className="semantic-trail-score" aria-hidden="true">
+                  <Droplet size={11} />
+                  <strong>{Math.round(item.score.semantic)}%</strong>
                 </span>
-                <strong>{item.title}</strong>
-                <small>{item.host || getCaptureHost(item.url)}</small>
-                <span className="semantic-trail-excerpt">{item.excerpt}</span>
-                <span className="semantic-trail-reasons">
-                  <span>{semanticTrailMatchLabel(item.score.semantic)}</span>
+                <span className="semantic-trail-item-copy">
+                  <span className="semantic-trail-item-meta">
+                    {itemHost} · {formatDate(item.capturedAt)}
+                  </span>
+                  <strong>{item.title}</strong>
+                  <span className="semantic-trail-excerpt">{item.excerpt}</span>
+                  <span className="semantic-trail-reasons">
+                    <span>{Math.round(item.score.semantic)}% Match</span>
+                    {sameWebsite && <span>Same Website</span>}
+                    <span>In {item.collectionName}</span>
+                  </span>
                 </span>
-              </span>
-            </button>
-          ))}
+              </button>
+            )
+          })}
         </div>
       )}
     </article>
   )
-}
-
-// One honest, qualitative read on how close a source is — no exposed score internals.
-function semanticTrailMatchLabel(semantic: number): string {
-  if (semantic >= 70) return 'Strong match'
-  if (semantic >= 55) return 'Related'
-  return 'Loose match'
 }
 
 function AnswerLoading({

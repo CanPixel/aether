@@ -31,3 +31,9 @@ public/old
 build/dmg-background.tiff
 
 *.gguf
+
+
+# For Claude Design
+aether-ds
+.design-sync
+

@@ -3620,34 +3620,50 @@ async fn semantic_trail_generate(
         .limit
         .unwrap_or(DEFAULT_SEMANTIC_TRAIL_LIMIT)
         .clamp(1, MAX_SEMANTIC_TRAIL_LIMIT);
-    let active_tab = {
-        let tabs = lock_tabs(state)?;
-        if tabs.dashboard_open {
-            return Err("Open a web page before building Flow.".to_string());
-        }
-        tabs.active_tab()
-            .cloned()
-            .ok_or_else(|| "No active browser tab.".to_string())?
-    };
-    let captured = extract_readable_active_page(state, &active_tab).await?;
-    let root_host = get_tab_host(&captured.url);
-    let root = SemanticTrailRoot {
-        title: captured.title.clone(),
-        url: captured.url.clone(),
-        host: root_host.clone(),
-        excerpt: semantic_trail_excerpt(&captured.text, 420),
-    };
     let explicit_query = input
         .query
         .as_deref()
         .map(str::trim)
         .filter(|query| !query.is_empty());
-    let visible_query = explicit_query
-        .map(ToString::to_string)
-        .unwrap_or_else(|| captured.title.clone());
-    let embedding_query = explicit_query
-        .map(ToString::to_string)
-        .unwrap_or_else(|| semantic_trail_default_query(&captured));
+    let (root, visible_query, embedding_query, root_url_key) =
+        if let Some(query) = explicit_query {
+            (
+                SemanticTrailRoot {
+                    title: query.to_string(),
+                    url: String::new(),
+                    host: String::new(),
+                    excerpt: "Custom Focus lens matching captured sources across your knowledge hubs."
+                        .to_string(),
+                },
+                query.to_string(),
+                query.to_string(),
+                None,
+            )
+        } else {
+            let active_tab = {
+                let tabs = lock_tabs(state)?;
+                if tabs.dashboard_open {
+                    return Err("Open a web page before building Flow.".to_string());
+                }
+                tabs.active_tab()
+                    .cloned()
+                    .ok_or_else(|| "No active browser tab.".to_string())?
+            };
+            let captured = extract_readable_active_page(state, &active_tab).await?;
+            let root_host = get_tab_host(&captured.url);
+            let root_url_key = normalize_capture_url_key(&captured.url);
+            (
+                SemanticTrailRoot {
+                    title: captured.title.clone(),
+                    url: captured.url.clone(),
+                    host: root_host,
+                    excerpt: semantic_trail_excerpt(&captured.text, 420),
+                },
+                captured.title.clone(),
+                semantic_trail_default_query(&captured),
+                Some(root_url_key),
+            )
+        };
 
     let library = load_library(&state.paths.library_path).await?;
     let collection_names = library
@@ -3655,13 +3671,17 @@ async fn semantic_trail_generate(
         .iter()
         .map(|collection| (collection.id.clone(), collection.name.clone()))
         .collect::<HashMap<_, _>>();
-    let root_url_key = normalize_capture_url_key(&captured.url);
-    let root_collection_ids = library
-        .captures
-        .iter()
-        .filter(|capture| normalize_capture_url_key(&capture.url) == root_url_key)
-        .map(|capture| capture.collection_id.clone())
-        .collect::<HashSet<_>>();
+    let root_collection_ids = root_url_key
+        .as_deref()
+        .map(|key| {
+            library
+                .captures
+                .iter()
+                .filter(|capture| normalize_capture_url_key(&capture.url) == key)
+                .map(|capture| capture.collection_id.clone())
+                .collect::<HashSet<_>>()
+        })
+        .unwrap_or_default();
     let chunks = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
 
     if chunks.is_empty() {

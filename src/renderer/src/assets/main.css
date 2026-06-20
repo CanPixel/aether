@@ -3815,7 +3815,34 @@ button {
 .semantic-trail-form {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.semantic-trail-description {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(139, 190, 215, 0.18);
+  border-radius: 12px;
+  padding: 10px 11px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 255, 255, 0.88), transparent 42%),
+    rgba(244, 251, 255, 0.58);
+  color: #61758d;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.semantic-trail-description strong {
+  color: #1f344d;
+  font-size: 11px;
+  font-weight: 860;
+}
+
+.semantic-trail-description span {
+  font-size: 10.5px;
+  font-weight: 680;
+  line-height: 1.38;
 }
 
 .semantic-trail-form input {
@@ -3833,60 +3860,9 @@ button {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
-.semantic-trail-help {
-  margin-top: -2px;
-  color: #66809a;
-  font-size: 10px;
-  font-weight: 650;
-  line-height: 1.35;
-}
-
 .semantic-trail-form input:focus {
   border-color: rgba(64, 154, 205, 0.42);
   background: rgba(250, 254, 255, 0.94);
-}
-
-.semantic-trail-form button {
-  position: relative;
-  min-height: 32px;
-  overflow: hidden;
-  border-radius: 9px;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 820;
-  margin-bottom: 8px;
-  transition:
-    transform 170ms ease,
-    border-color 170ms ease,
-    background 170ms ease,
-    box-shadow 170ms ease;
-}
-
-.semantic-trail-form button::after {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  content: '';
-  background: linear-gradient(
-    110deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.46) 46%,
-    transparent 62%
-  );
-  opacity: 0;
-  transform: translateX(-80%);
-  transition:
-    opacity 170ms ease,
-    transform 520ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.semantic-trail-form button:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-
-.semantic-trail-form button:hover:not(:disabled)::after {
-  opacity: 0.78;
-  transform: translateX(82%);
 }
 
 .semantic-trail-card,
@@ -3905,15 +3881,17 @@ button {
 .semantic-trail-card {
   display: grid;
   flex: 0 0 auto;
-  gap: 14px;
+  gap: 12px;
   padding: 12px;
 }
 
 .semantic-trail-root {
   display: grid;
-  gap: 7px;
-  border-bottom: 1px solid rgba(119, 168, 205, 0.14);
-  padding-bottom: 9px;
+  gap: 6px;
+  border: 1px solid rgba(119, 168, 205, 0.12);
+  border-radius: 10px;
+  padding: 9px;
+  background: rgba(255, 255, 255, 0.42);
 }
 
 .semantic-trail-root div {
@@ -3951,12 +3929,12 @@ button {
   display: -webkit-box;
   margin: 0;
   overflow: hidden;
-  color: #3c5069;
-  font-size: 11px;
+  color: rgba(60, 80, 105, 0.74);
+  font-size: 10.5px;
   line-height: 1.42;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .semantic-trail-graph {
@@ -4217,7 +4195,7 @@ button {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: 50px minmax(0, 1fr);
   align-items: start;
   gap: 12px;
   width: 100%;
@@ -4239,9 +4217,9 @@ button {
 
 .semantic-trail-item::before {
   position: absolute;
-  top: 31px;
-  left: 28px;
-  width: 26px;
+  top: 34px;
+  left: 34px;
+  width: 32px;
   height: 10px;
   border-top: 1px solid rgba(107, 196, 231, 0.28);
   border-radius: 999px;
@@ -4295,18 +4273,34 @@ button {
 .semantic-trail-score {
   display: grid;
   align-self: start;
+  grid-template-rows: auto auto;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: 46px;
+  height: 46px;
   border: 1px solid rgba(78, 169, 214, 0.28);
   border-radius: 999px;
   background:
-    conic-gradient(from -80deg, rgba(53, 154, 211, 0.6), rgba(196, 237, 255, 0.2)),
+    radial-gradient(circle at 34% 24%, rgba(255, 255, 255, 0.96), transparent 42%),
+    conic-gradient(from -80deg, rgba(53, 154, 211, 0.42), rgba(196, 237, 255, 0.16)),
     rgba(255, 255, 255, 0.78);
   color: #1d668f;
-  font-size: 12px;
-  font-weight: 920;
+  font-size: 10px;
+  font-weight: 880;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 10px 24px rgba(78, 169, 214, 0.12);
+}
+
+.semantic-trail-score svg {
+  color: rgba(29, 102, 143, 0.66);
+}
+
+.semantic-trail-score strong {
+  color: #176b94;
+  font-size: 11px;
+  font-weight: 920;
 }
 
 .semantic-trail-item-copy {
@@ -4371,7 +4365,9 @@ button {
 .semantic-trail-empty {
   display: grid;
   gap: 4px;
-  padding: 12px;
+  padding: 10px 11px;
+  border-color: rgba(139, 190, 215, 0.16);
+  background: rgba(246, 251, 255, 0.58);
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
