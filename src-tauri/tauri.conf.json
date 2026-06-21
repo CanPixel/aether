@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Æther",
+  "productName": "ÆTHER",
   "version": "1.0.0",
   "identifier": "com.canur.aether",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Æther",
+        "title": "ÆTHER",
         "width": 1360,
         "height": 860,
         "minWidth": 1080,

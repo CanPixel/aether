@@ -225,7 +225,7 @@ export function BrowserChrome({
                 <PageFavicon key={`${tab.id}-${tab.favicon ?? ''}`} icon={tab.favicon} />
               )}
             </span>
-            <span className="tab-title">{tab.title || tab.host || 'New tab'}</span>
+            <span className="tab-title">{tab.title || tab.host || 'New Tab'}</span>
             {tabs.length > 1 && (
               <span
                 className="tab-close"
@@ -247,7 +247,7 @@ export function BrowserChrome({
             {tabs.length}
           </span>
         )}
-        <button className="new-tab-button" onClick={onCreateTab} title="New tab" type="button">
+        <button className="new-tab-button" onClick={onCreateTab} title="New Tab" type="button">
           <PlusIcon />
         </button>
       </div>
@@ -259,7 +259,7 @@ export function BrowserChrome({
           onClick={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
         >
-          <div className="tab-context-menu-title">{menuTab.title || menuTab.host || 'New tab'}</div>
+          <div className="tab-context-menu-title">{menuTab.title || menuTab.host || 'New Tab'}</div>
           <button
             type="button"
             role="menuitem"

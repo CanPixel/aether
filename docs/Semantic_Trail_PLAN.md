@@ -1,4 +1,4 @@
-# Semantic Trail for Aether
+# Semantic Trail for ÆTHER
 
 ## Summary
 Add an on-demand, local-first **Semantic Trail** inside the existing AiON side panel. It will use the current Tauri + llama.cpp embedding pipeline to rank the active page against all captured knowledge hubs, then show scored source cards and a compact relation graph. No Electron, Ollama, cloud API, external web search, or persistent trail storage in v1.
