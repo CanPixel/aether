@@ -41,7 +41,7 @@ use url::Url;
 
 const CHUNKS_TABLE: &str = "chunks";
 const SIDEBAR_WIDTH: f64 = 76.0;
-const BROWSER_VIEW_TOP: f64 = 166.0;
+const BROWSER_VIEW_TOP: f64 = 172.0;
 const PANEL_WIDTH: f64 = 404.0;
 const PANEL_COLLAPSED_WIDTH: f64 = 58.0;
 const LOCAL_RUNTIME_NAME: &str = "llama.cpp";
