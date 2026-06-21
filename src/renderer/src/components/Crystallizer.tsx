@@ -80,6 +80,9 @@ const CANVAS_WIDTH = 2200
 const CANVAS_HEIGHT = 1800
 const NODE_WIDTH = 286
 const NODE_HEIGHT = 82
+// On-screen floor (px) for the raised hover card so its description stays readable
+// when the canvas is zoomed out and the node itself is small.
+const RAISED_CARD_MIN_WIDTH = 250
 const MIN_ZOOM = 0.74
 const MAX_ZOOM = 2.25
 const FITTED_ZOOM = 0.74
@@ -256,8 +259,10 @@ export function Crystallizer({
     const shellRect = shell.getBoundingClientRect()
     // The raised card is wider than the node so the description has room to breathe;
     // keep it centred on the node so it reads as that card expanding, not a new one
-    // dropped on top. Width scales with the node's on-screen size (i.e. with zoom).
-    const width = nodeRect.width * 1.34
+    // dropped on top. Width tracks the node's on-screen size (i.e. zoom) but never
+    // drops below a readable floor — otherwise when zoomed out the text wraps one
+    // word per line.
+    const width = Math.max(nodeRect.width * 1.34, RAISED_CARD_MIN_WIDTH)
     const centerX = nodeRect.left - shellRect.left + nodeRect.width / 2
     setRaisedCard({
       item,
