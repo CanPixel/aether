@@ -5752,6 +5752,7 @@ button {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
+  text-transform: capitalize;
 }
 
 .saved-iceberg-delete {
@@ -9287,6 +9288,104 @@ button {
   font-size: 12px;
   font-weight: 650;
   line-height: 1.35;
+}
+
+.settings-update-field {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.settings-update-head,
+.settings-update-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.settings-update-head label {
+  margin: 0 0 4px;
+}
+
+.settings-update-head p {
+  margin: 0;
+}
+
+.update-badge {
+  flex: 0 0 auto;
+  border: 1px solid rgba(105, 188, 224, 0.28);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: rgba(240, 250, 255, 0.72);
+  color: #2a7a9f;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.update-badge.available {
+  border-color: rgba(42, 148, 111, 0.26);
+  background: rgba(227, 248, 238, 0.78);
+  color: var(--success);
+}
+
+.settings-update-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.settings-update-status strong {
+  flex: 1 0 100%;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.settings-update-status span {
+  border: 1px solid rgba(105, 188, 224, 0.18);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.54);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.settings-update-notes {
+  display: -webkit-box;
+  max-height: 96px;
+  overflow: hidden;
+  border-left: 3px solid rgba(54, 122, 178, 0.26);
+  padding-left: 10px;
+  margin: 0 !important;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+.settings-update-actions {
+  align-items: center;
+}
+
+.settings-update-actions > div {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-update-actions button {
+  height: 34px;
+  border-radius: 999px;
+  box-shadow: none;
+}
+
+.settings-update-toggle {
+  flex: 1 1 auto;
+  min-width: 240px;
 }
 
 .settings-field label {

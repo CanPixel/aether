@@ -22,7 +22,7 @@ Current major capabilities:
 - Flow maps captured hubs and sources into a semantic relation graph with query lenses, node inspection, and source/hub actions.
 - AiR renders selected research context into one local Obsidian-friendly Markdown dossier.
 - iCE, the Information Complexity Explorer, generates iceberg-style complexity maps for a topic using the local chat model.
-- Settings supports default search engine selection, Developer Mode, and shortcut reference.
+- Settings supports default search engine selection, Developer Mode, update checks, and shortcut reference.
 - Local model setup can download recommended ungated model files, and the local model menu supports runtime status and model selection for GGUF chat models plus GGUF or official safetensors embedding models.
 
 ## Privacy Boundary
@@ -848,6 +848,10 @@ bun run build
 
 If needed, delete stale `dist/` and `src-tauri/target/release/bundle/` output manually before rebuilding.
 
+### Update check cannot reach GitHub
+
+Settings uses the public GitHub Releases API to check whether a newer ÆTHER release exists. If the check fails, verify general network access to GitHub and that the repository has a published, non-prerelease release.
+
 ### iCE returns invalid or empty results
 
 iCE depends on the local chat model returning parseable JSON. Try:
@@ -863,6 +867,7 @@ iCE depends on the local chat model returning parseable JSON. Try:
 - App-like authenticated services can still have browser API or popup edge cases.
 - iCE generation depends on local model quality and JSON compliance.
 - Flow and AiR dedicated app views are currently exposed through Developer Mode.
+- Update checks notify about newer app releases, but they do not download or install updates yet.
 - AiR exports one local Markdown dossier at a time; it does not sync with Obsidian vaults or manage zip exports.
 - Search and Ask currently use one selected hub plus optional current page, not arbitrary multi-hub selection.
 

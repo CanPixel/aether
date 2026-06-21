@@ -31,7 +31,8 @@ import {
   SavedIceberg,
   SavedIcebergSummary,
   StatusToastInput,
-  SystemStatus
+  SystemStatus,
+  UpdateCheckResult
 } from '../../shared/aether'
 import { BrowserChrome } from './components/BrowserChrome'
 import { StartPage } from './components/StartPage'
@@ -397,8 +398,11 @@ function App(): React.JSX.Element {
   const [status, setStatus] = useState<SystemStatus | null>(null)
   const [settings, setSettings] = useState<AppSettings>({
     browser: { defaultSearchEngine: 'google' },
-    developerMode: false
+    developerMode: false,
+    updates: { autoCheck: true }
   })
+  const [updateCheck, setUpdateCheck] = useState<UpdateCheckResult | null>(null)
+  const [updateChecking, setUpdateChecking] = useState(false)
   const [dashboardOpen, setDashboardOpen] = useState(true)
   const [workspaceMode, setWorkspaceMode] = useState<'dashboard' | 'crystallizer' | 'flow' | 'air'>(
     'dashboard'
@@ -443,6 +447,7 @@ function App(): React.JSX.Element {
   const manualHubUrlRef = useRef<string | null>(null)
   const activeTabUrlRef = useRef('')
   const semanticTrailRequestRef = useRef(0)
+  const autoUpdateCheckStartedRef = useRef(false)
   // Holds a suggestion that resolved while the hub <select> was open, to apply on close so
   // the dropdown's highlighted option never jumps out from under the user mid-interaction.
   const pendingHubSuggestionRef = useRef<{ url: string; collectionId: string } | null>(null)
@@ -676,6 +681,42 @@ function App(): React.JSX.Element {
       refreshAirRecent()
     ])
   }, [refreshAirRecent, refreshCollections, refreshSavedIcebergs, refreshShell, refreshShortcuts])
+
+  const checkForUpdates = useCallback(async (options?: { quiet?: boolean }): Promise<void> => {
+    if (!options?.quiet) setUpdateChecking(true)
+    try {
+      const result = await window.aether.system.checkForUpdate()
+      setUpdateCheck(result)
+      setSettings((current) => ({
+        ...current,
+        updates: {
+          ...current.updates,
+          lastCheckedAt: result.checkedAt
+        }
+      }))
+      if (result.updateAvailable) {
+        setNotice(`ÆTHER ${result.latestVersion ?? result.latestName ?? 'update'} is available.`)
+      } else if (!options?.quiet && result.error) {
+        setNotice(result.error)
+      } else if (!options?.quiet) {
+        setNotice('ÆTHER is up to date.')
+      }
+    } catch (error) {
+      if (!options?.quiet) setNotice(getErrorMessage(error))
+    } finally {
+      if (!options?.quiet) setUpdateChecking(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!settings.updates.autoCheck || autoUpdateCheckStartedRef.current) return undefined
+    const timer = window.setTimeout(() => {
+      autoUpdateCheckStartedRef.current = true
+      void checkForUpdates({ quiet: true })
+    }, 15_000)
+
+    return () => window.clearTimeout(timer)
+  }, [checkForUpdates, settings.updates.autoCheck])
 
   const createTab = useCallback(
     async (input?: { url?: string }): Promise<BrowserTabSummary | null> => {
@@ -1758,6 +1799,25 @@ function App(): React.JSX.Element {
     })
   }
 
+  async function updateAutoCheck(autoCheck: boolean): Promise<void> {
+    await runTask('Updating settings', async () => {
+      const nextSettings = await window.aether.system.updateSettings({
+        updates: { autoCheck }
+      })
+      setSettings(nextSettings)
+      setNotice(autoCheck ? 'Update checks enabled.' : 'Update checks disabled.')
+    })
+  }
+
+  async function openUpdateRelease(): Promise<void> {
+    if (!updateCheck?.releaseUrl) return
+    try {
+      await window.aether.system.openExternalUrl(updateCheck.releaseUrl)
+    } catch (error) {
+      setNotice(getErrorMessage(error))
+    }
+  }
+
   async function updateLocalModels(input: {
     embeddingModel?: string
     chatModel?: string
@@ -2130,9 +2190,14 @@ function App(): React.JSX.Element {
         <SettingsModal
           busy={busy}
           settings={settings}
+          updateCheck={updateCheck}
+          updateChecking={updateChecking}
           onClose={closeSettings}
           onDefaultSearchEngineChange={updateDefaultSearchEngine}
           onDeveloperModeChange={updateDeveloperMode}
+          onCheckForUpdates={() => checkForUpdates()}
+          onOpenUpdateRelease={openUpdateRelease}
+          onUpdateAutoCheck={updateAutoCheck}
           onOpenModelSetup={openModelSetupFromSettings}
         />
       )}
@@ -2250,19 +2315,48 @@ function FindBar({
   )
 }
 
+function formatSettingsDate(value?: string): string {
+  if (!value) return 'Never'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(date)
+}
+
+function updateStatusLabel(updateCheck: UpdateCheckResult | null): string {
+  if (!updateCheck) return 'Not checked yet'
+  if (updateCheck.updateAvailable) {
+    return `ÆTHER ${updateCheck.latestVersion ?? updateCheck.latestName ?? 'update'} is available`
+  }
+  if (updateCheck.error) return updateCheck.error
+  return 'ÆTHER is up to date'
+}
+
 function SettingsModal({
   busy,
   settings,
+  updateCheck,
+  updateChecking,
   onClose,
+  onCheckForUpdates,
   onDefaultSearchEngineChange,
   onDeveloperModeChange,
+  onOpenUpdateRelease,
+  onUpdateAutoCheck,
   onOpenModelSetup
 }: {
   busy: string | null
   settings: AppSettings
+  updateCheck: UpdateCheckResult | null
+  updateChecking: boolean
   onClose: () => Promise<void>
+  onCheckForUpdates: () => Promise<void>
   onDefaultSearchEngineChange: (value: SearchEngineId) => Promise<void>
   onDeveloperModeChange: (value: boolean) => Promise<void>
+  onOpenUpdateRelease: () => Promise<void>
+  onUpdateAutoCheck: (value: boolean) => Promise<void>
   onOpenModelSetup: () => Promise<void>
 }): React.JSX.Element {
   const searchEngines: Array<{ id: SearchEngineId; name: string; description: string }> = [
@@ -2387,6 +2481,75 @@ function SettingsModal({
           >
             Open Model Setup
           </button>
+        </div>
+
+        <div className="settings-field settings-update-field">
+          <div className="settings-update-head">
+            <div>
+              <label>Updates</label>
+              <p>Checks GitHub Releases and lets you decide when to install a newer build.</p>
+            </div>
+            <span className={updateCheck?.updateAvailable ? 'update-badge available' : 'update-badge'}>
+              {updateCheck?.updateAvailable ? 'Available' : 'Tracker'}
+            </span>
+          </div>
+
+          <div className="settings-update-status">
+            <strong>{updateStatusLabel(updateCheck)}</strong>
+            {updateCheck?.currentVersion && <span>Current version {updateCheck.currentVersion}</span>}
+            {updateCheck?.latestVersion && (
+              <span>Latest release {updateCheck.latestVersion}</span>
+            )}
+            <span>Last checked {formatSettingsDate(updateCheck?.checkedAt ?? settings.updates.lastCheckedAt)}</span>
+            {updateCheck?.publishedAt && (
+              <span>Published {formatSettingsDate(updateCheck.publishedAt)}</span>
+            )}
+          </div>
+
+          {updateCheck?.releaseNotes && (
+            <p className="settings-update-notes">{updateCheck.releaseNotes}</p>
+          )}
+
+          <div className="settings-update-actions">
+            <label className="settings-checkbox-row settings-update-toggle">
+              <input
+                checked={settings.updates.autoCheck}
+                disabled={Boolean(busy) || updateChecking}
+                onChange={(event) => {
+                  void onUpdateAutoCheck(event.currentTarget.checked)
+                }}
+                type="checkbox"
+              />
+              <span>
+                <strong>Check quietly on startup</strong>
+                <small>No downloads or installs happen automatically.</small>
+              </span>
+            </label>
+            <div>
+              {updateCheck?.releaseUrl && (
+                <button
+                  className="button"
+                  disabled={Boolean(busy)}
+                  onClick={() => {
+                    void onOpenUpdateRelease()
+                  }}
+                  type="button"
+                >
+                  View Release
+                </button>
+              )}
+              <button
+                className="button crystal-button"
+                disabled={Boolean(busy) || updateChecking}
+                onClick={() => {
+                  void onCheckForUpdates()
+                }}
+                type="button"
+              >
+                {updateChecking ? 'Checking' : 'Check Now'}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="settings-shortcuts" aria-label="Keyboard shortcuts">

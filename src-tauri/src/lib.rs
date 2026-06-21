@@ -70,6 +70,8 @@ const AETHER_LLM_GPU_ENV: &str = "AETHER_LLM_GPU";
 const AETHER_EMBED_GPU_ENV: &str = "AETHER_EMBED_GPU";
 const AETHER_EMBED_BATCH_ENV: &str = "AETHER_EMBED_BATCH";
 const AETHER_EMBED_BATCH_TOKENS_ENV: &str = "AETHER_EMBED_BATCH_TOKENS";
+const AETHER_RELEASES_API_URL: &str =
+    "https://api.github.com/repos/CanPixel/aether/releases/latest";
 const DEFAULT_CHAT_CONTEXT_TOKENS: u32 = 6144;
 const DEFAULT_CHAT_BATCH_TOKENS: usize = 2048;
 const DEFAULT_EMBEDDING_CONTEXT_TOKENS: u32 = 2048;
@@ -358,9 +360,19 @@ struct BrowserSettings {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct UpdateSettings {
+    #[serde(default = "default_update_auto_check")]
+    auto_check: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    last_checked_at: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct AppSettings {
     browser: BrowserSettings,
     developer_mode: bool,
+    updates: UpdateSettings,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -931,12 +943,49 @@ struct SaveIcebergInput {
 struct UpdateSettingsInput {
     browser: Option<PartialBrowserSettings>,
     developer_mode: Option<bool>,
+    updates: Option<PartialUpdateSettings>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PartialBrowserSettings {
     default_search_engine: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PartialUpdateSettings {
+    auto_check: Option<bool>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateCheckResult {
+    current_version: String,
+    checked_at: String,
+    update_available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    latest_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    latest_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    release_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    release_notes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    published_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GithubRelease {
+    tag_name: String,
+    name: Option<String>,
+    html_url: String,
+    body: Option<String>,
+    published_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1010,6 +1059,8 @@ struct UserSettings {
     browser: BrowserSettings,
     #[serde(default)]
     developer_mode: bool,
+    #[serde(default)]
+    updates: UpdateSettings,
     #[serde(default, alias = "ollama")]
     local_model: LocalModelSettings,
 }
@@ -1029,12 +1080,22 @@ impl Default for BrowserSettings {
     }
 }
 
+impl Default for UpdateSettings {
+    fn default() -> Self {
+        Self {
+            auto_check: default_update_auto_check(),
+            last_checked_at: None,
+        }
+    }
+}
+
 impl Default for UserSettings {
     fn default() -> Self {
         Self {
             version: default_settings_version(),
             browser: BrowserSettings::default(),
             developer_mode: false,
+            updates: UpdateSettings::default(),
             local_model: LocalModelSettings::default(),
         }
     }
@@ -1042,6 +1103,10 @@ impl Default for UserSettings {
 
 fn default_settings_version() -> u8 {
     1
+}
+
+fn default_update_auto_check() -> bool {
+    true
 }
 
 #[derive(Serialize, Deserialize)]
@@ -2418,7 +2483,9 @@ pub fn run() {
             aether_system_settings,
             aether_system_update_settings,
             aether_system_update_models,
+            aether_system_check_for_update,
             aether_system_download_models,
+            aether_system_open_external_url,
             aether_layout_set_panel_collapsed,
             aether_layout_set_modal_overlay_open,
             aether_layout_show_status_toast
@@ -3433,6 +3500,7 @@ async fn aether_system_settings(state: State<'_, Backend>) -> Cmd<AppSettings> {
     Ok(AppSettings {
         browser: settings.browser,
         developer_mode: settings.developer_mode,
+        updates: settings.updates,
     })
 }
 
@@ -3451,10 +3519,115 @@ async fn aether_system_update_settings(
     if let Some(developer_mode) = input.developer_mode {
         settings.developer_mode = developer_mode;
     }
+    if let Some(updates) = input.updates {
+        if let Some(auto_check) = updates.auto_check {
+            settings.updates.auto_check = auto_check;
+        }
+    }
     save_json(&state.paths.settings_path, &settings).await?;
     Ok(AppSettings {
         browser: settings.browser,
         developer_mode: settings.developer_mode,
+        updates: settings.updates,
+    })
+}
+
+#[tauri::command]
+async fn aether_system_check_for_update(state: State<'_, Backend>) -> Cmd<UpdateCheckResult> {
+    let checked_at = now();
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+
+    let request = state
+        .client
+        .get(AETHER_RELEASES_API_URL)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("User-Agent", "AETHER-update-checker");
+    let response = match request.send().await {
+        Ok(response) => response,
+        Err(error) => {
+            persist_update_last_checked_at(&state.paths, &checked_at).await?;
+            return Ok(UpdateCheckResult {
+                current_version,
+                checked_at,
+                update_available: false,
+                latest_version: None,
+                latest_name: None,
+                release_url: None,
+                release_notes: None,
+                published_at: None,
+                error: Some(format!("Could not reach GitHub Releases: {error}")),
+            });
+        }
+    };
+
+    if response.status().as_u16() == 404 {
+        persist_update_last_checked_at(&state.paths, &checked_at).await?;
+        return Ok(UpdateCheckResult {
+            current_version,
+            checked_at,
+            update_available: false,
+            latest_version: None,
+            latest_name: None,
+            release_url: None,
+            release_notes: None,
+            published_at: None,
+            error: Some("No published GitHub release found yet.".to_string()),
+        });
+    }
+
+    if !response.status().is_success() {
+        persist_update_last_checked_at(&state.paths, &checked_at).await?;
+        return Ok(UpdateCheckResult {
+            current_version,
+            checked_at,
+            update_available: false,
+            latest_version: None,
+            latest_name: None,
+            release_url: None,
+            release_notes: None,
+            published_at: None,
+            error: Some(format!(
+                "GitHub Releases returned HTTP {}.",
+                response.status().as_u16()
+            )),
+        });
+    }
+
+    let release = match response.json::<GithubRelease>().await {
+        Ok(release) => release,
+        Err(error) => {
+            persist_update_last_checked_at(&state.paths, &checked_at).await?;
+            return Ok(UpdateCheckResult {
+                current_version,
+                checked_at,
+                update_available: false,
+                latest_version: None,
+                latest_name: None,
+                release_url: None,
+                release_notes: None,
+                published_at: None,
+                error: Some(format!("Could not read GitHub release metadata: {error}")),
+            });
+        }
+    };
+    let latest_version = release_version_from_tag(&release.tag_name);
+    let update_available = version_is_newer(&latest_version, &current_version);
+    persist_update_last_checked_at(&state.paths, &checked_at).await?;
+
+    Ok(UpdateCheckResult {
+        current_version,
+        checked_at,
+        update_available,
+        latest_version: Some(latest_version),
+        latest_name: release.name.or_else(|| Some(release.tag_name)),
+        release_url: Some(release.html_url),
+        release_notes: release
+            .body
+            .map(|body| body.trim().chars().take(1400).collect::<String>())
+            .filter(|body| !body.is_empty()),
+        published_at: release.published_at,
+        error: None,
     })
 }
 
@@ -3484,6 +3657,18 @@ async fn aether_system_download_models(
 ) -> Cmd<SystemStatus> {
     download_managed_models(&app, &state, input).await?;
     system_status(&state).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn aether_system_open_external_url(app: AppHandle, url: String) -> Cmd<()> {
+    let parsed = Url::parse(url.trim()).map_err(|_| "Invalid release URL.".to_string())?;
+    match parsed.scheme() {
+        "https" | "http" => app
+            .opener()
+            .open_url(parsed.to_string(), None::<String>)
+            .map_err(|error| error.to_string()),
+        _ => Err("Only web URLs can be opened from Settings.".to_string()),
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -5296,6 +5481,47 @@ async fn load_library(path: &Path) -> Cmd<LibraryData> {
 
 async fn load_settings(path: &Path) -> Cmd<UserSettings> {
     read_json_or_default(path).await
+}
+
+async fn persist_update_last_checked_at(paths: &DataPaths, checked_at: &str) -> Cmd<()> {
+    let mut settings = load_settings(&paths.settings_path).await?;
+    settings.updates.last_checked_at = Some(checked_at.to_string());
+    save_json(&paths.settings_path, &settings).await
+}
+
+fn release_version_from_tag(tag: &str) -> String {
+    tag.trim()
+        .trim_start_matches('v')
+        .trim_start_matches('V')
+        .to_string()
+}
+
+fn version_is_newer(candidate: &str, current: &str) -> bool {
+    let candidate_parts = version_parts(candidate);
+    let current_parts = version_parts(current);
+    let max_len = candidate_parts.len().max(current_parts.len()).max(3);
+    for index in 0..max_len {
+        let candidate_value = candidate_parts.get(index).copied().unwrap_or_default();
+        let current_value = current_parts.get(index).copied().unwrap_or_default();
+        if candidate_value > current_value {
+            return true;
+        }
+        if candidate_value < current_value {
+            return false;
+        }
+    }
+    false
+}
+
+fn version_parts(version: &str) -> Vec<u64> {
+    version
+        .trim()
+        .trim_start_matches('v')
+        .trim_start_matches('V')
+        .split(|character: char| !character.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u64>().ok())
+        .collect()
 }
 
 async fn load_icebergs(path: &Path) -> Cmd<IcebergData> {
@@ -8050,6 +8276,14 @@ mod tests {
         assert_eq!(semantic_score_from_distance(0.3), 75.0);
         assert_eq!(semantic_score_from_distance(1.2), 0.0);
         assert_eq!(semantic_score_from_distance(f64::INFINITY), 0.0);
+    }
+
+    #[test]
+    fn version_comparison_handles_release_tags() {
+        assert!(version_is_newer("v2.0.0", "1.9.9"));
+        assert!(version_is_newer("1.0.1", "1.0.0"));
+        assert!(!version_is_newer("1.0.0", "1.0.0"));
+        assert!(!version_is_newer("0.9.9", "1.0.0"));
     }
 
     #[test]

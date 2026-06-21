@@ -41,9 +41,15 @@ export interface BrowserSettings {
   defaultSearchEngine: SearchEngineId
 }
 
+export interface UpdateSettings {
+  autoCheck: boolean
+  lastCheckedAt?: string
+}
+
 export interface AppSettings {
   browser: BrowserSettings
   developerMode: boolean
+  updates: UpdateSettings
 }
 
 export interface CollectionSummary {
@@ -332,6 +338,18 @@ export interface SystemStatus {
   error?: string
 }
 
+export interface UpdateCheckResult {
+  currentVersion: string
+  checkedAt: string
+  updateAvailable: boolean
+  latestVersion?: string
+  latestName?: string
+  releaseUrl?: string
+  releaseNotes?: string
+  publishedAt?: string
+  error?: string
+}
+
 export type ModelDownloadChoice = 'lite' | 'wise'
 export type ModelDownloadStatus = 'queued' | 'downloading' | 'skipped' | 'complete' | 'error'
 
@@ -468,6 +486,8 @@ export interface AetherApi {
     settings(): Promise<AppSettings>
     updateSettings(input: Partial<AppSettings>): Promise<AppSettings>
     updateModels(input: { embeddingModel?: string; chatModel?: string }): Promise<SystemStatus>
+    checkForUpdate(): Promise<UpdateCheckResult>
+    openExternalUrl(url: string): Promise<void>
     downloadModels(input: {
       chatModels: ModelDownloadChoice[]
       hfToken?: string

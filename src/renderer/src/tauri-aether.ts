@@ -29,7 +29,8 @@ import {
   SearchResult,
   SemanticTrailResult,
   StatusToastInput,
-  SystemStatus
+  SystemStatus,
+  UpdateCheckResult
 } from '../../shared/aether'
 
 const isTauri = typeof window !== 'undefined' && Boolean(window.__TAURI_INTERNALS__)
@@ -117,6 +118,8 @@ if (isTauri) {
       settings: () => call<AppSettings>('aether_system_settings'),
       updateSettings: (input) => call<AppSettings>('aether_system_update_settings', { input }),
       updateModels: (input) => call<SystemStatus>('aether_system_update_models', { input }),
+      checkForUpdate: () => call<UpdateCheckResult>('aether_system_check_for_update'),
+      openExternalUrl: (url) => call<void>('aether_system_open_external_url', { url }),
       downloadModels: (input) => call<SystemStatus>('aether_system_download_models', { input })
     },
     layout: {
