@@ -31,7 +31,6 @@ import { CollectionIcon } from '../utils/collection-icons'
 import {
   cleanTitle,
   formatDate,
-  formatVisibleModelName,
   getCaptureHost,
   getPortalTint,
   getRootDomainLetter,
@@ -356,8 +355,8 @@ export function Dashboard({
                     <span>{iceberg.itemCount} fragments</span>
                     <strong>{iceberg.title}</strong>
                     <small>
-                      {formatDate(iceberg.savedAt)}{' • '}
-                      {formatVisibleModelName(iceberg.model) ?? iceberg.model}
+                      {formatDate(iceberg.savedAt)}{/* {' • '} */}
+                      {/* {formatVisibleModelName(iceberg.model) ?? iceberg.model} */}
                     </small>
                   </button>
                   <button
@@ -386,7 +385,7 @@ export function Dashboard({
           <span className="section-symbol">
             <CubeIcon />
           </span>
-          <div>
+          <div style={{ marginTop: '-6px' }}>
             <h2>Knowledge Hubs</h2>
             <p>Persistent local collections for captured pages, notes, and research trails.</p>
           </div>

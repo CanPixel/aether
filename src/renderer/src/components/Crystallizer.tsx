@@ -49,6 +49,17 @@ type PositionedTopic = {
   displayY: number
 }
 
+// The raised card is rendered as plain HTML positioned over (not inside) the SVG.
+// Touching the SVG on hover is what triggered WebKit's foreignObject "teleport to
+// 0,0" bug, so the SVG now stays completely static and this HTML layer floats on top.
+type RaisedCard = {
+  item: IcebergItem
+  accent: string
+  left: number
+  top: number
+  width: number
+}
+
 type DepthPath = {
   from: PositionedTopic
   to: PositionedTopic
@@ -229,8 +240,34 @@ export function Crystallizer({
   const [dragging, setDragging] = useState(false)
   const [savedDrawerOpen, setSavedDrawerOpen] = useState(() => !openedIceberg)
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null)
+  const [raisedCard, setRaisedCard] = useState<RaisedCard | null>(null)
+  const [raisedVisible, setRaisedVisible] = useState(false)
+  const shellRef = useRef<HTMLDivElement>(null)
   const dragStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
   const animationFrame = useRef<number | null>(null)
+
+  // Snapshot the hovered/focused node's on-screen box so the HTML raised card can
+  // sit exactly over it. Computed from the live DOM rect (includes pan/zoom), so no
+  // coordinate math is needed and the SVG is never mutated.
+  function raiseCard(target: SVGGElement, item: IcebergItem, accent: string): void {
+    const shell = shellRef.current
+    if (!shell) return
+    const nodeRect = target.getBoundingClientRect()
+    const shellRect = shell.getBoundingClientRect()
+    // The raised card is wider than the node so the description has room to breathe;
+    // keep it centred on the node so it reads as that card expanding, not a new one
+    // dropped on top. Width scales with the node's on-screen size (i.e. with zoom).
+    const width = nodeRect.width * 1.34
+    const centerX = nodeRect.left - shellRect.left + nodeRect.width / 2
+    setRaisedCard({
+      item,
+      accent,
+      left: centerX - width / 2,
+      top: nodeRect.top - shellRect.top,
+      width
+    })
+    setRaisedVisible(true)
+  }
 
   const positionedItems = useMemo(() => positionTopics(result?.items ?? []), [result])
   const visiblePositionedItems = useMemo(
@@ -379,6 +416,9 @@ export function Crystallizer({
     const worldX = (cursorX - pan.x) / zoom
     const worldY = (cursorY - pan.y) / zoom
 
+    // Zooming slides the node out from under the raised card's snapshot; hide it
+    // and let the next hover re-place it.
+    setRaisedVisible(false)
     setZoom(nextZoom)
     setPan({
       x: cursorX - worldX * nextZoom,
@@ -388,6 +428,10 @@ export function Crystallizer({
 
   function animateView(nextZoom: number, nextPan = pan): void {
     if (animationFrame.current) cancelAnimationFrame(animationFrame.current)
+
+    // The view is about to move, so the raised card's snapshot no longer lines up
+    // with its node — hide it; the next hover re-places it.
+    setRaisedVisible(false)
 
     const startZoom = zoom
     const startPan = pan
@@ -446,6 +490,7 @@ export function Crystallizer({
   function handlePointerDown(event: ReactPointerEvent<SVGSVGElement>): void {
     if ((event.target as Element).closest('.ice-node-hit')) return
     event.preventDefault()
+    setRaisedVisible(false)
     if (animationFrame.current) {
       cancelAnimationFrame(animationFrame.current)
       animationFrame.current = null
@@ -479,6 +524,7 @@ export function Crystallizer({
   function handlePointerLeave(): void {
     dragStart.current = null
     setDragging(false)
+    setRaisedVisible(false)
   }
 
   function handlePointerUp(event: ReactPointerEvent<SVGSVGElement>): void {
@@ -540,7 +586,7 @@ export function Crystallizer({
       </header>
 
       <section className={`crystallizer-body ${hasResults ? 'results-ready' : ''}`}>
-        <div className="crystallizer-canvas-shell">
+        <div className="crystallizer-canvas-shell" ref={shellRef}>
           <div className="crystallizer-tools" aria-label="Crystallizer canvas controls">
             <button
               className="button"
@@ -741,11 +787,25 @@ export function Crystallizer({
                     onClick={() => {
                       selectItem(item)
                     }}
-                    onFocus={() => setHoveredItemId(item.id)}
-                    onBlur={() => setHoveredItemId(null)}
+                    onFocus={(event) => {
+                      setHoveredItemId(item.id)
+                      raiseCard(event.currentTarget, item, layer.accent)
+                    }}
+                    onBlur={() => {
+                      setHoveredItemId(null)
+                      setRaisedVisible(false)
+                    }}
                     onKeyDown={(event) => handleNodeKeyDown(event, item)}
-                    onMouseEnter={() => setHoveredItemId(item.id)}
-                    onMouseLeave={() => setHoveredItemId(null)}
+                    onMouseEnter={(event) => {
+                      setHoveredItemId(item.id)
+                      raiseCard(event.currentTarget, item, layer.accent)
+                    }}
+                    onMouseLeave={() => {
+                      // Keep the raised card during node→node sweeps (the next node's
+                      // mouseEnter repositions it); it's cleared when the pointer
+                      // actually leaves the canvas via handlePointerLeave.
+                      setHoveredItemId(null)
+                    }}
                     role="button"
                     style={
                       {
@@ -798,12 +858,35 @@ export function Crystallizer({
               <h2>{error}</h2>
             </div>
           )}
+
+          {/* Raised card: an HTML layer floating over the SVG (never inside it), shown
+              over the hovered/focused node with its full, untruncated description.
+              Always mounted and faded via the is-visible class so it animates both in
+              and out; pointer-events:none keeps the node beneath interactive. */}
+          <div
+            aria-hidden="true"
+            className={`ice-raised-card ${raisedVisible && raisedCard ? 'is-visible' : ''}`}
+            style={
+              raisedCard
+                ? ({
+                    '--layer-accent': raisedCard.accent,
+                    left: `${raisedCard.left}px`,
+                    top: `${raisedCard.top}px`,
+                    width: `${raisedCard.width}px`
+                  } as CSSProperties)
+                : undefined
+            }
+          >
+            <span className="ice-raised-badge">{raisedCard?.item.level ?? ''}</span>
+            <strong>{raisedCard?.item.name ?? ''}</strong>
+            <small>{raisedCard?.item.description ?? ''}</small>
+          </div>
         </div>
 
         <aside
           className={`crystallizer-dock ${
             hasSavedAtlases && !hasResults && !loading ? 'saved-atlas-priority' : ''
-          }`}
+          } ${savedAtlasExpanded ? 'saved-atlas-open' : ''}`}
           aria-label="Crystallizer details"
         >
           <div className="dock-head">

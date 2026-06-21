@@ -1888,7 +1888,7 @@ button {
   min-height: 294px;
   align-items: center;
   justify-content: space-between;
-  margin: 0 -34px 28px;
+  margin: 0 -34px 1px;
   overflow: hidden;
   padding: 68px 74px 48px;
   border-bottom: 1px solid rgba(143, 165, 196, 0.16);
@@ -5839,6 +5839,7 @@ button {
   color: var(--ink);
   font-size: 18px;
   font-weight: 840;
+  font-family: var(--font-ice);
 }
 
 .section-title.compact h2 {
@@ -5848,8 +5849,9 @@ button {
 
 .section-title p {
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 10px;
+  line-height: 0.75;
+  font-weight: 720;
 }
 
 .section-title.compact p {
@@ -7093,11 +7095,13 @@ button {
   min-width: 0;
   overflow: hidden;
   color: #102033;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 900;
   line-height: 1.18;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
+  font-family: var(--font-display);
 }
 
 .ice-node small {
@@ -7109,6 +7113,82 @@ button {
   line-height: 1.25;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+/* HTML raised card — floats over the SVG (see Crystallizer render). It mirrors the
+   .ice-node look but is wider, grows to content and shows the full description.
+   Positioned via inline left/top/width from the hovered node's live DOM rect.
+   Always mounted; .is-visible drives a smooth fade + lift in *and* out (no pop). */
+.ice-raised-card {
+  position: absolute;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: start;
+  column-gap: 9px;
+  row-gap: 3px;
+  border: 1px solid color-mix(in srgb, var(--layer-accent) 62%, white);
+  border-left: 4px solid var(--layer-accent);
+  border-radius: 12px;
+  padding: 11px 13px 13px 10px;
+  background:
+    radial-gradient(circle at 18% 10%, rgba(255, 255, 255, 1), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(248, 252, 255, 0.86)),
+    color-mix(in srgb, var(--layer-accent) 10%, white);
+  color: #102033;
+  text-align: left;
+  box-shadow:
+    0 24px 50px rgba(8, 47, 73, 0.26),
+    0 0 0 3px color-mix(in srgb, var(--layer-accent) 18%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.955) translateY(3px);
+  transform-origin: center top;
+  transition:
+    opacity 190ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ice-raised-card.is-visible {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+.ice-raised-badge {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 24px;
+  grid-row: 1 / span 2;
+  align-self: start;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--layer-accent) 88%, #ffffff);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 900;
+  box-shadow:
+    0 7px 16px color-mix(in srgb, var(--layer-accent) 18%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.ice-raised-card strong {
+  align-self: center;
+  min-width: 0;
+  color: #102033;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.18;
+  font-family: var(--font-display);
+}
+
+.ice-raised-card small {
+  grid-column: 2;
+  color: rgba(60, 76, 96, 0.94);
+  font-size: 10.5px;
+  font-weight: 660;
+  line-height: 1.34;
 }
 
 .text-shimmer {
@@ -8037,6 +8117,26 @@ button {
 }
 
 .crystallizer-dock.saved-atlas-priority .saved-atlas-drawer.open .saved-atlas-list {
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 0;
+  align-content: start;
+  grid-auto-rows: max-content;
+  overflow: auto;
+}
+
+/* Conscious expansion while an iceberg is open: the drawer behaves like a real
+   drawer and rolls up over the shard list, taking that space until closed again. */
+.crystallizer-dock.saved-atlas-open .crystallizer-list {
+  display: none;
+}
+
+.crystallizer-dock.saved-atlas-open .saved-atlas-drawer.open {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.crystallizer-dock.saved-atlas-open .saved-atlas-drawer.open .saved-atlas-list {
   flex: 1 1 auto;
   max-height: none;
   min-height: 0;
