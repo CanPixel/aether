@@ -30,6 +30,7 @@
   --font-ice: 'Cinzel', 'Cormorant Garamond', Georgia, serif;
   --font-display: 'Cormorant Garamond', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
   --font-old: 'New York', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-alt: Didot, 'Bodoni 72', 'Bodoni 72 Smallcaps', 'Baskerville', 'Iowan Old Style', Georgia, serif;
 }
 
 html,
@@ -2009,7 +2010,7 @@ button {
 .start-page-hero-copy h1 {
   --discover-gradient: linear-gradient(
     105deg,
-    #071121 0%,
+    #071121 10%,
     #102846 20%,
     #1f7f9a 38%,
     #e9fbff 50%,
@@ -2020,10 +2021,10 @@ button {
   );
 
   position: relative;
-  font-family: Didot, 'Bodoni 72', 'Bodoni 72 Smallcaps', 'Baskerville', 'Iowan Old Style', Georgia, serif;
+  font-family: var(--font-display);
   margin: 0;
-  font-size: clamp(34px, min(4.2vw, 6.2vh), 42px);
-  font-weight: 520;
+  font-size: clamp(33px, min(4.2vw, 6.2vh), 20px);
+  font-weight: 600;
   line-height: 0.86;
   letter-spacing: 0.064em;
   color: #0a172b;
@@ -6134,9 +6135,10 @@ button {
 }
 
 .start-portals {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   width: 100%;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   gap: 12px;
   max-height: clamp(112px, 22vh, 190px);
   overflow: auto;
@@ -6190,6 +6192,7 @@ button {
 
 .start-portal {
   display: grid;
+  width: 132px;
   height: 118px;
   justify-items: center;
   gap: 7px;
@@ -8016,7 +8019,7 @@ button {
 .saved-atlas-list {
   display: grid;
   max-height: 0;
-  gap: 7px;
+  gap: 4px;
   overflow: hidden;
   opacity: 0;
   transition:
@@ -8079,15 +8082,19 @@ button {
   overflow: hidden;
   color: #334155;
   font-size: 12px;
-  font-weight: 840;
+  font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-old)
 }
 
 .saved-atlas-list small {
   color: #64748b;
   font-size: 10px;
-  font-weight: 740;
+  font-weight: 700;
+  line-height: 1;
+  margin-top: -3px;
+  font-family: var(--font-old);
 }
 
 .crystallizer-dock .dock-footer {

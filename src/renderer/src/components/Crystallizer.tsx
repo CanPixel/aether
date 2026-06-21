@@ -925,7 +925,7 @@ export function Crystallizer({
                     >
                       <strong>{iceberg.title}</strong>
                       <small>
-                        {iceberg.itemCount} fragments /{' '}
+                        {iceberg.itemCount} fragments •{' '}
                         {formatVisibleModelName(iceberg.model) ?? iceberg.model}
                       </small>
                     </button>
