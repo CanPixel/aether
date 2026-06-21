@@ -495,7 +495,7 @@ button:disabled {
 }
 
 .workspace.dashboard-open {
-  padding-top: 106px;
+  padding-top: 95px;
 }
 
 .workspace::before {
@@ -509,7 +509,7 @@ button:disabled {
 }
 
 .workspace.dashboard-open::before {
-  inset: 106px 0 0;
+  inset: 95px 0 0;
 }
 
 .address-bar {
@@ -724,7 +724,7 @@ button {
 }
 
 .workspace.dashboard-open .dashboard {
-  height: calc(100vh - 106px);
+  height: calc(100vh - 95px);
 }
 
 .flow-view {
@@ -732,7 +732,7 @@ button {
   z-index: 1;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  height: calc(100vh - 106px);
+  height: calc(100vh - 95px);
   overflow: hidden;
   padding: 20px 24px 24px;
   background:
@@ -759,7 +759,7 @@ button {
   z-index: 1;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  height: calc(100vh - 106px);
+  height: calc(100vh - 95px);
   overflow: hidden;
   padding: 20px 24px 24px;
   background:
@@ -8007,6 +8007,7 @@ button {
   font-weight: 820;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-old);
 }
 
 .saved-atlas-drawer {
@@ -8187,6 +8188,7 @@ button {
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-transform: capitalize;
   font-family: var(--font-old)
 }
 
