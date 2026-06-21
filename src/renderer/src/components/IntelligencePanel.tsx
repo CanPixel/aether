@@ -31,6 +31,7 @@ type IntelligencePanelProps = {
   askPhase: string | null
   canUseCurrentPage: boolean
   currentPageTitle: string
+  currentPageTint: string
   collections: CollectionSummary[]
   dashboardOpen: boolean
   chatResult: ChatResult | null
@@ -69,6 +70,7 @@ export function IntelligencePanel({
   askPhase,
   canUseCurrentPage,
   currentPageTitle,
+  currentPageTint,
   collections,
   dashboardOpen,
   chatResult,
@@ -103,7 +105,6 @@ export function IntelligencePanel({
   const modelSettingsRef = useRef<HTMLElement>(null)
   const askCollections = collections.filter((collection) => collection.captureCount > 0)
   const hasKnowledgeHubs = askCollections.length > 0
-  const currentPageActive = !hasKnowledgeHubs || askCurrentPageOnly || askIncludeCurrentPage
   const hasAskContext = !hasKnowledgeHubs
     ? canUseCurrentPage
     : askCurrentPageOnly
@@ -396,11 +397,24 @@ export function IntelligencePanel({
                 style={{ pointerEvents: 'none' }}
                 className={`ask-current-button active frozen-tab`}
               >
-                <span className="ask-current-badge" style={{ borderColor: currentPageActive ? 'var(--prism)' : undefined, color: currentPageActive ? 'purple' : undefined }} aria-hidden="true">
+                <span
+                  className="ask-current-badge"
+                  style={{
+                    borderColor: canUseCurrentPage && currentPageTint ? currentPageTint : undefined,
+                    color: canUseCurrentPage && currentPageTint ? currentPageTint : undefined
+                  }}
+                  aria-hidden="true"
+                >
                   <Newspaper size={18} />
                 </span>
                 <span className="ask-current-text">
-                  <strong  style={{ color: currentPageActive ? 'purple' : 'var(--ink)' }}>Current Page</strong>
+                  <strong
+                    style={{
+                      color: canUseCurrentPage && currentPageTint ? currentPageTint : 'var(--ink)'
+                    }}
+                  >
+                    Current Page
+                  </strong>
                   <small title={canUseCurrentPage ? currentPageTitle : undefined}>
                     {canUseCurrentPage ? currentPageTitle : 'Nothing open'}
                   </small>

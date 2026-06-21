@@ -48,6 +48,7 @@ import {
   cleanTitle,
   formatVisibleModelName,
   getQuickActions,
+  getTabTint,
   normalizeComparableUrl
 } from './utils/aether-ui'
 import {
@@ -507,6 +508,8 @@ function App(): React.JSX.Element {
   const currentPageTitle = canUseCurrentPage
     ? cleanTitle(activeTab?.title ?? '') || activeTab?.host || activeTab?.url || ''
     : ''
+  const currentPageTint =
+    canUseCurrentPage && activeTab ? getTabTint(activeTab.host, activeTab.themeColor) : ''
   const chatBlocked = status ? !status.runtimeReady || !status.chatModel : false
   const installedSetupModels = useMemo(() => installedSetupModelsFromStatus(status), [status])
   const modelSetupCoreInstalled = setupCoreInstalled(status)
@@ -2062,6 +2065,7 @@ function App(): React.JSX.Element {
         askPanelOpen={askPanelOpen}
         canUseCurrentPage={canUseCurrentPage}
         currentPageTitle={currentPageTitle}
+        currentPageTint={currentPageTint}
         collections={collections}
         dashboardOpen={dashboardOpen}
         chatResult={chatResult}

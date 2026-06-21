@@ -1,6 +1,7 @@
 import { CSSProperties, FormEvent, MouseEvent, useEffect, useState } from 'react'
 import { BrowserTabSummary, CaptureResult, CollectionSummary } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
+import { getTabTint } from '../utils/aether-ui'
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -356,7 +357,7 @@ export function BrowserChrome({
 
 function getTabStyle(tab: BrowserTabSummary): CSSProperties {
   return {
-    '--tab-tint': getBrandTint(tab.host) || tab.themeColor || getHostTint(tab.host)
+    '--tab-tint': getTabTint(tab.host, tab.themeColor)
   } as CSSProperties
 }
 
@@ -376,32 +377,3 @@ function PageFavicon({ icon }: { icon?: string }): React.JSX.Element {
   )
 }
 
-function getBrandTint(host: string): string {
-  const normalized = host.replace(/^www\./, '')
-
-  if (normalized === 'reddit.com' || normalized.endsWith('.reddit.com')) return '#ff4500'
-  if (
-    normalized === 'youtube.com' ||
-    normalized === 'youtu.be' ||
-    normalized.endsWith('.youtube.com')
-  ) {
-    return '#ff0033'
-  }
-  if (normalized === 'google.com' || normalized.endsWith('.google.com')) return '#4285f4'
-  if (normalized === 'github.com' || normalized.endsWith('.github.com')) return '#6e7681'
-  if (normalized === 'x.com' || normalized === 'twitter.com') return '#111827'
-
-  return ''
-}
-
-function getHostTint(host: string): string {
-  const palette = ['#4f8fd6', '#3aaea1', '#c07f43', '#7772d6', '#4e9a62', '#b95f79', '#547aa5']
-  const key = host || 'aether'
-  let hash = 0
-
-  for (let index = 0; index < key.length; index += 1) {
-    hash = (hash * 31 + key.charCodeAt(index)) >>> 0
-  }
-
-  return palette[hash % palette.length]
-}

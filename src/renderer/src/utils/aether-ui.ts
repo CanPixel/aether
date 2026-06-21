@@ -63,6 +63,43 @@ export function getPortalTint(host: string, themeColor?: string): string {
   return palette[hash % palette.length]
 }
 
+// Tab tint, matched 1:1 with the browser tab strip (see BrowserChrome getTabStyle):
+// a hand-tuned brand color, then the page's own theme color, then a stable
+// per-host fallback hue.
+function getTabBrandTint(host: string): string {
+  const normalized = host.replace(/^www\./, '')
+
+  if (normalized === 'reddit.com' || normalized.endsWith('.reddit.com')) return '#ff4500'
+  if (
+    normalized === 'youtube.com' ||
+    normalized === 'youtu.be' ||
+    normalized.endsWith('.youtube.com')
+  ) {
+    return '#ff0033'
+  }
+  if (normalized === 'google.com' || normalized.endsWith('.google.com')) return '#4285f4'
+  if (normalized === 'github.com' || normalized.endsWith('.github.com')) return '#6e7681'
+  if (normalized === 'x.com' || normalized === 'twitter.com') return '#111827'
+
+  return ''
+}
+
+function getTabHostTint(host: string): string {
+  const palette = ['#4f8fd6', '#3aaea1', '#c07f43', '#7772d6', '#4e9a62', '#b95f79', '#547aa5']
+  const key = host || 'aether'
+  let hash = 0
+
+  for (let index = 0; index < key.length; index += 1) {
+    hash = (hash * 31 + key.charCodeAt(index)) >>> 0
+  }
+
+  return palette[hash % palette.length]
+}
+
+export function getTabTint(host: string, themeColor?: string): string {
+  return getTabBrandTint(host) || themeColor || getTabHostTint(host)
+}
+
 export function formatDate(value: string): string {
   return new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
