@@ -203,7 +203,7 @@ export function Dashboard({
       <header className="dashboard-hero">
         <div className="hero-copy">
           <h1>ÆTHER</h1>
-          <p>Your browser. Your knowledge.</p>
+          <p>Your browser, your knowledge.</p>
         </div>
         <div className="hero-orb" aria-hidden="true">
           <span className="hero-orb-aura" />

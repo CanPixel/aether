@@ -44,7 +44,12 @@ import { GlobeIcon, CloudIcon, GearIcon, AetherSigilIcon } from './components/ic
 import { IntelligencePanel } from './components/IntelligencePanel'
 import { ModelSetupModal } from './components/ModelSetupModal'
 import { QuickAction } from './types/ui'
-import { formatVisibleModelName, getQuickActions, normalizeComparableUrl } from './utils/aether-ui'
+import {
+  cleanTitle,
+  formatVisibleModelName,
+  getQuickActions,
+  normalizeComparableUrl
+} from './utils/aether-ui'
 import {
   ChevronDown,
   ChevronUp,
@@ -499,6 +504,9 @@ function App(): React.JSX.Element {
   )
   const isStartPage = activeTab?.url === START_PAGE_URL
   const canUseCurrentPage = Boolean(activeTab?.url) && !isStartPage
+  const currentPageTitle = canUseCurrentPage
+    ? cleanTitle(activeTab?.title ?? '') || activeTab?.host || activeTab?.url || ''
+    : ''
   const chatBlocked = status ? !status.runtimeReady || !status.chatModel : false
   const installedSetupModels = useMemo(() => installedSetupModelsFromStatus(status), [status])
   const modelSetupCoreInstalled = setupCoreInstalled(status)
@@ -1790,6 +1798,10 @@ function App(): React.JSX.Element {
   const flowOpen = dashboardOpen && workspaceMode === 'flow'
   const airOpen = dashboardOpen && workspaceMode === 'air'
   const dashboardHomeOpen = dashboardOpen && workspaceMode === 'dashboard'
+  // The native browser webview renders above the DOM, so CSS tooltips can't
+  // paint on top of it. Only show rail tooltips when the dashboard (DOM) covers
+  // the webview — i.e. when dashboardOpen is true.
+  const showRailTooltips = dashboardOpen
   const startPageActive = !dashboardOpen && isStartPage
 
   return (
@@ -1816,7 +1828,7 @@ function App(): React.JSX.Element {
         <button
           className={`brand-mark tooltip-host ${dashboardHomeOpen ? 'active' : ''}`}
           aria-label="Open ÆTHER dashboard"
-          data-tooltip="ÆTHER"
+          data-tooltip={showRailTooltips ? 'ÆTHER' : undefined}
           data-tooltip-side="right"
           onClick={openDashboard}
           title="ÆTHER"
@@ -1828,7 +1840,7 @@ function App(): React.JSX.Element {
         <nav className="app-list" aria-label="Apps">
           <button
             className={`app-button ice-button tooltip-host ${crystallizerOpen ? 'active' : ''}`}
-            data-tooltip='iCE'
+            data-tooltip={showRailTooltips ? 'iCE' : undefined}
             data-tooltip-side='right'
             onClick={openCrystallizer}
             title='iCE'
@@ -1840,7 +1852,7 @@ function App(): React.JSX.Element {
           </button>
           <button
             className={`app-button tooltip-host ${!dashboardOpen ? 'active' : ''}`}
-            data-tooltip='Discover'
+            data-tooltip={showRailTooltips ? 'Discover' : undefined}
             data-tooltip-side='right'
             onClick={openBrowser}
             title={activeApp ? `${activeApp.name} view` : 'Discover'}
@@ -1854,7 +1866,7 @@ function App(): React.JSX.Element {
           <>
             <button
               className={`app-button flow-button tooltip-host ${flowOpen ? 'active' : ''}`}
-              data-tooltip="Flow"
+              data-tooltip={showRailTooltips ? 'Flow' : undefined}
               data-tooltip-side="right"
               onClick={openFlow}
               title="Flow"
@@ -1865,7 +1877,7 @@ function App(): React.JSX.Element {
             </button>
             <button
               className={`app-button air-button tooltip-host ${airOpen ? 'active' : ''}`}
-              data-tooltip="AiR"
+              data-tooltip={showRailTooltips ? 'AiR' : undefined}
               data-tooltip-side="right"
               onClick={openAir}
               title="AiR"
@@ -2049,6 +2061,7 @@ function App(): React.JSX.Element {
         askIncludeCurrentPage={askIncludeCurrentPage}
         askPanelOpen={askPanelOpen}
         canUseCurrentPage={canUseCurrentPage}
+        currentPageTitle={currentPageTitle}
         collections={collections}
         dashboardOpen={dashboardOpen}
         chatResult={chatResult}
@@ -2361,7 +2374,7 @@ function SettingsModal({
             </span>
           </div>
           <button
-            className="crystal-button"
+            className="model-setup-button"
             disabled={Boolean(busy)}
             onClick={() => {
               void onOpenModelSetup()

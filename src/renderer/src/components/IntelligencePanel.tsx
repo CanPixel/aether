@@ -18,7 +18,7 @@ import { CollectionIcon } from '../utils/collection-icons'
 import { formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aether-ui'
 import { CrystallizingOrb } from './CrystallizingOrb'
 import { AetherSigilIcon, ChevronRightIcon, GearIcon } from './icons'
-import { Droplet, Waves } from 'lucide-react'
+import { Droplet, Waves, Newspaper } from 'lucide-react'
 
 type IntelligencePanelProps = {
   busy: string | null
@@ -30,6 +30,7 @@ type IntelligencePanelProps = {
   askPanelOpen: boolean
   askPhase: string | null
   canUseCurrentPage: boolean
+  currentPageTitle: string
   collections: CollectionSummary[]
   dashboardOpen: boolean
   chatResult: ChatResult | null
@@ -67,6 +68,7 @@ export function IntelligencePanel({
   askPanelOpen,
   askPhase,
   canUseCurrentPage,
+  currentPageTitle,
   collections,
   dashboardOpen,
   chatResult,
@@ -101,6 +103,7 @@ export function IntelligencePanel({
   const modelSettingsRef = useRef<HTMLElement>(null)
   const askCollections = collections.filter((collection) => collection.captureCount > 0)
   const hasKnowledgeHubs = askCollections.length > 0
+  const currentPageActive = !hasKnowledgeHubs || askCurrentPageOnly || askIncludeCurrentPage
   const hasAskContext = !hasKnowledgeHubs
     ? canUseCurrentPage
     : askCurrentPageOnly
@@ -241,8 +244,8 @@ export function IntelligencePanel({
       <div className="panel-content" aria-hidden={panelCollapsed} inert={panelCollapsed}>
         <header className="panel-header">
           <div>
-            <p>AiON • Local Knowledge</p>
-            <h1>Talk to the web you explored</h1>
+            <p>AiON <span>• Grounded Local Knowledge</span></p>
+            <h2>Ask the web you explore</h2>
           </div>
           <div className="panel-header-actions">
             <StatusPill status={status} />
@@ -286,6 +289,7 @@ export function IntelligencePanel({
               askCurrentPageOnly={askCurrentPageOnly}
               askIncludeCurrentPage={askIncludeCurrentPage}
               canUseCurrentPage={canUseCurrentPage}
+              currentPageTitle={currentPageTitle}
               collections={askCollections}
               onAskCollectionChange={onAskCollectionChange}
               onAskCurrentPageOnlyChange={onAskCurrentPageOnlyChange}
@@ -383,24 +387,40 @@ export function IntelligencePanel({
             style={!trailPanelOpen ? { pointerEvents: 'none' } : undefined}
           >
             <div className="semantic-trail-description">
-              {/* <strong>Map nearby knowledge</strong> */}
+              <strong>Find Related Knowledge</strong>
               <span>
-                Flow streams past captured knowledge that's related.<br></br>
+                Flow streams across your knowledge for connections<br></br>
               </span>
+
+              <button
+                style={{ pointerEvents: 'none' }}
+                className={`ask-current-button active frozen-tab`}
+              >
+                <span className="ask-current-badge" style={{ borderColor: currentPageActive ? 'var(--prism)' : undefined, color: currentPageActive ? 'purple' : undefined }} aria-hidden="true">
+                  <Newspaper size={18} />
+                </span>
+                <span className="ask-current-text">
+                  <strong  style={{ color: currentPageActive ? 'purple' : 'var(--ink)' }}>Current Page</strong>
+                  <small title={canUseCurrentPage ? currentPageTitle : undefined}>
+                    {canUseCurrentPage ? currentPageTitle : 'Nothing open'}
+                  </small>
+                </span>
+              </button>
             </div>
+            
             <div className="semantic-trail-form">
               <label htmlFor="semantic-trail-query" className="semantic-trail-label">
                 Focus (Optional)
               </label>
               <span className="semantic-trail-help">
-                Type a topic to channel the flow toward a specific theme.
+                Type a topic to channel the flow towards a specific topic.
               </span>
               <input
                 id="semantic-trail-query"
                 aria-label="Flow query"
                 value={semanticTrailQuery}
                 onChange={(event) => onSemanticTrailQueryChange(event.target.value)}
-                placeholder="Filter the stream by a specific topic or theme..."
+                placeholder="Filter the stream by a specific theme..."
               />
             </div>
             {busy === 'Building Flow' ? (
@@ -617,6 +637,7 @@ function AskContextControls({
   askCurrentPageOnly,
   askIncludeCurrentPage,
   canUseCurrentPage,
+  currentPageTitle,
   collections,
   onAskCollectionChange,
   onAskCurrentPageOnlyChange,
@@ -626,6 +647,7 @@ function AskContextControls({
   askCurrentPageOnly: boolean
   askIncludeCurrentPage: boolean
   canUseCurrentPage: boolean
+  currentPageTitle: string
   collections: CollectionSummary[]
   onAskCollectionChange: (collectionId: string) => void
   onAskCurrentPageOnlyChange: (value: boolean) => void
@@ -653,7 +675,19 @@ function AskContextControls({
             }}
             type="button"
           >
-            Current Page
+            <span className="ask-current-badge" style={{ borderColor: currentPageActive ? 'var(--prism)' : undefined, color: currentPageActive ? 'purple' : undefined }} aria-hidden="true">
+              <Newspaper size={18} />
+            </span>
+            <span className="ask-current-text">
+              <strong  style={{ color: currentPageActive ? 'purple' : 'var(--ink)' }}>Current Page</strong>
+              <small title={canUseCurrentPage ? currentPageTitle : undefined}>
+                {canUseCurrentPage ? currentPageTitle : 'Nothing open'}
+              </small>
+            </span>
+            <span
+              className={`ask-current-radio ${currentPageActive ? 'is-on' : ''}`}
+              aria-hidden="true"
+            />
           </button>
           <div className="ask-hub-picker">
             {collections.map((collection) => (
@@ -666,9 +700,9 @@ function AskContextControls({
                 }}
                 type="button"
               >
-                <span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '-3px' }}>
                   <CollectionIcon icon={collection.icon} />
-                </span>
+                </div>
                 <span className="ask-hub-copy">
                   <strong>{collection.name}</strong>
                   <small>
