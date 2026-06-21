@@ -824,7 +824,7 @@ export function Crystallizer({
               }
             >
               <p>
-                Layer {activeSelectedItem.level} / {getLayer(activeSelectedItem.level).name}
+                Layer {activeSelectedItem.level} • {getLayer(activeSelectedItem.level).name}
               </p>
               <h2>{activeSelectedItem.name}</h2>
               <span>{getLayer(activeSelectedItem.level).caption}</span>

@@ -6725,11 +6725,12 @@ button {
   color: #0f172a;
   font-size: clamp(20px, 2.3vw, 23px);
   font-weight: 850;
-  line-height: 1.05;
+  line-height: 1.1;
   letter-spacing: -0.025em;
   text-overflow: ellipsis;
   white-space: nowrap;
   margin: 0;
+  font-family: var(--font-ice);
 }
 
 .crystallizer-search button svg {
@@ -7651,6 +7652,7 @@ button {
 .crystallizer-detail h2,
 .crystallizer-detail small {
   margin: 0;
+  font-family: var(--font-old);
 }
 
 .crystallizer-detail p {
