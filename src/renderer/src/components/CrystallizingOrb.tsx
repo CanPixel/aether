@@ -22,7 +22,7 @@ export function CrystallizingOrb({
       <div className="crystallizer-prismatic-aura" />
       <div className="answer-loading-haze" />
       <div className="crystallizing-orb-content">
-        <div className="crystallizer-quantum-core">
+        <div className="crystallizer-quantum-core" style={{ marginTop: '18px' }}>
           <Quantum size={30} speed={1.35} color="currentColor" />
         </div>
         <h2 className="crystallizer-loading-title">

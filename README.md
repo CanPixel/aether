@@ -23,7 +23,7 @@ Current major capabilities:
 - AiR renders selected research context into one local Obsidian-friendly Markdown dossier.
 - iCE, the Information Complexity Explorer, generates iceberg-style complexity maps for a topic using the local chat model.
 - Settings supports default search engine selection, Developer Mode, update checks, and shortcut reference.
-- Local model setup can download recommended ungated model files, and the local model menu supports runtime status and model selection for GGUF chat models plus GGUF or official safetensors embedding models.
+- Local model setup can download recommended ungated model files, and the local model menu supports runtime status and model selection for GGUF chat and embedding models.
 
 ## Privacy Boundary
 
@@ -54,11 +54,11 @@ Required:
 - CMake, required for building the bundled llama.cpp Rust binding.
 - macOS, Windows, or Linux for desktop development.
 - Android Studio, Android SDK/NDK, and Rust Android targets for Android builds.
-- GGUF model files for local chat generation and either GGUF or official safetensors files for local embeddings.
+- GGUF model files for local chat generation and local embeddings.
 
 Recommended first-stage model setup:
 
-- Embeddings: official `Qwen/Qwen3-Embedding-0.6B-GGUF` Q8 GGUF by default. `embeddinggemma` remains supported for manual installs but is gated.
+- Embeddings: official `Qwen/Qwen3-Embedding-0.6B-GGUF` Q8 GGUF by default.
 - Chat/iCE: a Gemma chat GGUF. Official Google Gemma 4 QAT GGUF releases are available for the Gemma 4 family; use an instruction-tuned file such as `gemma-4-E4B-it-qat-q4_0-gguf` or a larger variant if the machine has enough memory.
 
 Chosen models:
@@ -84,15 +84,13 @@ Model discovery:
 
 - Put chat models in `./aether-models/chat/`.
 - Put embedding GGUF files in `./aether-models/embeddings/`.
-- Put official `google/embeddinggemma-300m` safetensors in `./aether-models/embeddings/embeddinggemma-300m/` only for manual gated-model testing.
 - Or set `AETHER_CHAT_MODEL=/absolute/path/to/chat.gguf`.
 - Or set `AETHER_EMBEDDING_MODEL=/absolute/path/to/embedding.gguf`.
-- Or set `AETHER_EMBEDDING_MODEL=/absolute/path/to/embeddinggemma-300m`.
 - Or set `AETHER_MODEL_DIR=/absolute/path/to/a/model/folder`.
 
 Default model behavior:
 
-- Embeddings prefer filenames containing `qwen3-embedding`, `embeddinggemma`, `embedding-gemma`, `embedding`, or `embed`.
+- Embeddings prefer filenames containing `qwen3-embedding`, `embedding`, or `embed`.
 - Chat model preference is filenames containing `gemma4`, `gemma-4`, `gemma3`, `gemma-3`, `gemma-2b`, `2b`, `gemma`, or `qwen`, then the first non-embedding GGUF.
 - The model menu can update the selected embedding and chat models.
 - Chat generation uses the GGUF's embedded chat template when present, preserving Gemma 4 system/user message formatting instead of flattening everything into one prompt. Sampling keeps conservative temperatures while aligning top-k/top-p with the Gemma 4 Ollama defaults.
@@ -617,7 +615,7 @@ Rust Tauri Backend
   |     active page snapshot or fetch -> readable text -> chunks
   |
   |-- Local model runtime
-  |     llama.cpp GGUF loading, Metal offload, safetensors embeddings, chat, and iCE generation
+  |     llama.cpp GGUF loading, Metal offload, embeddings, chat, and iCE generation
   |
   |-- Local chunk store
   |     vector search and chunk metadata
@@ -796,13 +794,11 @@ Add local models to the project-local model directory shown in the AiON model se
 ```bash
 export AETHER_CHAT_MODEL=/absolute/path/to/chat.gguf
 export AETHER_EMBEDDING_MODEL=/absolute/path/to/embedding.gguf
-# or:
-export AETHER_EMBEDDING_MODEL=/absolute/path/to/embeddinggemma-300m
 ```
 
 ### Missing embedding model
 
-Add `Qwen3-Embedding-0.6B-Q8_0.gguf` to `./aether-models/embeddings/Qwen3-Embedding-0.6B-GGUF/`, or add another embedding GGUF to `./aether-models/embeddings/`. The official `google/embeddinggemma-300m` safetensors folder is still supported for manual gated-model testing.
+Add `Qwen3-Embedding-0.6B-Q8_0.gguf` to `./aether-models/embeddings/Qwen3-Embedding-0.6B-GGUF/`, or add another embedding GGUF to `./aether-models/embeddings/`.
 
 ### Chat model unavailable
 

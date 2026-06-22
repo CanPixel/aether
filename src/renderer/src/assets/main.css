@@ -4516,8 +4516,8 @@ button {
 .answer-loading {
   position: relative;
   display: grid;
-  min-height: 204px;
-  place-items: center;
+  min-height: 220px;
+  place-items: stretch;
   margin-top: 10px;
   overflow: hidden;
   border: 1px solid rgba(139, 190, 215, 0.24);
@@ -4543,8 +4543,8 @@ button {
 }
 
 .answer-crystallizing-orb {
-  min-height: 198px;
-  padding: 16px 16px 42px;
+  min-height: 100%;
+  padding: 24px 28px 28px;
 }
 
 .crystallizing-orb-content {
@@ -4554,6 +4554,11 @@ button {
   place-items: center;
   gap: 8px;
   text-align: center;
+}
+
+.answer-crystallizing-orb .crystallizing-orb-content {
+  gap: 10px;
+  transform: translateY(-2px);
 }
 
 .answer-loading-haze,
@@ -4680,7 +4685,7 @@ button {
 }
 
 .answer-metrics-subtitle {
-  margin: -2px 0 10px;
+  margin: 5px 0 -5px;
   color: rgba(78, 95, 120, 0.66);
   font-size: 11px;
   font-weight: 720;
@@ -4746,7 +4751,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-top: 10px;
+  margin-top: 2px;
 }
 
 .answer-copy-button {
@@ -7414,6 +7419,23 @@ button {
   margin-top: 0;
 }
 
+.answer-crystallizing-orb .crystallizer-god-rays {
+  inset: -46%;
+  opacity: 0.72;
+}
+
+.answer-crystallizing-orb .crystallizer-prismatic-aura {
+  inset: -24%;
+  opacity: 0.88;
+}
+
+.answer-crystallizing-orb .answer-loading-haze {
+  background:
+    radial-gradient(circle at 50% 48%, rgba(255, 255, 255, 0.72), transparent 26%),
+    radial-gradient(circle at 50% 50%, rgba(186, 230, 253, 0.58), transparent 48%),
+    radial-gradient(circle at 44% 62%, rgba(125, 211, 252, 0.22), transparent 64%);
+}
+
 .crystallizer-quantum-core {
   position: relative;
   z-index: 3;
@@ -7470,7 +7492,8 @@ button {
 }
 
 .answer-crystallizing-orb .crystallizer-loading-title {
-  margin-top: 4px;
+  margin: 18px 0 0;
+  line-height: 1.05;
 }
 
 .answer-crystallizing-orb .crystallizer-loading-title .text-shimmer {
@@ -7481,6 +7504,11 @@ button {
 .answer-crystallizing-orb .crystallizer-quantum-core {
   width: 68px;
   height: 68px;
+  margin-top: 0;
+}
+
+.answer-crystallizing-orb .crystallizing-orb-subtitle {
+  margin-top: 0;
 }
 
 .crystallizer-shimmer-text {

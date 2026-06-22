@@ -348,7 +348,7 @@ export function IntelligencePanel({
                 onOpenCitation={onOpenCitation}
               />
             </section>
-          ) : (
+          ) : ( 
             <AnswerLoading phase={askPhase} onCancel={onCancelAsk} />
           ))}
 

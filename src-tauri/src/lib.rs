@@ -1,5 +1,3 @@
-mod embeddinggemma;
-
 use chrono::{DateTime, Utc};
 use encoding_rs::UTF_8;
 use llama_cpp_2::{
@@ -96,8 +94,6 @@ const CAPTURE_SUGGEST_MIN_SCORE: f64 = 50.0;
 // Sentinel URL for a blank tab that shows the Æther start page in the renderer instead
 // of loading a remote page. Must match START_PAGE_URL in src/renderer/src/App.tsx.
 const START_PAGE_URL: &str = "aether://start";
-const SAFETENSORS_CAPTURE_CHUNK_SIZE: usize = DEFAULT_CAPTURE_CHUNK_SIZE;
-const SAFETENSORS_CAPTURE_CHUNK_OVERLAP: usize = DEFAULT_CAPTURE_CHUNK_OVERLAP;
 const DEFAULT_GENERATION_TOKENS: usize = 900;
 const DEFAULT_ICEBERG_GENERATION_TOKENS: usize = 4200;
 const DEFAULT_TOP_K: i32 = 64;
@@ -203,17 +199,11 @@ struct NativeModelRuntime {
     backend: Option<LlamaBackend>,
     chat: Option<LoadedNativeModel>,
     embedding: Option<LoadedNativeModel>,
-    safetensors_embedding: Option<LoadedSafetensorsEmbeddingModel>,
 }
 
 struct LoadedNativeModel {
     path: PathBuf,
     model: LlamaModel,
-}
-
-struct LoadedSafetensorsEmbeddingModel {
-    path: PathBuf,
-    model: embeddinggemma::EmbeddingGemma,
 }
 
 #[derive(Clone)]
@@ -5253,20 +5243,8 @@ fn round_score(value: f64) -> f64 {
     (value * 10.0).round() / 10.0
 }
 
-fn capture_chunk_settings(paths: &DataPaths, settings: &UserSettings) -> (usize, usize) {
-    let catalog = model_catalog(paths, &settings.local_model);
-    if catalog
-        .embedding_model
-        .as_deref()
-        .is_some_and(is_safetensors_embedding_model)
-    {
-        (
-            SAFETENSORS_CAPTURE_CHUNK_SIZE,
-            SAFETENSORS_CAPTURE_CHUNK_OVERLAP,
-        )
-    } else {
-        (DEFAULT_CAPTURE_CHUNK_SIZE, DEFAULT_CAPTURE_CHUNK_OVERLAP)
-    }
+fn capture_chunk_settings(_paths: &DataPaths, _settings: &UserSettings) -> (usize, usize) {
+    (DEFAULT_CAPTURE_CHUNK_SIZE, DEFAULT_CAPTURE_CHUNK_OVERLAP)
 }
 
 fn current_page_search_result(
@@ -5850,9 +5828,6 @@ impl NativeModelRuntime {
         if inputs.is_empty() {
             return Ok(Vec::new());
         }
-        if is_safetensors_embedding_model(model_path) {
-            return self.embed_safetensors(model_path, inputs, progress);
-        }
 
         self.ensure_model(NativeModelKind::Embedding, model_path)?;
         let backend = self
@@ -5988,72 +5963,8 @@ impl NativeModelRuntime {
         Ok(embeddings)
     }
 
-    fn has_safetensors_embedding(&self, model_path: &Path) -> bool {
-        let path = canonical_model_path(model_path);
-        self.safetensors_embedding
-            .as_ref()
-            .is_some_and(|loaded| loaded.path.as_path() == path.as_path())
-    }
-
-    fn ensure_safetensors_embedding(&mut self, model_path: &Path) -> Cmd<()> {
-        if self.has_safetensors_embedding(model_path) {
-            return Ok(());
-        }
-        let path = canonical_model_path(model_path);
-        let model = embeddinggemma::EmbeddingGemma::load(&path)
-            .map_err(|error| format!("Failed to load EmbeddingGemma safetensors: {error}"))?;
-        self.safetensors_embedding = Some(LoadedSafetensorsEmbeddingModel { path, model });
-        Ok(())
-    }
-
     fn warm_embedding_model(&mut self, model_path: &Path) -> Cmd<()> {
-        if is_safetensors_embedding_model(model_path) {
-            self.ensure_safetensors_embedding(model_path)
-        } else {
-            self.ensure_model(NativeModelKind::Embedding, model_path)
-        }
-    }
-
-    fn embed_safetensors(
-        &mut self,
-        model_path: &Path,
-        inputs: Vec<String>,
-        progress: Option<EmbeddingProgress>,
-    ) -> Cmd<Vec<Vec<f32>>> {
-        if !self.has_safetensors_embedding(model_path) {
-            if let Some(progress) = &progress {
-                progress.emit_message("Loading EmbeddingGemma", 0, inputs.len());
-            }
-        }
-        self.ensure_safetensors_embedding(model_path)?;
-        let model = self
-            .safetensors_embedding
-            .as_mut()
-            .ok_or_else(|| "Official EmbeddingGemma model is not loaded.".to_string())?;
-        let total = inputs.len();
-        let mut embeddings = Vec::with_capacity(total);
-        let batch_size = safetensors_embedding_batch_size(&inputs);
-        for batch in inputs.chunks(batch_size) {
-            if let Some(progress) = &progress {
-                let start = embeddings.len() + 1;
-                let end = (embeddings.len() + batch.len()).min(total);
-                progress.emit_message(
-                    format!("Embedding chunks {start}-{end} of {total}"),
-                    embeddings.len(),
-                    total,
-                );
-            }
-            let batch = batch.to_vec();
-            let batch_embeddings = model
-                .model
-                .embed_batch(&batch)
-                .map_err(|error| error.to_string())?;
-            embeddings.extend(batch_embeddings);
-            if let Some(progress) = &progress {
-                progress.emit(embeddings.len(), total);
-            }
-        }
-        Ok(embeddings)
+        self.ensure_model(NativeModelKind::Embedding, model_path)
     }
 
     fn complete_chat(
@@ -6599,11 +6510,9 @@ fn model_catalog(paths: &DataPaths, settings: &LocalModelSettings) -> ModelCatal
 
     let mut models = Vec::new();
     collect_gguf_models(&paths.models_path, &mut models);
-    collect_safetensors_embedding_models(&paths.models_path.join("embeddings"), &mut models);
     if let Ok(dir) = env::var(AETHER_MODEL_DIR_ENV) {
         let dir = PathBuf::from(dir);
         collect_gguf_models(&dir, &mut models);
-        collect_safetensors_embedding_models(&dir, &mut models);
     }
     for var in [AETHER_CHAT_MODEL_ENV, AETHER_EMBEDDING_MODEL_ENV] {
         match env_model_path(var) {
@@ -6624,7 +6533,7 @@ fn model_catalog(paths: &DataPaths, settings: &LocalModelSettings) -> ModelCatal
     } else {
         if embedding_model.is_none() {
             errors.push(format!(
-                "No embedding model selected. Put Qwen3 Embedding, another embedding GGUF, or official EmbeddingGemma files in {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
+                "No embedding model selected. Put Qwen3 Embedding or another embedding GGUF in {} or set {AETHER_EMBEDDING_MODEL_ENV}.",
                 paths.models_path.join("embeddings").display()
             ));
         }
@@ -6668,22 +6577,6 @@ fn collect_gguf_models(root: &Path, models: &mut Vec<PathBuf>) {
     }
 }
 
-fn collect_safetensors_embedding_models(root: &Path, models: &mut Vec<PathBuf>) {
-    if is_safetensors_embedding_model(root) {
-        models.push(root.to_path_buf());
-        return;
-    }
-    let Ok(entries) = fs::read_dir(root) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if is_safetensors_embedding_model(&path) {
-            models.push(path);
-        }
-    }
-}
-
 fn default_models_path(app_data_dir: &Path) -> PathBuf {
     if cfg!(debug_assertions) {
         project_models_path()
@@ -6721,7 +6614,7 @@ fn env_model_path(var: &str) -> Cmd<Option<PathBuf>> {
     let valid = match var {
         AETHER_CHAT_MODEL_ENV => is_chat_model(&path),
         AETHER_EMBEDDING_MODEL_ENV => is_embedding_model(&path),
-        _ => is_gguf_model(&path) || is_safetensors_embedding_model(&path),
+        _ => is_gguf_model(&path),
     };
     if valid {
         Ok(Some(path))
@@ -6820,18 +6713,12 @@ fn embedding_model_score(path: &Path) -> i32 {
     if label.contains("qwen3-embedding") {
         score += 650;
     }
-    if label.contains("embeddinggemma") || label.contains("embedding-gemma") {
-        score += 500;
-    }
     if label.contains("bf16") {
         score += 400;
     } else if label.contains("f16") {
         score += 300;
     } else if label.contains("q8") {
         score += 150;
-    }
-    if is_safetensors_embedding_model(path) {
-        score -= 500;
     }
     score
 }
@@ -6883,30 +6770,16 @@ fn selected_model_matches_kind(path: &Path, embedding: bool) -> bool {
 }
 
 fn is_embedding_model(path: &Path) -> bool {
-    is_safetensors_embedding_model(path) || (is_gguf_model(path) && is_embedding_model_name(path))
+    is_gguf_model(path) && is_embedding_model_name(path)
 }
 
 fn is_embedding_model_name(path: &Path) -> bool {
-    if is_safetensors_embedding_model(path) {
-        return true;
-    }
     let label = model_label(path).to_lowercase();
     label.contains("embed") || label.contains("embedding")
 }
 
 fn is_mmproj_model(path: &Path) -> bool {
     model_label(path).to_lowercase().contains("mmproj")
-}
-
-fn is_safetensors_embedding_model(path: &Path) -> bool {
-    path.is_dir()
-        && path.join("config.json").is_file()
-        && path.join("tokenizer.json").is_file()
-        && path.join("model.safetensors").is_file()
-        && path.join("2_Dense").join("config.json").is_file()
-        && path.join("2_Dense").join("model.safetensors").is_file()
-        && path.join("3_Dense").join("config.json").is_file()
-        && path.join("3_Dense").join("model.safetensors").is_file()
 }
 
 fn canonical_model_path(path: &Path) -> PathBuf {
@@ -6976,23 +6849,6 @@ fn embedding_batch_token_limit() -> usize {
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(DEFAULT_EMBEDDING_BATCH_TOKENS)
         .clamp(512, 8192)
-}
-
-fn safetensors_embedding_batch_size(inputs: &[String]) -> usize {
-    let configured = embedding_batch_size();
-    let longest = inputs
-        .iter()
-        .map(|input| input.chars().count())
-        .max()
-        .unwrap_or_default();
-
-    if longest >= 1_600 {
-        configured.min(2)
-    } else if longest >= 900 {
-        configured.min(4)
-    } else {
-        configured.min(8)
-    }
 }
 
 fn embedding_context_tokens(input_tokens: usize) -> u32 {
