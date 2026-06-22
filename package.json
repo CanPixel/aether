@@ -11,6 +11,8 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck:tauri": "cargo check --manifest-path src-tauri/Cargo.toml",
     "typecheck": "bun run typecheck:web && bun run typecheck:tauri",
+    "version:bump": "bun scripts/bump-version.ts",
+    "version:check": "bun scripts/bump-version.ts --check",
     "start": "tauri dev",
     "dev": "tauri dev",
     "dev:vite": "vite --host 127.0.0.1 --port 1420",

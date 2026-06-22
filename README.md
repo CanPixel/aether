@@ -250,6 +250,18 @@ Trigger it from the GitHub Actions tab (workflow_dispatch) or by pushing a `v*` 
 
 On a `v*` tag push, a final `release` job collects every job's installers and publishes them to a GitHub Release for that tag (Windows `.exe`, Linux `.deb`/AppImage, and the APK if it built). On a manual `workflow_dispatch` run, the installers are uploaded as workflow artifacts instead of a release.
 
+Keep release versions synced from `package.json`:
+
+```bash
+bun run version:bump 1.0.1
+bun run version:check
+git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
+git commit -m "chore: release v1.0.1"
+git tag v1.0.1
+git push origin main
+git push origin v1.0.1
+```
+
 Build the current desktop app with Tauri:
 
 ```bash
@@ -267,6 +279,8 @@ bun run build
 | `bun run typecheck:web` | Run renderer TypeScript checks.                                                                                                             |
 | `bun run typecheck:tauri` | Run Rust `cargo check` for the Tauri backend.                                                                                             |
 | `bun run typecheck`    | Run renderer TypeScript checks and Rust `cargo check` for the Tauri backend.                                                                 |
+| `bun run version:bump 1.2.3` | Sync `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to one app version.                                  |
+| `bun run version:check` | Verify the app version manifests match `package.json`.                                                                                       |
 | `bun run lint`         | Run ESLint.                                                                                                                                  |
 | `bun run build:vite`   | Build only the Vite renderer assets into `dist/`.                                                                                            |
 | `bun run build`        | Typecheck and build the Tauri desktop app.                                                                                                   |
