@@ -99,9 +99,12 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+      # arm64-v8a only. The 32-bit armv7 ABI breaks llama-cpp-sys-2's build script
+      # (Cargo doesn't set CARGO_CFG_TARGET_FEATURE for it), and aarch64 covers the
+      # overwhelming majority of real Android devices.
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          targets: aarch64-linux-android
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -113,7 +116,7 @@ jobs:
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
       - run: bun install --frozen-lockfile
-      - run: bun run android:build:apk
+      - run: bun run tauri android build --apk --target aarch64
 
       - uses: actions/upload-artifact@v4
         with:
