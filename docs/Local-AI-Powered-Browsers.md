@@ -36,7 +36,7 @@ To ensure that the retrieved information fits within the LLM's limited context w
 
 Vector Embeddings and Semantic Retrieval
 
-Each text chunk is transformed into a high-dimensional vector using an embedding model like nomic-embed-text or mxbai-embed-large. These vectors are numerical representations of the "meaning" of the text. When a user asks a question, the question itself is converted into a vector using the same model. The system then calculates the similarity between the question vector and all stored document vectors. The mathematical foundation for this is typically cosine similarity, which measures the cosine of the angle between two vectors ‭$A$‬ and ‭$B$‬:
+Each text chunk is transformed into a high-dimensional vector using a local GGUF embedding model such as Qwen3 Embedding. These vectors are numerical representations of the "meaning" of the text. When a user asks a question, the question itself is converted into a vector using the same model. The system then calculates the similarity between the question vector and all stored document vectors. The mathematical foundation for this is typically cosine similarity, which measures the cosine of the angle between two vectors ‭$A$‬ and ‭$B$‬:
 
 $$\text{similarity} = \cos(\theta) = \frac{\sum_{i=1}^{n} A_i B_i}{\sqrt{\sum_{i=1}^{n} A_i^2} \sqrt{\sum_{i=1}^{n} B_i^2}}$$
 

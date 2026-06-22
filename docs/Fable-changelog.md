@@ -1,5 +1,5 @@
 ## What the app is
-ÆTHER is a Tauri-native research browser: you browse, capture pages into "knowledge hubs," embed them locally (in-process llama.cpp / candle — no Ollama daemon), then ask grounded questions via the AiON sidepanel or generate iCE topic maps. The architecture is sound; the problem was that the AI loop *felt* slow compared to the Electron-Ollama build.
+ÆTHER is a Tauri-native research browser: you browse, capture pages into "knowledge hubs," embed them locally with in-process llama.cpp GGUF models — no Ollama daemon — then ask grounded questions via the AiON sidepanel or generate iCE topic maps. The architecture is sound; the problem was that the AI loop *felt* slow compared to the older Electron-Ollama build.
 
 ## Root causes I found
 1. **No token streaming.** [lib.rs](aether/src-tauri/src/lib.rs) generated the entire answer before returning anything — you stared at a spinner for the whole generation. Ollama streams by default, which is why the Electron build felt faster even when raw speed was similar.
