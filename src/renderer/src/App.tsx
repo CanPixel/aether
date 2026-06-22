@@ -58,9 +58,9 @@ import {
   SearchIcon,
   Snowflake,
   Waves,
-  Wind,
+  Wind
 
-/*   ZodiacAquarius,
+  /*   ZodiacAquarius,
   SunSnow,
   ThermometerSnowflake,
   Bubbles,
@@ -521,9 +521,9 @@ function App(): React.JSX.Element {
   const modelSetupNeeded = Boolean(status && (!status.chatModel || !status.embeddingModel))
   const modelSetupBusy = Boolean(
     busy === 'Installing local models' ||
-      modelDownloadProgress.some(
-        (progress) => progress.status === 'queued' || progress.status === 'downloading'
-      )
+    modelDownloadProgress.some(
+      (progress) => progress.status === 'queued' || progress.status === 'downloading'
+    )
   )
   const modelSetupVisible = modelSetupRequested || (modelSetupNeeded && !modelSetupDismissed)
   const quickActions = useMemo<QuickAction[]>(() => getQuickActions(activeTab), [activeTab])
@@ -572,7 +572,8 @@ function App(): React.JSX.Element {
     }
     if (focusedQuery) return null
     if (!activeTabUrl) return null
-    return normalizeComparableUrl(semanticTrailResult.root.url) === normalizeComparableUrl(activeTabUrl)
+    return normalizeComparableUrl(semanticTrailResult.root.url) ===
+      normalizeComparableUrl(activeTabUrl)
       ? semanticTrailResult
       : null
   }, [activeTabUrl, semanticTrailQuery, semanticTrailResult])
@@ -1466,45 +1467,49 @@ function App(): React.JSX.Element {
     setDashboardOpen(false)
   }
 
-  const buildSemanticTrail = useCallback(async (query = semanticTrailQuery): Promise<void> => {
-    const trimmedQuery = query.trim()
-    if (!trimmedQuery && (dashboardOpen || !canUseCurrentPage)) {
-      return
-    }
-    if (!status?.embeddingModel) {
-      return
-    }
-
-    const requestId = semanticTrailRequestRef.current + 1
-    const requestUrl = activeTabUrlRef.current
-    semanticTrailRequestRef.current = requestId
-    setBusy('Building Flow')
-    setNotice(null)
-
-    try {
-      const result = await window.aether.semanticTrail.generate({
-        query: trimmedQuery || undefined,
-        limit: 12
-      })
-      if (semanticTrailRequestRef.current !== requestId) return
-      if (
-        !trimmedQuery &&
-        requestUrl &&
-        normalizeComparableUrl(result.root.url) !== normalizeComparableUrl(activeTabUrlRef.current)
-      ) {
+  const buildSemanticTrail = useCallback(
+    async (query = semanticTrailQuery): Promise<void> => {
+      const trimmedQuery = query.trim()
+      if (!trimmedQuery && (dashboardOpen || !canUseCurrentPage)) {
         return
       }
-      setSemanticTrailResult(result)
-    } catch (error) {
-      if (semanticTrailRequestRef.current === requestId) {
-        setNotice(getErrorMessage(error))
+      if (!status?.embeddingModel) {
+        return
       }
-    } finally {
-      if (semanticTrailRequestRef.current === requestId) {
-        setBusy(null)
+
+      const requestId = semanticTrailRequestRef.current + 1
+      const requestUrl = activeTabUrlRef.current
+      semanticTrailRequestRef.current = requestId
+      setBusy('Building Flow')
+      setNotice(null)
+
+      try {
+        const result = await window.aether.semanticTrail.generate({
+          query: trimmedQuery || undefined,
+          limit: 12
+        })
+        if (semanticTrailRequestRef.current !== requestId) return
+        if (
+          !trimmedQuery &&
+          requestUrl &&
+          normalizeComparableUrl(result.root.url) !==
+            normalizeComparableUrl(activeTabUrlRef.current)
+        ) {
+          return
+        }
+        setSemanticTrailResult(result)
+      } catch (error) {
+        if (semanticTrailRequestRef.current === requestId) {
+          setNotice(getErrorMessage(error))
+        }
+      } finally {
+        if (semanticTrailRequestRef.current === requestId) {
+          setBusy(null)
+        }
       }
-    }
-  }, [canUseCurrentPage, dashboardOpen, semanticTrailQuery, status?.embeddingModel])
+    },
+    [canUseCurrentPage, dashboardOpen, semanticTrailQuery, status?.embeddingModel]
+  )
 
   async function buildFlowGraph(query = flowGraphQuery): Promise<void> {
     await runTask('Mapping Flow', async () => {
@@ -1548,9 +1553,10 @@ function App(): React.JSX.Element {
           : airLensKind === 'flow' && flowNode?.kind === 'hub'
             ? flowNode.collectionId
             : undefined,
-      captureId: airLensKind === 'flow' && flowNode?.kind === 'source' ? flowNode.captureId : undefined,
+      captureId:
+        airLensKind === 'flow' && flowNode?.kind === 'source' ? flowNode.captureId : undefined,
       savedIcebergId: airLensKind === 'iceberg' ? activeSavedIceberg?.id : undefined,
-      answer: airLensKind === 'answer' ? chatResult ?? undefined : undefined,
+      answer: airLensKind === 'answer' ? (chatResult ?? undefined) : undefined,
       limit: 12
     }
   }
@@ -1904,9 +1910,9 @@ function App(): React.JSX.Element {
           <button
             className={`app-button ice-button tooltip-host ${crystallizerOpen ? 'active' : ''}`}
             data-tooltip={showRailTooltips ? 'iCE' : undefined}
-            data-tooltip-side='right'
+            data-tooltip-side="right"
             onClick={openCrystallizer}
-            title='iCE'
+            title="iCE"
             type="button"
           >
             {/* <SnowflakeIcon /> */}
@@ -1916,7 +1922,7 @@ function App(): React.JSX.Element {
           <button
             className={`app-button tooltip-host ${!dashboardOpen ? 'active' : ''}`}
             data-tooltip={showRailTooltips ? 'Discover' : undefined}
-            data-tooltip-side='right'
+            data-tooltip-side="right"
             onClick={openBrowser}
             title={activeApp ? `${activeApp.name} view` : 'Discover'}
             type="button"
@@ -1925,38 +1931,40 @@ function App(): React.JSX.Element {
             <span className="app-dot" aria-hidden="true" />
           </button>
 
-          {(settings.developerMode ? (
-          <>
-            <button
-              className={`app-button flow-button tooltip-host ${flowOpen ? 'active' : ''}`}
-              data-tooltip={showRailTooltips ? 'Flow' : undefined}
-              data-tooltip-side="right"
-              onClick={openFlow}
-              title="Flow"
-              type="button"
-            >
-              <Waves />
-              <span className="app-dot" aria-hidden="true" />
-            </button>
-            <button
-              className={`app-button air-button tooltip-host ${airOpen ? 'active' : ''}`}
-              data-tooltip={showRailTooltips ? 'AiR' : undefined}
-              data-tooltip-side="right"
-              onClick={openAir}
-              title="AiR"
-              type="button"
-            >
-              <Wind />
-              <span className="app-dot" aria-hidden="true" />
-            </button>
-          </>
-        ) : <></>)}
+          {settings.developerMode ? (
+            <>
+              <button
+                className={`app-button flow-button tooltip-host ${flowOpen ? 'active' : ''}`}
+                data-tooltip={showRailTooltips ? 'Flow' : undefined}
+                data-tooltip-side="right"
+                onClick={openFlow}
+                title="Flow"
+                type="button"
+              >
+                <Waves />
+                <span className="app-dot" aria-hidden="true" />
+              </button>
+              <button
+                className={`app-button air-button tooltip-host ${airOpen ? 'active' : ''}`}
+                data-tooltip={showRailTooltips ? 'AiR' : undefined}
+                data-tooltip-side="right"
+                onClick={openAir}
+                title="AiR"
+                type="button"
+              >
+                <Wind />
+                <span className="app-dot" aria-hidden="true" />
+              </button>
+            </>
+          ) : (
+            <></>
+          )}
         </nav>
         <button
           className="app-button settings-button"
           aria-label="Open ÆTHER settings"
           onClick={openSettings}
-          title='Settings'
+          title="Settings"
           type="button"
         >
           <GearIcon />
@@ -2383,199 +2391,208 @@ function SettingsModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="settings-modal-body">
-        <header>
-          <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: '18px' }}>
-            <GearIcon
-              style={{ width: '25px', color: 'var(--accent-strong)', marginBottom: '2px' }}
-            />
-            <p
-              id="settings-title"
-              style={{ textAlign: 'center', margin: 'auto', fontSize: '18px' }}
-            >
-              <span
-                style={{
-                  fontWeight: 'bold',
-                  marginRight: '-1px',
-                  color: 'var(--accent-strong)',
-                  fontSize: '23px'
-                }}
+          <header>
+            <div style={{ display: 'flex', width: '100%', alignItems: 'center', gap: '18px' }}>
+              <GearIcon
+                style={{ width: '25px', color: 'var(--accent-strong)', marginBottom: '2px' }}
+              />
+              <p
+                id="settings-title"
+                style={{ textAlign: 'center', margin: 'auto', fontSize: '18px' }}
               >
-                Æ
-              </span>
-              ther Settings
-            </p>
-          </div>
-          <button
-            className="button"
-            onClick={() => {
-              void onClose()
-            }}
-            type="button"
-          >
-            Close
-          </button>
-        </header>
-
-        <div className="settings-field">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <SearchIcon height={30} width={30} />
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <label style={{ margin: 0 }} htmlFor="default-search-engine">
-                Default search engine
-              </label>
-              <p style={{ margin: 0 }}>
-                Used when the address bar receives plain search text instead of a URL.
+                <span
+                  style={{
+                    fontWeight: 'bold',
+                    marginRight: '-1px',
+                    color: 'var(--accent-strong)',
+                    fontSize: '23px'
+                  }}
+                >
+                  Æ
+                </span>
+                ther Settings
               </p>
             </div>
-          </div>
-          <div className="settings-engine-list" aria-label="Available search engines">
-            {searchEngines.map((engine) => (
-              <button
-                className={
-                  settings.browser.defaultSearchEngine === engine.id ? 'crystal-button' : ''
-                }
-                disabled={Boolean(busy)}
-                key={engine.id}
-                onClick={() => onDefaultSearchEngineChange(engine.id)}
-                type="button"
-              >
-                <strong>{engine.name}</strong>
-                <span>{engine.description}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="settings-field developer-mode-field">
-          <label className="settings-checkbox-row">
-            <input
-              checked={settings.developerMode}
-              disabled={Boolean(busy)}
-              onChange={(event) => {
-                void onDeveloperModeChange(event.currentTarget.checked)
+            <button
+              className="button"
+              onClick={() => {
+                void onClose()
               }}
-              type="checkbox"
-            />
-            <span>
-              <strong>Developer Mode</strong>
-              <small>Show technical model names and implementation details in AiON.</small>
-            </span>
-          </label>
-        </div>
+              type="button"
+            >
+              Close
+            </button>
+          </header>
 
-        <div className="settings-field settings-model-setup-field">
-          <div className="settings-model-setup-copy">
-            <AetherSigilIcon size={28} />
-            <span>
-              <strong>Local AI models</strong>
-              <small>Install, repair, or inspect AiON model packs.</small>
-            </span>
-          </div>
-          <button
-            className="model-setup-button"
-            disabled={Boolean(busy)}
-            onClick={() => {
-              void onOpenModelSetup()
-            }}
-            type="button"
-          >
-            Open Model Setup
-          </button>
-        </div>
-
-        <div className="settings-field settings-update-field">
-          <div className="settings-update-head">
-            <div>
-              <label>Updates</label>
-              <p>Checks GitHub Releases and lets you decide when to install a newer build.</p>
+          <div className="settings-field">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <SearchIcon height={30} width={30} />
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ margin: 0 }} htmlFor="default-search-engine">
+                  Default search engine
+                </label>
+                <p style={{ margin: 0 }}>
+                  Used when the address bar receives plain search text instead of a URL.
+                </p>
+              </div>
             </div>
-            <span className={updateCheck?.updateAvailable ? 'update-badge available' : 'update-badge'}>
-              {updateCheck?.updateAvailable ? 'Available' : 'Tracker'}
-            </span>
+            <div className="settings-engine-list" aria-label="Available search engines">
+              {searchEngines.map((engine) => (
+                <button
+                  className={
+                    settings.browser.defaultSearchEngine === engine.id ? 'crystal-button' : ''
+                  }
+                  disabled={Boolean(busy)}
+                  key={engine.id}
+                  onClick={() => onDefaultSearchEngineChange(engine.id)}
+                  type="button"
+                >
+                  <strong>{engine.name}</strong>
+                  <span>{engine.description}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="settings-update-status">
-            <strong>{updateStatusLabel(updateCheck)}</strong>
-            {updateCheck?.currentVersion && <span>Current version {updateCheck.currentVersion}</span>}
-            {updateCheck?.latestVersion && (
-              <span>Latest release {updateCheck.latestVersion}</span>
-            )}
-            <span>Last checked {formatSettingsDate(updateCheck?.checkedAt ?? settings.updates.lastCheckedAt)}</span>
-            {updateCheck?.publishedAt && (
-              <span>Published {formatSettingsDate(updateCheck.publishedAt)}</span>
-            )}
-          </div>
-
-          {updateCheck?.releaseNotes && (
-            <p className="settings-update-notes">{updateCheck.releaseNotes}</p>
-          )}
-
-          <div className="settings-update-actions">
-            <label className="settings-checkbox-row settings-update-toggle">
+          <div className="settings-field developer-mode-field">
+            <label className="settings-checkbox-row">
               <input
-                checked={settings.updates.autoCheck}
-                disabled={Boolean(busy) || updateChecking}
+                checked={settings.developerMode}
+                disabled={Boolean(busy)}
                 onChange={(event) => {
-                  void onUpdateAutoCheck(event.currentTarget.checked)
+                  void onDeveloperModeChange(event.currentTarget.checked)
                 }}
                 type="checkbox"
               />
               <span>
-                <strong>Check quietly on startup</strong>
-                <small>No downloads or installs happen automatically.</small>
+                <strong>Developer Mode</strong>
+                <small>Show technical model names and implementation details in AiON.</small>
               </span>
             </label>
-            <div>
-              {updateCheck?.releaseUrl && (
+          </div>
+
+          <div className="settings-field settings-model-setup-field">
+            <div className="settings-model-setup-copy">
+              <AetherSigilIcon size={28} />
+              <span>
+                <strong>Local AI models</strong>
+                <small>Install, repair, or inspect AiON model packs.</small>
+              </span>
+            </div>
+            <button
+              className="model-setup-button"
+              disabled={Boolean(busy)}
+              onClick={() => {
+                void onOpenModelSetup()
+              }}
+              type="button"
+            >
+              Open Model Setup
+            </button>
+          </div>
+
+          <div className="settings-field settings-update-field">
+            <div className="settings-update-head">
+              <div>
+                <label>Updates</label>
+                <p>Checks GitHub Releases and lets you decide when to install a newer build.</p>
+              </div>
+              <span
+                className={updateCheck?.updateAvailable ? 'update-badge available' : 'update-badge'}
+              >
+                {updateCheck?.updateAvailable ? 'Available' : 'Tracker'}
+              </span>
+            </div>
+
+            <div className="settings-update-status">
+              <strong>{updateStatusLabel(updateCheck)}</strong>
+              {updateCheck?.currentVersion && (
+                <span>Current version {updateCheck.currentVersion}</span>
+              )}
+              {updateCheck?.latestVersion && (
+                <span>Latest release {updateCheck.latestVersion}</span>
+              )}
+              <span>
+                Last checked{' '}
+                {formatSettingsDate(updateCheck?.checkedAt ?? settings.updates.lastCheckedAt)}
+              </span>
+              {updateCheck?.publishedAt && (
+                <span>Published {formatSettingsDate(updateCheck.publishedAt)}</span>
+              )}
+            </div>
+
+            {updateCheck?.releaseNotes && (
+              <p className="settings-update-notes">{updateCheck.releaseNotes}</p>
+            )}
+
+            <div className="settings-update-actions">
+              <label className="settings-checkbox-row settings-update-toggle">
+                <input
+                  checked={settings.updates.autoCheck}
+                  disabled={Boolean(busy) || updateChecking}
+                  onChange={(event) => {
+                    void onUpdateAutoCheck(event.currentTarget.checked)
+                  }}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Check quietly on startup</strong>
+                  <small>No downloads or installs happen automatically.</small>
+                </span>
+              </label>
+              <div>
+                {updateCheck?.releaseUrl && (
+                  <button
+                    className="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => {
+                      void onOpenUpdateRelease()
+                    }}
+                    type="button"
+                  >
+                    View Release
+                  </button>
+                )}
                 <button
-                  className="button"
-                  disabled={Boolean(busy)}
+                  className="button crystal-button"
+                  disabled={Boolean(busy) || updateChecking}
                   onClick={() => {
-                    void onOpenUpdateRelease()
+                    void onCheckForUpdates()
                   }}
                   type="button"
                 >
-                  View Release
+                  {updateChecking ? 'Checking' : 'Check Now'}
                 </button>
-              )}
-              <button
-                className="button crystal-button"
-                disabled={Boolean(busy) || updateChecking}
-                onClick={() => {
-                  void onCheckForUpdates()
-                }}
-                type="button"
-              >
-                {updateChecking ? 'Checking' : 'Check Now'}
-              </button>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="settings-shortcuts" aria-label="Keyboard shortcuts">
-          <div>
-            <h2>Shortcuts</h2>
-            <p>Editing shortcuts like select all, copy, and paste stay native.</p>
-          </div>
-          <div className="settings-shortcut-columns">
-            {(['Browser', 'Global'] as const).map((scope) => (
-              <div className="settings-shortcut-column" key={scope}>
-                <h3>{scope}</h3>
-                <div className="settings-shortcut-list">
-                  {SHORTCUT_HELP.filter((shortcut) => shortcut.scope === scope).map((shortcut) => (
-                    <div
-                      className="settings-shortcut-row"
-                      key={`${shortcut.keys}-${shortcut.action}`}
-                    >
-                      <kbd>{shortcut.keys}</kbd>
-                      <span>{shortcut.action}</span>
-                    </div>
-                  ))}
+          <div className="settings-shortcuts" aria-label="Keyboard shortcuts">
+            <div>
+              <h2>Shortcuts</h2>
+              <p>Editing shortcuts like select all, copy, and paste stay native.</p>
+            </div>
+            <div className="settings-shortcut-columns">
+              {(['Browser', 'Global'] as const).map((scope) => (
+                <div className="settings-shortcut-column" key={scope}>
+                  <h3>{scope}</h3>
+                  <div className="settings-shortcut-list">
+                    {SHORTCUT_HELP.filter((shortcut) => shortcut.scope === scope).map(
+                      (shortcut) => (
+                        <div
+                          className="settings-shortcut-row"
+                          key={`${shortcut.keys}-${shortcut.action}`}
+                        >
+                          <kbd>{shortcut.keys}</kbd>
+                          <span>{shortcut.action}</span>
+                        </div>
+                      )
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
         </div>
       </section>
     </div>

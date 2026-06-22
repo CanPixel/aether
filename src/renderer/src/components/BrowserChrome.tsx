@@ -376,4 +376,3 @@ function PageFavicon({ icon }: { icon?: string }): React.JSX.Element {
     />
   )
 }
-

@@ -152,7 +152,14 @@ export function FlowView({
       window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
     function tick(now: number): void {
-      stepSimulation(simNodesRef.current, simEdgesRef.current, simIndexRef.current, alphaRef, now, Boolean(reduceMotion))
+      stepSimulation(
+        simNodesRef.current,
+        simEdgesRef.current,
+        simIndexRef.current,
+        alphaRef,
+        now,
+        Boolean(reduceMotion)
+      )
       writeNodePositions(simNodesRef.current, nodeElsRef.current)
       writeEdgePaths(simEdgesRef.current, simIndexRef.current, edgeElsRef.current)
       if (alphaRef.current <= ALPHA_STOP && draggingRef.current === null) {
@@ -236,20 +243,25 @@ export function FlowView({
     await onBuildGraph(nextQuery)
   }
 
-  const registerNode = (id: string) => (element: SVGGElement | null): void => {
-    if (element) {
-      nodeElsRef.current.set(id, element)
-      const node = simIndexRef.current.get(id)
-      if (node) element.setAttribute('transform', `translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})`)
-    } else {
-      nodeElsRef.current.delete(id)
+  const registerNode =
+    (id: string) =>
+    (element: SVGGElement | null): void => {
+      if (element) {
+        nodeElsRef.current.set(id, element)
+        const node = simIndexRef.current.get(id)
+        if (node)
+          element.setAttribute('transform', `translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})`)
+      } else {
+        nodeElsRef.current.delete(id)
+      }
     }
-  }
 
-  const registerEdge = (id: string) => (element: SVGPathElement | null): void => {
-    if (element) edgeElsRef.current.set(id, element)
-    else edgeElsRef.current.delete(id)
-  }
+  const registerEdge =
+    (id: string) =>
+    (element: SVGPathElement | null): void => {
+      if (element) edgeElsRef.current.set(id, element)
+      else edgeElsRef.current.delete(id)
+    }
 
   return (
     <div className="flow-view">
@@ -260,7 +272,10 @@ export function FlowView({
           </span>
           <div>
             <h1>Flow</h1>
-            <p>{formatVisibleModelName(status?.embeddingModel, { role: 'embedding' }) ?? 'Local graph'}</p>
+            <p>
+              {formatVisibleModelName(status?.embeddingModel, { role: 'embedding' }) ??
+                'Local graph'}
+            </p>
           </div>
         </div>
         <form className="flow-search" onSubmit={submitSearch}>
@@ -388,7 +403,9 @@ export function FlowView({
               <small>Sources</small>
             </span>
             <span>
-              <strong>{result?.edges.filter((edge) => edge.kind === 'semantic').length ?? 0}</strong>
+              <strong>
+                {result?.edges.filter((edge) => edge.kind === 'semantic').length ?? 0}
+              </strong>
               <small>Currents</small>
             </span>
           </div>
@@ -532,10 +549,18 @@ function FlowNodeDetail({
     <article className={`flow-node-detail ${node.kind}`}>
       <header>
         <span>
-          {node.kind === 'hub' ? <Waves size={17} /> : node.kind === 'source' ? <ExternalLink size={17} /> : <LocateFixed size={17} />}
+          {node.kind === 'hub' ? (
+            <Waves size={17} />
+          ) : node.kind === 'source' ? (
+            <ExternalLink size={17} />
+          ) : (
+            <LocateFixed size={17} />
+          )}
         </span>
         <div>
-          <small>{node.kind === 'query' ? 'Search lens' : node.collectionName || node.subtitle}</small>
+          <small>
+            {node.kind === 'query' ? 'Search lens' : node.collectionName || node.subtitle}
+          </small>
           <h2>{node.title}</h2>
         </div>
       </header>
@@ -553,7 +578,11 @@ function FlowNodeDetail({
           </button>
         )}
         {node.kind === 'hub' && node.collectionId && (
-          <button disabled={Boolean(busy)} onClick={() => onOpenHub(node.collectionId!)} type="button">
+          <button
+            disabled={Boolean(busy)}
+            onClick={() => onOpenHub(node.collectionId!)}
+            type="button"
+          >
             <Network size={15} />
             <span>Open hub</span>
           </button>
@@ -629,7 +658,11 @@ function buildSimulation(
       const spread = Math.min(1.9, 0.42 + list.length * 0.06)
       const angle = hubAngle + localIndex * spread + hashUnit(node.id) * 0.34
       const radius = 116 + (index % 5) * 28 + hashUnit(`${node.id}-r`) * 30
-      make(node, hubPosition.x + Math.cos(angle) * radius, hubPosition.y + Math.sin(angle) * radius * 0.82)
+      make(
+        node,
+        hubPosition.x + Math.cos(angle) * radius,
+        hubPosition.y + Math.sin(angle) * radius * 0.82
+      )
     })
   }
 
@@ -734,7 +767,8 @@ function stepSimulation(
 function writeNodePositions(nodes: SimNode[], elements: Map<string, SVGGElement>): void {
   for (const node of nodes) {
     const element = elements.get(node.id)
-    if (element) element.setAttribute('transform', `translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})`)
+    if (element)
+      element.setAttribute('transform', `translate(${node.x.toFixed(1)} ${node.y.toFixed(1)})`)
   }
 }
 

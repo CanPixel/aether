@@ -1,9 +1,11 @@
 # Semantic Trail for ÆTHER
 
 ## Summary
+
 Add an on-demand, local-first **Semantic Trail** inside the existing AiON side panel. It will use the current Tauri + llama.cpp embedding pipeline to rank the active page against all captured knowledge hubs, then show scored source cards and a compact relation graph. No Electron, Ollama, cloud API, external web search, or persistent trail storage in v1.
 
 ## Key Changes
+
 - Add a new AiON “Trail” section below/alongside Ask:
   - Button: `Build Semantic Trail`, disabled when no usable active page or embedding model is available.
   - Optional query field defaults to the active page title/readable text seed.
@@ -19,6 +21,7 @@ Add an on-demand, local-first **Semantic Trail** inside the existing AiON side p
 - Clicking a Trail source reuses the existing citation-opening behavior, including text-fragment scrolling when possible.
 
 ## Public API / Types
+
 - Extend `src/shared/aether.ts` and `tauri-aether.ts` with:
   - `window.aether.semanticTrail.generate(input)`
   - `SemanticTrailInput`: `{ query?: string; limit?: number }`
@@ -31,6 +34,7 @@ Add an on-demand, local-first **Semantic Trail** inside the existing AiON side p
 - Do not alter `SearchResult.score`; keep existing Ask/citation behavior stable.
 
 ## Test Plan
+
 - Automated:
   - `bun run typecheck:web`
   - `bun run lint`
@@ -45,6 +49,7 @@ Add an on-demand, local-first **Semantic Trail** inside the existing AiON side p
   - Confirm no automatic model work happens on page load.
 
 ## Assumptions
+
 - Chosen defaults: AiON panel, on-demand generation, all captured hubs, ephemeral results, transparent heuristic scoring.
 - V1 does not fetch outbound links, query search engines, crawl pages, or save trail sessions.
 - No new dependencies are required.

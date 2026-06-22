@@ -64,21 +64,20 @@ Recommended first-stage model setup:
 Chosen models:
 
 Mobile / Z Fold 7:
-  Gemma 4 E2B official GGUF
-  Optional: E4B only if user chooses a “large mobile model” download
+Gemma 4 E2B official GGUF
+Optional: E4B only if user chooses a “large mobile model” download
 
 Raspberry Pi 5 16GB:
-  E4B official GGUF as the upper practical default
-  E2B as fallback / fast mode
+E4B official GGUF as the upper practical default
+E2B as fallback / fast mode
 
 Desktop MacBook Pro M5:
-  Gemma 4 12B official QAT GGUF
+Gemma 4 12B official QAT GGUF
 
 - desktop default: 12B or E4B
 - desktop light: E4B
 - Pi: E4B
 - mobile: E2B default, E4B optional download/import
-
 
 Model discovery:
 
@@ -270,40 +269,40 @@ bun run build
 
 ## Project Scripts
 
-| Script                 | Purpose                                                                                                                                      |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bun run dev`          | Start the Tauri desktop app in development.                                                                                                  |
-| `bun run start`        | Alias for the Tauri desktop development app.                                                                                                 |
-| `bun run dev:vite`     | Start only the Vite renderer dev server on `127.0.0.1:1420`.                                                                                 |
-| `bun run format`       | Format the project with Prettier.                                                                                                            |
-| `bun run typecheck:web` | Run renderer TypeScript checks.                                                                                                             |
-| `bun run typecheck:tauri` | Run Rust `cargo check` for the Tauri backend.                                                                                             |
-| `bun run typecheck`    | Run renderer TypeScript checks and Rust `cargo check` for the Tauri backend.                                                                 |
-| `bun run version:bump 1.2.3` | Sync `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to one app version.                                  |
-| `bun run version:check` | Verify the app version manifests match `package.json`.                                                                                       |
-| `bun run lint`         | Run ESLint.                                                                                                                                  |
-| `bun run build:vite`   | Build only the Vite renderer assets into `dist/`.                                                                                            |
-| `bun run build`        | Typecheck and build the Tauri desktop app.                                                                                                   |
-| `bun run build:desktop-local` | Build local desktop packages for the current Tauri target plus Docker Linux arm64/x64 packages.                                      |
-| `bun run android:dev`  | Run the Tauri Android app on a connected device or emulator.                                                                                 |
-| `bun run android:build:apk` | Build an Android APK.                                                                                                                   |
-| `bun run android:build:aab` | Build an Android App Bundle.                                                                                                           |
-| `bun run linux:arm64:build` | Build an Ubuntu arm64 Tauri package in Docker.                                                                                          |
-| `bun run linux:x64:build` | Build an Ubuntu x86_64 Tauri package in Docker.                                                                                             |
-| `bun run linux:arm64:deb` | Build an Ubuntu arm64 `.deb` package in Docker.                                                                                             |
-| `bun run linux:x64:deb` | Build an Ubuntu x86_64 `.deb` package in Docker.                                                                                              |
+| Script                        | Purpose                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| `bun run dev`                 | Start the Tauri desktop app in development.                                                      |
+| `bun run start`               | Alias for the Tauri desktop development app.                                                     |
+| `bun run dev:vite`            | Start only the Vite renderer dev server on `127.0.0.1:1420`.                                     |
+| `bun run format`              | Format the project with Prettier.                                                                |
+| `bun run typecheck:web`       | Run renderer TypeScript checks.                                                                  |
+| `bun run typecheck:tauri`     | Run Rust `cargo check` for the Tauri backend.                                                    |
+| `bun run typecheck`           | Run renderer TypeScript checks and Rust `cargo check` for the Tauri backend.                     |
+| `bun run version:bump 1.2.3`  | Sync `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to one app version. |
+| `bun run version:check`       | Verify the app version manifests match `package.json`.                                           |
+| `bun run lint`                | Run ESLint.                                                                                      |
+| `bun run build:vite`          | Build only the Vite renderer assets into `dist/`.                                                |
+| `bun run build`               | Typecheck and build the Tauri desktop app.                                                       |
+| `bun run build:desktop-local` | Build local desktop packages for the current Tauri target plus Docker Linux arm64/x64 packages.  |
+| `bun run android:dev`         | Run the Tauri Android app on a connected device or emulator.                                     |
+| `bun run android:build:apk`   | Build an Android APK.                                                                            |
+| `bun run android:build:aab`   | Build an Android App Bundle.                                                                     |
+| `bun run linux:arm64:build`   | Build an Ubuntu arm64 Tauri package in Docker.                                                   |
+| `bun run linux:x64:build`     | Build an Ubuntu x86_64 Tauri package in Docker.                                                  |
+| `bun run linux:arm64:deb`     | Build an Ubuntu arm64 `.deb` package in Docker.                                                  |
+| `bun run linux:x64:deb`       | Build an Ubuntu x86_64 `.deb` package in Docker.                                                 |
 
 ## Build Outputs
 
 Important output/resource directories:
 
-| Path     | Owner              | Purpose                                                                                           |
-| -------- | ------------------ | ------------------------------------------------------------------------------------------------- |
-| `dist/`  | Vite/Tauri frontend | Compiled renderer assets consumed by Tauri. This is not a distributable app by itself.           |
-| `src-tauri/target/` | Tauri/Cargo | Desktop app binaries and bundles generated by `tauri build`.                                      |
-| `src-tauri/target-linux-<slug>/` | Tauri/Cargo in Docker | Ubuntu Linux build cache and bundle output (`arm64` or `x64`).                |
-| `src-tauri/gen/android/app/build/outputs/` | Tauri Android/Gradle | Android APK/AAB outputs.                                                     |
-| `build/` | project resources  | Packaging resources such as icons. This is input to packaging, not output. |
+| Path                                       | Owner                 | Purpose                                                                                |
+| ------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------- |
+| `dist/`                                    | Vite/Tauri frontend   | Compiled renderer assets consumed by Tauri. This is not a distributable app by itself. |
+| `src-tauri/target/`                        | Tauri/Cargo           | Desktop app binaries and bundles generated by `tauri build`.                           |
+| `src-tauri/target-linux-<slug>/`           | Tauri/Cargo in Docker | Ubuntu Linux build cache and bundle output (`arm64` or `x64`).                         |
+| `src-tauri/gen/android/app/build/outputs/` | Tauri Android/Gradle  | Android APK/AAB outputs.                                                               |
+| `build/`                                   | project resources     | Packaging resources such as icons. This is input to packaging, not output.             |
 
 Common Tauri outputs:
 

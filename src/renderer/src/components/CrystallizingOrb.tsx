@@ -11,7 +11,7 @@ type CrystallizingOrbProps = {
 export function CrystallizingOrb({
   title,
   subtitle,
-  className,
+  className
 }: CrystallizingOrbProps): React.JSX.Element {
   return (
     <div

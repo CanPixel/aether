@@ -1,4 +1,12 @@
-import { Check, CircleCheck, CloudDownload, ExternalLink, ShieldCheck, Wind, Waves } from 'lucide-react'
+import {
+  Check,
+  CircleCheck,
+  CloudDownload,
+  ExternalLink,
+  ShieldCheck,
+  Wind,
+  Waves
+} from 'lucide-react'
 import { LineWobble, Quantum, Ripples } from 'ldrs/react'
 import 'ldrs/react/LineWobble.css'
 import 'ldrs/react/Quantum.css'
@@ -17,7 +25,8 @@ const MODEL_SETUP_OPTIONS: Array<{
     id: 'lite',
     name: 'AiON LiTE',
     title: 'Answers like a breeze',
-    description: 'Smaller, faster. Good for everyday capture, search, page summaries, and quick grounded answers.',
+    description:
+      'Smaller, faster. Good for everyday capture, search, page summaries, and quick grounded answers.',
     size: '3.35 GB',
     source: 'powered by Gemma 4 E2B QAT Q4_0'
   },
@@ -145,8 +154,7 @@ export function ModelSetupModal({
               Choose the local model pack for ascending
               <br></br>
               <small style={{ fontWeight: '700' }}>
-                AiON MiST installs with every selection
-                for private semantic search
+                AiON MiST installs with every selection for private semantic search
               </small>
             </p>
           </div>
@@ -201,7 +209,7 @@ export function ModelSetupModal({
                   ? 'Already contained locally'
                   : 'The misty semantic search core · 639 MB'}
               </small>
-              {!coreInstalled ? (<code>Qwen3 Embedding 0.6B Q8_0</code>) : <></>}
+              {!coreInstalled ? <code>Qwen3 Embedding 0.6B Q8_0</code> : <></>}
             </div>
 
             <div className="model-access-card">

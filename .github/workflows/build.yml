@@ -10,14 +10,14 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - "**"
+      - '**'
     tags:
-      - "v*"
+      - 'v*'
 
 env:
-  CARGO_HTTP_MULTIPLEXING: "false"
-  CARGO_HTTP_TIMEOUT: "60"
-  CARGO_NET_RETRY: "10"
+  CARGO_HTTP_MULTIPLEXING: 'false'
+  CARGO_HTTP_TIMEOUT: '60'
+  CARGO_NET_RETRY: '10'
 
 jobs:
   linux:
@@ -89,7 +89,7 @@ jobs:
     # exist on Android yet (see README), and a release APK needs a signing keystore.
     continue-on-error: true
     env:
-      NDK_VERSION: "27.1.12297006"
+      NDK_VERSION: '27.1.12297006'
     steps:
       - uses: actions/checkout@v4
 
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
       - uses: android-actions/setup-android@v3
       - uses: dtolnay/rust-toolchain@stable
         with:

@@ -1,11 +1,4 @@
-import {
-  FormEvent,
-  useEffect,
-  useRef,
-  useState,
-  type RefObject,
-  type WheelEvent
-} from 'react'
+import { FormEvent, useEffect, useRef, useState, type RefObject, type WheelEvent } from 'react'
 import {
   ChatResult,
   CollectionSummary,
@@ -118,12 +111,12 @@ export function IntelligencePanel({
     (!hasFocusLens && (dashboardOpen || !canUseCurrentPage))
   const hasCurrentTrail = Boolean(
     semanticTrailResult &&
-      (hasFocusLens
-        ? !semanticTrailResult.root.url && semanticTrailResult.query.trim() === normalizedTrailQuery
-        : Boolean(semanticTrailResult.root.url))
+    (hasFocusLens
+      ? !semanticTrailResult.root.url && semanticTrailResult.query.trim() === normalizedTrailQuery
+      : Boolean(semanticTrailResult.root.url))
   )
   const footerStatus = busy ?? notice
-/*   const trailBlockReason = dashboardOpen || !canUseCurrentPage
+  /*   const trailBlockReason = dashboardOpen || !canUseCurrentPage
     ? 'Open a web page first'
     : !status?.embeddingModel
       ? 'No embedding model'
@@ -245,7 +238,9 @@ export function IntelligencePanel({
       <div className="panel-content" aria-hidden={panelCollapsed} inert={panelCollapsed}>
         <header className="panel-header">
           <div>
-            <p>AiON <span>• Grounded Local Knowledge</span></p>
+            <p>
+              AiON <span>• Grounded Local Knowledge</span>
+            </p>
             <h2>Ask the web you explore</h2>
           </div>
           <div className="panel-header-actions">
@@ -348,7 +343,7 @@ export function IntelligencePanel({
                 onOpenCitation={onOpenCitation}
               />
             </section>
-          ) : ( 
+          ) : (
             <AnswerLoading phase={askPhase} onCancel={onCancelAsk} />
           ))}
 
@@ -421,7 +416,7 @@ export function IntelligencePanel({
                 </span>
               </button>
             </div>
-            
+
             <div className="semantic-trail-form">
               <label htmlFor="semantic-trail-query" className="semantic-trail-label">
                 Focus (Optional)
@@ -443,8 +438,13 @@ export function IntelligencePanel({
                 <span>Reading the active page and comparing captured hubs.</span>
               </div>
             ) : semanticTrailResult ? (
-              <SemanticTrailView result={semanticTrailResult} onOpenItem={onOpenSemanticTrailItem} />
-            ) : (<></>)}
+              <SemanticTrailView
+                result={semanticTrailResult}
+                onOpenItem={onOpenSemanticTrailItem}
+              />
+            ) : (
+              <></>
+            )}
           </div>
         </section>
 
@@ -529,8 +529,7 @@ function SemanticTrailView({
 
       {result.items.length === 0 ? (
         <div className="semantic-trail-empty">
-          No matching sources.
-          Try typing a broader focus topic or capturing related pages.
+          No matching sources. Try typing a broader focus topic or capturing related pages.
         </div>
       ) : (
         <div className="semantic-trail-list">
@@ -689,11 +688,20 @@ function AskContextControls({
             }}
             type="button"
           >
-            <span className="ask-current-badge" style={{ borderColor: currentPageActive ? 'var(--prism)' : undefined, color: currentPageActive ? 'purple' : undefined }} aria-hidden="true">
+            <span
+              className="ask-current-badge"
+              style={{
+                borderColor: currentPageActive ? 'var(--prism)' : undefined,
+                color: currentPageActive ? 'purple' : undefined
+              }}
+              aria-hidden="true"
+            >
               <Newspaper size={18} />
             </span>
             <span className="ask-current-text">
-              <strong  style={{ color: currentPageActive ? 'purple' : 'var(--ink)' }}>Current Page</strong>
+              <strong style={{ color: currentPageActive ? 'purple' : 'var(--ink)' }}>
+                Current Page
+              </strong>
               <small title={canUseCurrentPage ? currentPageTitle : undefined}>
                 {canUseCurrentPage ? currentPageTitle : 'Nothing open'}
               </small>
@@ -714,7 +722,14 @@ function AskContextControls({
                 }}
                 type="button"
               >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '-3px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: '-3px'
+                  }}
+                >
                   <CollectionIcon icon={collection.icon} />
                 </div>
                 <span className="ask-hub-copy">
@@ -859,8 +874,7 @@ function formatAnswerMetrics(result: ChatResult): string {
   const elapsedSeconds = Number.isFinite(result.metrics.elapsedSeconds)
     ? result.metrics.elapsedSeconds
     : 0
-  const tokenRate =
-    tokensPerSecond >= 10 ? tokensPerSecond.toFixed(0) : tokensPerSecond.toFixed(1)
+  const tokenRate = tokensPerSecond >= 10 ? tokensPerSecond.toFixed(0) : tokensPerSecond.toFixed(1)
   const elapsed = elapsedSeconds >= 10 ? elapsedSeconds.toFixed(0) : elapsedSeconds.toFixed(1)
   const chunksLabel = result.metrics.chunks === 1 ? 'chunk' : 'chunks'
 

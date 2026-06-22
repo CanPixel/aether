@@ -128,7 +128,15 @@ export function AirView({
       <div className="air-grid">
         <section className="air-panel air-lens-panel" aria-label="AiR lens">
           <form className="air-lens-form" onSubmit={submit}>
-            <label htmlFor={lensKind === 'hub' ? 'air-hub-select' : lensKind === 'flow' ? 'air-flow-select' : 'air-lens'}>
+            <label
+              htmlFor={
+                lensKind === 'hub'
+                  ? 'air-hub-select'
+                  : lensKind === 'flow'
+                    ? 'air-flow-select'
+                    : 'air-lens'
+              }
+            >
               Research lens
             </label>
             <div className="air-search-row">
@@ -213,25 +221,41 @@ export function AirView({
           <div className="air-lens-meta">
             <span>{selectedQuickLens}</span>
             <span>{collections.length} hubs indexed</span>
-            <span>{status?.chatModel ? formatVisibleModelName(status.chatModel) : 'Deterministic fallback ready'}</span>
+            <span>
+              {status?.chatModel
+                ? formatVisibleModelName(status.chatModel)
+                : 'Deterministic fallback ready'}
+            </span>
           </div>
         </section>
 
         <section className="air-panel air-actions-panel" aria-label="Render controls">
           <div>
             <h2>Render</h2>
-            <p>{prepared ? `${prepared.sources.length} sources prepared` : 'Preview context before writing a file.'}</p>
+            <p>
+              {prepared
+                ? `${prepared.sources.length} sources prepared`
+                : 'Preview context before writing a file.'}
+            </p>
           </div>
           <div className="air-action-buttons">
             <button disabled={isBusy || !canRender} onClick={onRender} type="button">
               <FileText aria-hidden="true" />
               Render Markdown
             </button>
-            <button disabled={!result || isBusy} onClick={() => result && onOpenFile(result.path)} type="button">
+            <button
+              disabled={!result || isBusy}
+              onClick={() => result && onOpenFile(result.path)}
+              type="button"
+            >
               <ExternalLink aria-hidden="true" />
               Open File
             </button>
-            <button disabled={!result || isBusy} onClick={() => result && onRevealFile(result.path)} type="button">
+            <button
+              disabled={!result || isBusy}
+              onClick={() => result && onRevealFile(result.path)}
+              type="button"
+            >
               <FolderOpen aria-hidden="true" />
               Reveal Folder
             </button>
@@ -306,7 +330,11 @@ export function AirView({
                     <button onClick={() => onOpenFile(file.path)} type="button" title="Open file">
                       <ExternalLink aria-hidden="true" />
                     </button>
-                    <button onClick={() => onRevealFile(file.path)} type="button" title="Reveal folder">
+                    <button
+                      onClick={() => onRevealFile(file.path)}
+                      type="button"
+                      title="Reveal folder"
+                    >
                       <FolderOpen aria-hidden="true" />
                     </button>
                   </div>
@@ -350,8 +378,15 @@ function quickLensValue(
     activeSavedIceberg: SavedIceberg | null
   }
 ): string {
-  if (kind === 'flow') return context.selectedFlowNode?.title || context.flowGraphResult?.query || currentLens || 'Current Flow map'
-  if (kind === 'hub') return context.selectedHub?.name ?? context.selectedCollection?.name ?? 'Selected knowledge hub'
+  if (kind === 'flow')
+    return (
+      context.selectedFlowNode?.title ||
+      context.flowGraphResult?.query ||
+      currentLens ||
+      'Current Flow map'
+    )
+  if (kind === 'hub')
+    return context.selectedHub?.name ?? context.selectedCollection?.name ?? 'Selected knowledge hub'
   if (kind === 'answer') return 'Latest AiON answer'
   if (kind === 'iceberg') return context.activeSavedIceberg?.title ?? 'Saved iCE map'
   return currentLens

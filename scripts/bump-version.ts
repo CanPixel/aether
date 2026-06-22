@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+/// <reference types="bun" />
 
 import { readFile, writeFile } from 'node:fs/promises'
 
@@ -12,9 +13,9 @@ type ManifestVersions = {
 
 const args = process.argv.slice(2)
 const checkOnly = args.includes('--check')
-const versionArg = args.find((arg) => !arg.startsWith('-'))
+const versionArg = args.find((arg: string) => !arg.startsWith('-'))
 
-function usage(): never {
+function usage(): void {
   console.error('Usage:')
   console.error('  bun run version:bump 1.2.3')
   console.error('  bun run version:check')
@@ -23,7 +24,9 @@ function usage(): never {
 
 function assertVersion(version: string): void {
   if (!VERSION_PATTERN.test(version)) {
-    console.error(`Invalid version "${version}". Use SemVer without a leading "v", for example 1.2.3.`)
+    console.error(
+      `Invalid version "${version}". Use SemVer without a leading "v", for example 1.2.3.`
+    )
     process.exit(1)
   }
 }
@@ -118,7 +121,10 @@ async function main(): Promise<void> {
     return
   }
 
-  if (!versionArg) usage()
+  if (!versionArg) {
+    usage()
+    return
+  }
   await bumpVersion(versionArg)
 }
 

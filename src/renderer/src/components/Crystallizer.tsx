@@ -483,10 +483,7 @@ export function Crystallizer({
     focusItem(item)
   }
 
-  function handleNodeKeyDown(
-    event: ReactKeyboardEvent<SVGGElement>,
-    item: IcebergItem
-  ): void {
+  function handleNodeKeyDown(event: ReactKeyboardEvent<SVGGElement>, item: IcebergItem): void {
     if (event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     selectItem(item)

@@ -148,10 +148,7 @@ function formatBrandedModelName(
   const fullModel = model.toLowerCase()
   const isCommunity = /q4_k_m|lmstudio|community/.test(fullModel)
 
-  if (
-    role === 'embedding' ||
-    normalized.includes('qwen3-embedding')
-  ) {
+  if (role === 'embedding' || normalized.includes('qwen3-embedding')) {
     return 'AiON MiST' //AiON - FRiDGE - GLACiER - FROSTBiTE - LiQUID - RiFT - MiST - MiNT
   }
   if (normalized.includes('gemma-4-e2b')) return isCommunity ? 'AiON TiNY' : 'AiON LiTE'

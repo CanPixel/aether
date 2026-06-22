@@ -38,7 +38,7 @@ import {
 } from '../utils/aether-ui'
 import { ChevronRightIcon, AetherSigilIcon, CloseIcon, CubeIcon } from './icons'
 import { SquarePen, Trash2 as TrashIcon } from 'lucide-react'
-import { portals } from "../constants/Features"
+import { portals } from '../constants/Features'
 
 type CollectionDialogState =
   | { mode: 'create' }
@@ -216,9 +216,7 @@ export function Dashboard({
         <section className="hub-row">
           <div className="section-title compact">
             <span className="section-symbol">
-              <span style={{ margin: '3px 2px 0 0' }}>
-                {portals.icon}
-              </span>
+              <span style={{ margin: '3px 2px 0 0' }}>{portals.icon}</span>
             </span>
             <div>
               <h2>Portals</h2>
@@ -355,7 +353,8 @@ export function Dashboard({
                     <span>{iceberg.itemCount} fragments</span>
                     <strong>{iceberg.title}</strong>
                     <small>
-                      {formatDate(iceberg.savedAt)}{/* {' • '} */}
+                      {formatDate(iceberg.savedAt)}
+                      {/* {' • '} */}
                       {/* {formatVisibleModelName(iceberg.model) ?? iceberg.model} */}
                     </small>
                   </button>
@@ -515,7 +514,7 @@ export function Dashboard({
                         title={`Ask ${collection.name}`}
                         type="button"
                       >
-                        <AetherSigilIcon/>
+                        <AetherSigilIcon />
                         <span>Ask</span>
                       </button>
                       <button
