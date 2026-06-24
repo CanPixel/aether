@@ -1,0 +1,10 @@
+.dashboard {
+  position: relative;
+  height: calc(100vh - var(--top-bar-height));
+  overflow: auto;
+  padding: 0 34px 34px;
+}
+
+.workspace.dashboard-open .dashboard {
+  height: calc(100vh - 95px);
+}
