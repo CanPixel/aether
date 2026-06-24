@@ -39,3 +39,5 @@ aether-ds/*
 .design-sync/*
 .ds-sync/
 ds-bundle/
+
+design-assets

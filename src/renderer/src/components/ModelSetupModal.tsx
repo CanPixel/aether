@@ -146,8 +146,7 @@ export function ModelSetupModal({
         <div className="model-setup-hero">
           <div className="model-setup-copy">
             <span className="model-setup-kicker">
-              <span className="model-setup-spark" aria-hidden="true" />
-              Local intelligence
+              Local wisdom
             </span>
             <h1 id="model-setup-title">AiON Launch</h1>
             <p>
@@ -159,7 +158,7 @@ export function ModelSetupModal({
             </p>
           </div>
           <div className="model-setup-crystal" aria-hidden="true">
-            <img alt="" src="/aether-plusless-crystal.png" />
+            <img alt="AiON Crystal" src="/aether-plusless-crystal-favicon.svg" />
           </div>
         </div>
 
@@ -189,7 +188,7 @@ export function ModelSetupModal({
                     <strong>{option.name}</strong>
                     <em>{option.title}</em>
                     <small>{option.description}</small>
-                    <code>{installed ? 'Contained locally' : option.source}</code>
+                    <code>{installed ? 'Already contained locally' : option.source}</code>
                   </span>
                   <span className="model-choice-size">{installed ? 'Installed' : option.size}</span>
                 </label>
@@ -204,11 +203,11 @@ export function ModelSetupModal({
                 Required core
               </span>
               <strong>AiON MiST</strong>
-              <small>
+              <code>
                 {coreInstalled
                   ? 'Already contained locally'
                   : 'The misty semantic search core · 639 MB'}
-              </small>
+              </code>
               {!coreInstalled ? <code>Qwen3 Embedding 0.6B Q8_0</code> : <></>}
             </div>
 

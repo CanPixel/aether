@@ -8526,18 +8526,9 @@ button {
   text-transform: uppercase;
 }
 
-.model-setup-kicker svg,
-.model-setup-spark {
+.model-setup-kicker svg {
   width: 14px;
   height: 14px;
-}
-
-.model-setup-spark {
-  border-radius: 999px;
-  background: radial-gradient(circle, #62d8c6 0 28%, rgba(98, 216, 198, 0.18) 34% 100%);
-  box-shadow:
-    0 0 0 4px rgba(98, 216, 198, 0.12),
-    0 0 18px rgba(80, 181, 216, 0.28);
 }
 
 .model-setup-copy h1 {
@@ -8557,6 +8548,7 @@ button {
   font-size: 15px;
   font-weight: 640;
   line-height: 1.55;
+  font-family: var(--font-old);
 }
 
 .model-setup-crystal {
@@ -8564,29 +8556,76 @@ button {
   display: grid;
   place-items: center;
   min-height: 176px;
-  overflow: hidden;
+  overflow: visible;
+  isolation: isolate;
+  animation: heroOrbFloat 8.5s ease-in-out infinite;
 }
 
 .model-setup-crystal::before {
   position: absolute;
-  inset: 12%;
+  z-index: 0;
+  inset: -10%;
   content: '';
-  background: conic-gradient(
-    from 120deg,
-    rgba(78, 184, 223, 0.14),
-    rgba(143, 114, 207, 0.18),
-    rgba(98, 216, 198, 0.18),
-    rgba(78, 184, 223, 0.14)
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 48% 38%, rgba(255, 255, 255, 0.72), transparent 30%),
+    radial-gradient(circle at 50% 50%, rgba(186, 230, 253, 0.38), transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(45, 212, 191, 0.14), transparent 68%);
+  filter: blur(6px);
+  opacity: 0.86;
+  animation: heroOrbHalo 7.5s ease-in-out infinite;
+}
+
+.model-setup-crystal::after {
+  position: absolute;
+  z-index: 3;
+  width: min(144px, 72%);
+  aspect-ratio: 1;
+  content: '';
+  border-radius: 28%;
+  background: linear-gradient(
+    118deg,
+    transparent 12%,
+    rgba(255, 255, 255, 0.72) 28%,
+    rgba(207, 245, 255, 0.32) 39%,
+    transparent 54%
   );
-  filter: blur(18px);
+  filter: blur(0.4px);
+  mix-blend-mode: screen;
+  opacity: 0.5;
+  transform: rotate(30deg);
+  pointer-events: none;
+  animation: modelSetupCrystalSheen 5.8s ease-in-out infinite;
 }
 
 .model-setup-crystal img {
   position: relative;
-  width: min(210px, 90%);
-  max-height: 190px;
+  z-index: 2;
+  width: min(150px, 74%);
+  max-height: 150px;
   object-fit: contain;
-  filter: drop-shadow(0 20px 34px rgba(63, 127, 189, 0.2));
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.96))
+    drop-shadow(0 0 8px rgba(255, 255, 255, 0.78))
+    drop-shadow(0 0 20px rgba(149, 224, 255, 0.58))
+    drop-shadow(0 18px 28px rgba(48, 119, 170, 0.22));
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+@keyframes modelSetupCrystalSheen {
+  0%,
+  100% {
+    opacity: 0.18;
+    transform: translateX(-18px) rotate(30deg) scale(0.96);
+  }
+  42% {
+    opacity: 0.62;
+  }
+  58% {
+    opacity: 0.5;
+    transform: translateX(18px) rotate(30deg) scale(1.04);
+  }
 }
 
 .model-setup-grid {
@@ -8746,9 +8785,8 @@ button {
 .model-access-card code,
 .model-dir-card code {
   overflow-wrap: anywhere;
-  color: #31587b;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 760;
 }
 
@@ -8815,12 +8853,6 @@ button {
   font-weight: 900;
 }
 
-.model-core-card small {
-  color: #637895;
-  font-size: 12px;
-  font-weight: 680;
-}
-
 .model-core-card.installed {
   border-color: rgba(43, 146, 112, 0.2);
   background:
@@ -8829,7 +8861,8 @@ button {
 }
 
 .model-core-card.installed small,
-.model-choice.installed .model-choice-copy code {
+.model-choice.installed .model-choice-copy code,
+.model-core-card code {
   color: #2b7d64;
 }
 
@@ -8848,7 +8881,7 @@ button {
 .model-access-links {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 6px;
+  gap: 3px;
 }
 
 .model-access-links a {
@@ -8859,7 +8892,7 @@ button {
   min-width: 0;
   border: 1px solid rgba(88, 150, 194, 0.2);
   border-radius: 12px;
-  padding: 7px 9px;
+  padding: 5px 9px;
   background: rgba(255, 255, 255, 0.58);
   color: #276f9b;
   font-size: 11px;
@@ -9089,7 +9122,7 @@ button {
   }
 
   .model-setup-crystal img {
-    max-height: 138px;
+    max-height: 112px;
   }
 
   .model-choice {

@@ -31,7 +31,7 @@
     "icon": [
       "../resources/icon.png",
       "../build/icon.icns",
-      "../public/aether-plusless-crystal-favicon.ico"
+      "../build/icon.ico"
     ],
     "macOS": {
       "minimumSystemVersion": "10.15",
