@@ -1,0 +1,483 @@
+.saved-shelves,
+.hub-row,
+.iceberg-band,
+.knowledge-band {
+  position: relative;
+  z-index: 1;
+  border-top: 1px solid rgba(143, 165, 196, 0.18);
+  padding: 22px 34px;
+}
+
+.saved-shelves {
+  display: grid;
+  grid-template-columns: minmax(0, 1.04fr) minmax(300px, 0.96fr);
+  gap: 1px;
+  margin: 0 -34px;
+  padding: 0;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.48), rgba(239, 249, 255, 0.24)),
+    rgba(255, 255, 255, 0.3);
+}
+
+.hub-row {
+  margin: 0;
+  padding: 16px 22px 18px 34px;
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.iceberg-band {
+  margin: 0;
+  padding: 16px 34px 18px 22px;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(186, 230, 253, 0.24), transparent 28%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.34), rgba(239, 249, 255, 0.2));
+}
+
+.saved-shelves .hub-row,
+.saved-shelves .iceberg-band {
+  min-width: 0;
+  border-top: 0;
+}
+
+.saved-shelves .iceberg-band {
+  border-left: 1px solid rgba(143, 165, 196, 0.18);
+}
+
+.knowledge-band {
+  margin: 0 -34px;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.section-title {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.section-title.compact {
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 9px;
+  margin-bottom: 10px;
+}
+
+.hub-row .section-title.compact {
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+}
+
+.saved-iceberg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(125px, 1fr));
+  gap: 8px;
+  max-height: 154px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin: 0;
+  padding: 1px 5px 5px 1px;
+  scrollbar-color: rgba(82, 178, 219, 0.34) transparent;
+  scrollbar-width: thin;
+
+  padding-top: 2px;
+}
+
+.saved-iceberg-card {
+  position: relative;
+  min-width: 0;
+  height: 70px;
+  cursor: pointer;
+  transition:
+    opacity 180ms ease,
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.saved-iceberg-card.dragging {
+  opacity: 0.5;
+  transform: scale(0.985);
+}
+
+.saved-iceberg-card.drop-target,
+.saved-iceberg-card:hover {
+  transform: translateY(-2px);
+}
+
+.saved-iceberg-open {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  grid-template-rows: auto 1fr auto;
+  align-content: center;
+  justify-items: start;
+  column-gap: 8px;
+  overflow: hidden;
+  border-color: rgba(105, 181, 216, 0.28);
+  border-radius: 8px;
+  padding: 8px 9px;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 92% 18%, rgba(185, 236, 255, 0.52), transparent 34%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(235, 249, 254, 0.84));
+  color: #23364d;
+  cursor: pointer;
+  text-align: left;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -10px 22px rgba(105, 181, 216, 0.07),
+    0 10px 22px rgba(73, 130, 171, 0.1);
+}
+
+.saved-iceberg-open::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  content: '';
+  background:
+    linear-gradient(118deg, transparent 0 38%, rgba(126, 205, 233, 0.14) 39% 40%, transparent 41%),
+    radial-gradient(circle at 40% 0%, rgba(255, 255, 255, 0.86), transparent 30%);
+  opacity: 0.72;
+}
+
+.saved-iceberg-card.drop-target .saved-iceberg-open,
+.saved-iceberg-card:hover .saved-iceberg-open,
+.saved-iceberg-open:hover {
+  border-color: rgba(75, 163, 206, 0.42);
+  background:
+    radial-gradient(circle at 92% 18%, rgba(207, 244, 255, 0.68), transparent 34%),
+    linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(229, 248, 254, 0.9));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    inset 0 -10px 22px rgba(105, 181, 216, 0.1),
+    0 12px 24px rgba(73, 130, 171, 0.16);
+}
+
+.saved-iceberg-open span,
+.saved-iceberg-open small {
+  max-width: 100%;
+  color: #5d7f98;
+  font-size: 9px;
+  opacity: 0.75;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.saved-iceberg-open small {
+  grid-column: 1 / -1;
+  max-width: calc(100% - 34px);
+  font-size: 8px;
+  opacity: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.saved-iceberg-open strong {
+  display: -webkit-box;
+  grid-column: 1;
+  max-width: 100%;
+  overflow: hidden;
+  color: #20344c;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.08;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.8);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  text-transform: capitalize;
+}
+
+.saved-iceberg-delete {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  border-color: rgba(105, 181, 216, 0.24);
+  border-radius: 999px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.72);
+  color: #6f8aa3;
+  box-shadow: none;
+  backdrop-filter: blur(10px);
+}
+
+.saved-iceberg-delete:hover {
+  border-color: rgba(184, 91, 89, 0.24);
+  background: rgba(255, 239, 239, 0.86);
+  color: var(--danger);
+}
+
+.saved-iceberg-delete svg {
+  width: 11px;
+  height: 11px;
+}
+
+.saved-iceberg-flair {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(105, 181, 216, 0.28);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 35% 20%, rgba(255, 255, 255, 0.96), transparent 44%),
+    linear-gradient(145deg, rgba(229, 248, 255, 0.9), rgba(151, 216, 238, 0.42));
+  color: #2a87ad;
+  pointer-events: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 6px 14px rgba(73, 130, 171, 0.12);
+  backdrop-filter: blur(12px);
+}
+
+.section-symbol {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(79, 174, 202, 0.22);
+  border-radius: 10px;
+  color: var(--accent-strong);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.96), transparent 42%),
+    linear-gradient(145deg, rgba(238, 252, 255, 0.9), rgba(255, 255, 255, 0.74));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84);
+}
+
+.section-title.compact .section-symbol {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.section-symbol svg {
+  width: 21px;
+  height: 21px;
+}
+
+.section-title.compact .section-symbol svg {
+  width: 17px;
+  height: 17px;
+}
+
+.section-title h2 {
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 840;
+  font-family: var(--font-ice);
+}
+
+.section-title.compact h2 {
+  font-size: 14px;
+  line-height: 1.05;
+}
+
+.section-title p {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 0.75;
+  font-weight: 720;
+}
+
+.section-title.compact p {
+  font-size: 10px;
+  font-weight: 720;
+  line-height: 1.25;
+}
+
+/* A single comfortably-capped column. Collapsed and expanded hubs share the same
+   width, so opening one grows it in place instead of hopping to a full-width row. */
+.knowledge-band .collection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  width: 100%;
+  max-height: none;
+}
+
+.knowledge-band .collection-accordion {
+  min-width: 0;
+}
+
+/* Soft reveal for the captures drawer so the in-place expansion feels calm. */
+.knowledge-band .collection-captures:not([hidden]) {
+  animation: capturesReveal 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes capturesReveal {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.knowledge-band .collection-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 0;
+}
+
+.knowledge-band .collection-toggle {
+  grid-template-columns: 36px minmax(0, 1fr) auto 16px;
+  min-height: 58px;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.knowledge-band .collection-glyph {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.knowledge-band .collection-glyph svg {
+  width: 18px;
+  height: 18px;
+}
+
+.knowledge-band .collection-main,
+.knowledge-band .collection-meta {
+  gap: 2px;
+}
+
+.knowledge-band .collection-main strong,
+.knowledge-band .collection-meta strong {
+  font-size: 12px;
+}
+
+.knowledge-band .collection-main small {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.25;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.knowledge-band .collection-meta {
+  justify-self: end;
+  min-width: 0;
+  max-width: none;
+  padding-right: 4px;
+  text-align: right;
+}
+
+.knowledge-band .collection-meta small {
+  display: none;
+}
+
+.knowledge-band .collection-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 10px;
+}
+
+.knowledge-band .collection-row-actions button {
+  height: 26px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+/* Always-visible "Ask this hub" pill — opens AiON focused on the collection. */
+.knowledge-band .collection-ask {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border-color: rgba(86, 139, 218, 0.3);
+  background:
+    radial-gradient(circle at 30% 18%, rgba(255, 255, 255, 0.9), transparent 42%),
+    linear-gradient(135deg, rgba(233, 244, 255, 0.95), rgba(255, 255, 255, 0.82));
+  color: var(--accent-strong);
+  font-weight: 800;
+}
+
+.knowledge-band .collection-ask:hover:not(:disabled) {
+  border-color: rgba(86, 139, 218, 0.5);
+  box-shadow: 0 8px 18px rgba(74, 145, 194, 0.14);
+  transform: translateY(-1px);
+}
+
+.knowledge-band .collection-ask:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.knowledge-band .collection-ask svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Edit/Delete stay out of the way until the hub is hovered or focused,
+   then ease in smoothly (width + fade) instead of snapping into view. */
+.knowledge-band .collection-edit,
+.knowledge-band .collection-delete {
+  display: grid;
+  place-items: center;
+  width: 0;
+  padding: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transform: translateX(4px);
+  transition:
+    width 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease,
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 160ms ease,
+    background 160ms ease,
+    color 160ms ease;
+}
+
+.knowledge-band .collection-row:hover .collection-edit,
+.knowledge-band .collection-row:hover .collection-delete,
+.knowledge-band .collection-row:focus-within .collection-edit,
+.knowledge-band .collection-row:focus-within .collection-delete {
+  width: 26px;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.knowledge-band .collection-edit svg,
+.knowledge-band .collection-delete svg {
+  width: 13px;
+  height: 13px;
+}
+
+.knowledge-band .collection-toggle > svg {
+  width: 15px;
+  height: 15px;
+}
+
+.hub-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(114px, 1fr));
+  gap: 8px;
+  max-height: 154px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  margin: 0;
+  padding: 1px 5px 5px 1px;
+  scrollbar-color: rgba(82, 178, 219, 0.34) transparent;
+  scrollbar-width: thin;
+}

@@ -411,7 +411,7 @@ Saved iCE behavior:
 
 ### AiON
 
-AiON is the local intelligence sidepanel.
+AiON is the local wisdom sidepanel.
 
 **Ask mode**:
 

@@ -1,0 +1,26 @@
+.flow-view {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: calc(100vh - 95px);
+  overflow: hidden;
+  padding: 20px 24px 24px;
+  background:
+    radial-gradient(circle at 14% 14%, rgba(255, 255, 255, 0.94), transparent 18%),
+    radial-gradient(circle at 78% 18%, rgba(147, 239, 255, 0.18), transparent 26%),
+    radial-gradient(circle at 48% 84%, rgba(73, 167, 174, 0.1), transparent 32%),
+    linear-gradient(180deg, rgba(250, 254, 255, 0.78), rgba(235, 248, 252, 0.56));
+}
+
+.flow-view::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: '';
+  background-image:
+    linear-gradient(rgba(77, 143, 180, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(77, 143, 180, 0.035) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(circle at 50% 42%, rgba(0, 0, 0, 0.72), transparent 76%);
+}
