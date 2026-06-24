@@ -8453,13 +8453,14 @@ button {
 .model-setup-modal {
   position: relative;
   display: grid;
-  gap: 18px;
-  width: min(980px, calc(100vw - 56px));
-  max-height: calc(100vh - 56px);
-  overflow: auto;
+  gap: 14px;
+  width: 100%;
+  max-height: calc(100vh - 150px);
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid rgba(105, 164, 205, 0.32);
   border-radius: 26px;
-  padding: 22px;
+  padding: 18px;
   background:
     linear-gradient(
       120deg,
@@ -8473,6 +8474,22 @@ button {
     inset 0 1px 0 rgba(255, 255, 255, 0.92);
   isolation: isolate;
   animation: settings-modal-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.model-setup-shell {
+  display: grid;
+  gap: 12px;
+  width: min(980px, calc(100vw - 56px));
+  max-height: calc(100vh - 56px);
+  min-height: 0;
+}
+
+.model-setup-bottom {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  min-width: 0;
 }
 
 .model-setup-modal::before {
@@ -8498,15 +8515,15 @@ button {
 .model-setup-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 250px);
-  gap: 22px;
+  gap: 18px;
   align-items: center;
-  min-height: 184px;
+  min-height: 150px;
 }
 
 .model-setup-copy {
   display: grid;
   align-content: center;
-  gap: 10px;
+  gap: 7px;
   min-width: 0;
 }
 
@@ -8535,7 +8552,7 @@ button {
   margin: 0;
   color: #162f4e;
   font-family: var(--font-display);
-  font-size: clamp(42px, 7vw, 74px);
+  font-size: clamp(40px, 6.2vw, 68px);
   font-weight: 760;
   letter-spacing: 0;
   line-height: 0.9;
@@ -8545,9 +8562,9 @@ button {
   max-width: 620px;
   margin: 0;
   color: #4f6884;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 640;
-  line-height: 1.55;
+  line-height: 1.42;
   font-family: var(--font-old);
 }
 
@@ -8555,7 +8572,7 @@ button {
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 176px;
+  min-height: 148px;
   overflow: visible;
   isolation: isolate;
   animation: heroOrbFloat 8.5s ease-in-out infinite;
@@ -8645,12 +8662,12 @@ button {
   position: relative;
   display: grid;
   grid-template-columns: 26px 40px minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
-  min-height: 124px;
+  min-height: 98px;
   border: 1px solid rgba(111, 153, 199, 0.22);
   border-radius: 18px;
-  padding: 14px;
+  padding: 10px 12px;
   background:
     linear-gradient(130deg, rgba(255, 255, 255, 0.82), rgba(237, 249, 255, 0.6)),
     rgba(255, 255, 255, 0.7);
@@ -8754,7 +8771,7 @@ button {
 
 .model-choice-copy {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -8777,7 +8794,7 @@ button {
   color: #566f8c;
   font-size: 12px;
   font-weight: 640;
-  line-height: 1.4;
+  line-height: 1.28;
 }
 
 .model-choice-copy code,
@@ -8913,11 +8930,19 @@ button {
 
 .model-setup-progress {
   display: grid;
-  gap: 10px;
-  border: 1px solid rgba(117, 155, 198, 0.18);
-  border-radius: 18px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.54);
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid rgba(174, 215, 239, 0.42);
+  border-radius: 22px;
+  padding: 10px 12px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.98), transparent 42%),
+    linear-gradient(135deg, rgba(248, 253, 255, 0.92), rgba(235, 248, 255, 0.76)),
+    rgba(255, 255, 255, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 16px 42px rgba(58, 127, 180, 0.14);
+  backdrop-filter: blur(18px) saturate(1.12);
 }
 
 .model-progress-heading {
@@ -8950,7 +8975,7 @@ button {
 }
 
 .model-progress-meter {
-  height: 10px;
+  height: 8px;
 }
 
 .model-progress-meter span,
@@ -9070,11 +9095,24 @@ button {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
+  min-width: max-content;
+  border: 1px solid rgba(174, 215, 239, 0.46);
+  border-radius: 22px;
+  padding: 10px;
+  background:
+    radial-gradient(circle at 24% 8%, rgba(255, 255, 255, 0.98), transparent 44%),
+    linear-gradient(135deg, rgba(248, 253, 255, 0.94), rgba(235, 248, 255, 0.8)),
+    rgba(255, 255, 255, 0.84);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.88),
+    0 18px 46px rgba(58, 127, 180, 0.18);
+  backdrop-filter: blur(18px) saturate(1.12);
 }
 
 .model-setup-actions button {
   min-width: 116px;
 }
+
 .model-setup-actions button:hover {
   padding: 0 10px;
   border-color: rgba(86, 139, 218, 0.3);
@@ -9103,9 +9141,13 @@ button {
   }
 
   .model-setup-modal {
+    max-height: calc(100vh - 122px);
+    padding: 14px;
+  }
+
+  .model-setup-shell {
     width: calc(100vw - 32px);
     max-height: calc(100vh - 32px);
-    padding: 16px;
   }
 
   .model-setup-hero,
@@ -9166,10 +9208,16 @@ button {
     grid-column: 1 / 3;
   }
 
-  .model-progress-heading,
+  .model-setup-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .model-setup-actions {
+    justify-self: stretch;
+    justify-content: flex-end;
     align-items: stretch;
     flex-direction: column;
+    min-width: 0;
   }
 }
 

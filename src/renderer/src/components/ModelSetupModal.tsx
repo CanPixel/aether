@@ -136,175 +136,185 @@ export function ModelSetupModal({
 
   return (
     <div className="model-setup-overlay" role="presentation">
-      <section
-        className="model-setup-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="model-setup-title"
-      >
-        <div className="model-setup-glass" aria-hidden="true" />
-        <div className="model-setup-hero">
-          <div className="model-setup-copy">
-            <span className="model-setup-kicker">
-              Local wisdom
-            </span>
-            <h1 id="model-setup-title">AiON Launch</h1>
-            <p>
-              Choose the local model pack for ascending
-              <br></br>
-              <small style={{ fontWeight: '700' }}>
-                AiON MiST installs with every selection for private semantic search
-              </small>
-            </p>
-          </div>
-          <div className="model-setup-crystal" aria-hidden="true">
-            <img alt="AiON Crystal" src="/aether-plusless-crystal-favicon.svg" />
-          </div>
-        </div>
-
-        <div className="model-setup-grid">
-          <div className="model-setup-options" aria-label="AiON model choices">
-            {MODEL_SETUP_OPTIONS.map((option) => {
-              const installed = installedModels.includes(option.id)
-              const selected = selectedModels.includes(option.id) && !installed
-              return (
-                <label
-                  className={`model-choice ${selected ? 'selected' : ''} ${installed ? 'installed' : ''}`}
-                  key={option.id}
-                >
-                  <input
-                    checked={selected}
-                    disabled={busy || installed}
-                    onChange={() => onToggleModel(option.id)}
-                    type="checkbox"
-                  />
-                  <span className="model-choice-check" aria-hidden="true">
-                    <Check />
-                  </span>
-                  <span className="model-choice-icon" aria-hidden="true">
-                    {option.id === 'lite' ? <Wind /> : <Waves />}
-                  </span>
-                  <span className="model-choice-copy">
-                    <strong>{option.name}</strong>
-                    <em>{option.title}</em>
-                    <small>{option.description}</small>
-                    <code>{installed ? 'Already contained locally' : option.source}</code>
-                  </span>
-                  <span className="model-choice-size">{installed ? 'Installed' : option.size}</span>
-                </label>
-              )
-            })}
-          </div>
-
-          <aside className="model-setup-side">
-            <div className={`model-core-card ${coreInstalled ? 'installed' : ''}`}>
-              <span>
-                <ShieldCheck aria-hidden="true" />
-                Required core
-              </span>
-              <strong>AiON MiST</strong>
-              <code>
-                {coreInstalled
-                  ? 'Already contained locally'
-                  : 'The misty semantic search core · 639 MB'}
-              </code>
-              {!coreInstalled ? <code>Qwen3 Embedding 0.6B Q8_0</code> : <></>}
+      <div className="model-setup-shell">
+        <section
+          className="model-setup-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="model-setup-title"
+        >
+          <div className="model-setup-glass" aria-hidden="true" />
+          <div className="model-setup-hero">
+            <div className="model-setup-copy">
+              <span className="model-setup-kicker">Local wisdom</span>
+              <h1 id="model-setup-title">AiON Launch</h1>
+              <p>
+                Choose the local model pack for ascending
+                <br></br>
+                <small style={{ fontWeight: '700' }}>
+                  AiON MiST installs with every selection for private semantic search
+                </small>
+              </p>
             </div>
-
-            <div className="model-access-card">
-              <span>Verified sources</span>
-              <p>Models download from their official publishers. Details stay available here.</p>
-              <div className="model-access-links">
-                {MODEL_NOTICE_LINKS.map((link) => (
-                  <a href={link.href} key={link.href} rel="noreferrer" target="_blank">
-                    {link.label}
-                    <ExternalLink aria-hidden="true" />
-                  </a>
-                ))}
-              </div>
+            <div className="model-setup-crystal" aria-hidden="true">
+              <img alt="AiON Crystal" src="/aether-plusless-crystal-favicon.svg" />
             </div>
-
-            <div className="model-dir-card">
-              <span>Install location</span>
-              <code>{modelDir || 'App data model directory'}</code>
-            </div>
-          </aside>
-        </div>
-
-        <div className={`model-setup-progress ${progress.length ? 'active' : ''}`}>
-          <div className="model-progress-heading">
-            <span>
-              {complete ? 'Ready' : busy ? 'Installing' : progress.length ? 'Prepared' : 'Waiting'}
-            </span>
-            <strong>
-              {progressTotal
-                ? `${formatBytes(progressDownloaded)} / ${formatBytes(progressTotal)}`
-                : complete
-                  ? 'Complete'
-                  : hasNewChatSelection || !coreInstalled
-                    ? 'Ready'
-                    : 'Nothing to install'}
-            </strong>
-          </div>
-          <div
-            className="model-progress-meter"
-            aria-label="Overall model download progress"
-            aria-valuemax={100}
-            aria-valuemin={0}
-            aria-valuenow={Math.round(overallPercent)}
-            role="progressbar"
-          >
-            <span style={{ transform: `scaleX(${overallPercent / 100})` }} />
           </div>
 
-          {progress.length > 0 ? (
-            <div className="model-progress-list">
-              {progress.map((item) => {
-                const itemPercent =
-                  item.status === 'complete' || item.status === 'skipped'
-                    ? 100
-                    : progressPercent(item.downloadedBytes, item.totalBytes)
+          <div className="model-setup-grid">
+            <div className="model-setup-options" aria-label="AiON model choices">
+              {MODEL_SETUP_OPTIONS.map((option) => {
+                const installed = installedModels.includes(option.id)
+                const selected = selectedModels.includes(option.id) && !installed
                 return (
-                  <div className={`model-progress-row ${item.status}`} key={item.id}>
-                    <span className="model-progress-icon" aria-hidden="true">
-                      {item.status === 'complete' || item.status === 'skipped' ? (
-                        <CircleCheck />
-                      ) : item.status === 'downloading' ? (
-                        <ModelProgressLoader id={item.id} />
-                      ) : (
-                        <CloudDownload />
-                      )}
+                  <label
+                    className={`model-choice ${selected ? 'selected' : ''} ${installed ? 'installed' : ''}`}
+                    key={option.id}
+                  >
+                    <input
+                      checked={selected}
+                      disabled={busy || installed}
+                      onChange={() => onToggleModel(option.id)}
+                      type="checkbox"
+                    />
+                    <span className="model-choice-check" aria-hidden="true">
+                      <Check />
                     </span>
-                    <span className="model-progress-copy">
-                      <strong>{item.label}</strong>
-                      <small>{item.message ?? item.filename}</small>
+                    <span className="model-choice-icon" aria-hidden="true">
+                      {option.id === 'lite' ? <Wind /> : <Waves />}
                     </span>
-                    <span className="model-progress-size">
-                      {item.totalBytes
-                        ? `${formatBytes(item.downloadedBytes)} / ${formatBytes(item.totalBytes)}`
-                        : formatBytes(item.downloadedBytes)}
+                    <span className="model-choice-copy">
+                      <strong>{option.name}</strong>
+                      <em>{option.title}</em>
+                      <small>{option.description}</small>
+                      <code>{installed ? 'Already contained locally' : option.source}</code>
                     </span>
-                    <span className="model-progress-line" aria-hidden="true">
-                      <i style={{ transform: `scaleX(${itemPercent / 100})` }} />
+                    <span className="model-choice-size">
+                      {installed ? 'Installed' : option.size}
                     </span>
-                  </div>
+                  </label>
                 )
               })}
             </div>
-          ) : null}
+
+            <aside className="model-setup-side">
+              <div className={`model-core-card ${coreInstalled ? 'installed' : ''}`}>
+                <span>
+                  <ShieldCheck aria-hidden="true" />
+                  Required core
+                </span>
+                <strong>AiON MiST</strong>
+                <code>
+                  {coreInstalled
+                    ? 'Already contained locally'
+                    : 'The misty semantic search core · 639 MB'}
+                </code>
+                {!coreInstalled ? <code>Qwen3 Embedding 0.6B Q8_0</code> : <></>}
+              </div>
+
+              <div className="model-access-card">
+                <span>Verified sources</span>
+                <p>Models download from their official publishers. Details stay available here.</p>
+                <div className="model-access-links">
+                  {MODEL_NOTICE_LINKS.map((link) => (
+                    <a href={link.href} key={link.href} rel="noreferrer" target="_blank">
+                      {link.label}
+                      <ExternalLink aria-hidden="true" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+
+              <div className="model-dir-card">
+                <span>Install location</span>
+                <code>{modelDir || 'App data model directory'}</code>
+              </div>
+            </aside>
+          </div>
+
+          {error && <p className="model-setup-error">{error}</p>}
+        </section>
+
+        <div className="model-setup-bottom">
+          <div className={`model-setup-progress ${progress.length ? 'active' : ''}`}>
+            <div className="model-progress-heading">
+              <span>
+                {complete
+                  ? 'Ready'
+                  : busy
+                    ? 'Installing'
+                    : progress.length
+                      ? 'Prepared'
+                      : 'Waiting'}
+              </span>
+              <strong>
+                {progressTotal
+                  ? `${formatBytes(progressDownloaded)} / ${formatBytes(progressTotal)}`
+                  : complete
+                    ? 'Complete'
+                    : hasNewChatSelection || !coreInstalled
+                      ? 'Ready'
+                      : 'Nothing to install'}
+              </strong>
+            </div>
+            <div
+              className="model-progress-meter"
+              aria-label="Overall model download progress"
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={Math.round(overallPercent)}
+              role="progressbar"
+            >
+              <span style={{ transform: `scaleX(${overallPercent / 100})` }} />
+            </div>
+
+            {progress.length > 0 ? (
+              <div className="model-progress-list">
+                {progress.map((item) => {
+                  const itemPercent =
+                    item.status === 'complete' || item.status === 'skipped'
+                      ? 100
+                      : progressPercent(item.downloadedBytes, item.totalBytes)
+                  return (
+                    <div className={`model-progress-row ${item.status}`} key={item.id}>
+                      <span className="model-progress-icon" aria-hidden="true">
+                        {item.status === 'complete' || item.status === 'skipped' ? (
+                          <CircleCheck />
+                        ) : item.status === 'downloading' ? (
+                          <ModelProgressLoader id={item.id} />
+                        ) : (
+                          <CloudDownload />
+                        )}
+                      </span>
+                      <span className="model-progress-copy">
+                        <strong>{item.label}</strong>
+                        <small>{item.message ?? item.filename}</small>
+                      </span>
+                      <span className="model-progress-size">
+                        {item.totalBytes
+                          ? `${formatBytes(item.downloadedBytes)} / ${formatBytes(item.totalBytes)}`
+                          : formatBytes(item.downloadedBytes)}
+                      </span>
+                      <span className="model-progress-line" aria-hidden="true">
+                        <i style={{ transform: `scaleX(${itemPercent / 100})` }} />
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : null}
+          </div>
+
+          <footer className="model-setup-actions">
+            <button disabled={busy} onClick={onClose} type="button">
+              {complete ? 'Done' : 'Later'}
+            </button>
+            <button className="primary-button" disabled={!canStart} onClick={onStart} type="button">
+              {primaryLabel}
+            </button>
+          </footer>
         </div>
-
-        {error && <p className="model-setup-error">{error}</p>}
-
-        <footer className="model-setup-actions">
-          <button disabled={busy} onClick={onClose} type="button">
-            {complete ? 'Done' : 'Later'}
-          </button>
-          <button className="primary-button" disabled={!canStart} onClick={onStart} type="button">
-            {primaryLabel}
-          </button>
-        </footer>
-      </section>
+      </div>
     </div>
   )
 }
