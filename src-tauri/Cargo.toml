@@ -1,6 +1,6 @@
 [package]
 name = "aether"
-version = "1.0.2"
+version = "1.0.25"
 description = "Local AI-powered browser and knowledge hub"
 authors = ["canpixel.com"]
 edition = "2021"
