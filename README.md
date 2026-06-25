@@ -545,17 +545,25 @@ LINUX_BUNDLES=deb,appimage bun run linux:arm64:build
 LINUX_DOCKER_PLATFORM=linux/amd64 LINUX_TARGET=x86_64-unknown-linux-gnu LINUX_ARCH_SLUG=x64 bun run linux:arm64:build
 ```
 
-## Windows, Linux, and Android via CI
+## macOS, Windows, and Linux via CI
 
 Because Tauri cannot cross-compile desktop targets, and llama.cpp builds natively per-OS, the cross-platform installers are produced by `.github/workflows/build.yml`:
 
+- `macos-latest` → styled `.dmg` installer.
 - `windows-latest` → NSIS `.exe` / MSI installer.
 - `ubuntu-latest` → x86_64 `.deb` and AppImage.
-- Android job → APK (best-effort; see the Android limitation note above — and release signing needs a keystore).
+- Android job → manual workflow artifact only for now; it is not published on tagged desktop releases until the mobile build is signed and product-ready.
 
 Trigger it from the GitHub Actions tab (workflow_dispatch) or by pushing a `v*` tag. Off macOS, llama.cpp runs CPU-only (the `metal` feature is gated to macOS in `src-tauri/Cargo.toml`).
 
-On a `v*` tag push, a final `release` job collects every job's installers and publishes them to a GitHub Release for that tag (Windows `.exe`, Linux `.deb`/AppImage, and the APK if it built). On a manual `workflow_dispatch` run, the installers are uploaded as workflow artifacts instead of a release.
+On a `v*` tag push, a final `release` job publishes a clean set of stable installer asset names to the GitHub Release:
+
+- `AETHER_macOS.dmg`
+- `AETHER_x64-setup.exe`
+- `AETHER_amd64.deb`
+- `AETHER_amd64.AppImage`
+
+GitHub also adds source archives automatically. On a manual `workflow_dispatch` run, installers are uploaded as workflow artifacts instead of a release.
 
 Keep release versions synced from `package.json`:
 

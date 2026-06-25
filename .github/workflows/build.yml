@@ -1,9 +1,9 @@
 name: Build installers
 
-# Builds the cross-platform installers that can't be cross-compiled from macOS.
-# Windows also builds on every branch push so the latest test installer can be
-# downloaded from the run artifacts on a Windows machine.
-# Run all platforms from the Actions tab (Run workflow) or by pushing a v* tag.
+# Builds native installers per platform. Windows also builds on every branch push
+# so the latest test installer can be downloaded from the run artifacts on a
+# Windows machine. Release tags publish a small, clean set of stable installer
+# asset names for direct latest-download links.
 # Off macOS, llama.cpp builds CPU-only (the `metal` feature is gated to macOS in
 # src-tauri/Cargo.toml).
 on:
@@ -20,6 +20,28 @@ env:
   CARGO_NET_RETRY: '10'
 
 jobs:
+  macos:
+    name: macOS DMG
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aether-macos-dmg
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
   linux:
     name: Linux (x86_64)
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
@@ -83,7 +105,7 @@ jobs:
 
   android:
     name: Android (APK)
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     # Best-effort: the live browser surface uses desktop child webviews that don't
     # exist on Android yet (see README), and a release APK needs a signing keystore.
@@ -126,9 +148,9 @@ jobs:
 
   release:
     name: Publish GitHub Release
-    # Only on tag pushes. Runs after the builds; android is best-effort, so a missing
-    # APK won't block the release.
-    needs: [linux, windows, android]
+    # Only on tag pushes. Android is deliberately excluded from public releases
+    # until the mobile build is signed and product-ready.
+    needs: [macos, linux, windows]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -139,7 +161,7 @@ jobs:
         with:
           path: artifacts
 
-      - name: Create stable latest-download aliases
+      - name: Create release installer assets
         shell: bash
         run: |
           set -euo pipefail
@@ -161,10 +183,10 @@ jobs:
             echo "Created stable alias release-assets/$target from $source"
           }
 
+          copy_first "*.dmg" "AETHER_macOS.dmg"
           copy_first "*.exe" "AETHER_x64-setup.exe"
-          copy_first "*.AppImage" "AETHER_amd64.AppImage"
           copy_first "*.deb" "AETHER_amd64.deb"
-          copy_first "*.apk" "AETHER_android-arm64.apk"
+          copy_first "*.AppImage" "AETHER_amd64.AppImage"
 
       - name: Create release and attach installers
         uses: softprops/action-gh-release@v2
@@ -172,8 +194,4 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: false
           files: |
-            artifacts/**/*.exe
-            artifacts/**/*.deb
-            artifacts/**/*.AppImage
-            artifacts/**/*.apk
             release-assets/*
