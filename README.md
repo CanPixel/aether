@@ -1,51 +1,129 @@
-# ÆTHER Browser
+<p align="center">
+  <img src="public/aether-mark.svg" alt="ÆTHER" width="132" />
+</p>
 
-ÆTHER is a Tauri-native research browser for local knowledge work. It combines normal web browsing, persistent knowledge hubs, local page capture, semantic retrieval, AiON question answering, Flow semantic mapping, AiR Markdown dossier rendering, and the iCE Information Complexity Explorer in one desktop shell, with an Android build path under active migration.
+<h1 align="center">ÆTHER Browser</h1>
 
-The core idea is simple: browse the web, save useful pages into local knowledge hubs, embed those captures on your machine, and ask questions against that private local context without sending captured page content to a cloud model API.
+<p align="center">
+  A private local-AI research browser for capturing the web, building knowledge hubs, and asking grounded questions without sending your saved pages to a cloud model.
+</p>
 
-## What It Does
+<p align="center">
+  <strong>Browse.</strong> Capture. Retrieve. Ask. Map. Export.
+</p>
 
-Current major capabilities:
+<p align="center">
+  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2.x-24c8db?style=for-the-badge&labelColor=132033" />
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-local_runtime-bd7cff?style=for-the-badge&labelColor=132033" />
+  <img alt="Bun" src="https://img.shields.io/badge/Bun-Vite-f5d76e?style=for-the-badge&labelColor=132033" />
+  <img alt="Local AI" src="https://img.shields.io/badge/Local_AI-GGUF-75d7c6?style=for-the-badge&labelColor=132033" />
+</p>
 
-- Tauri desktop shell using Rust commands and native child webview browser surfaces.
-- Browser tabs with dynamic sizing, favicons, page-theme tinting, back/forward history, and dashboard/browser switching.
-- ÆTHER dashboard with saved portals, saved iCE atlases, and knowledge hub accordions.
-- Saved portals can be reordered by dragging and reopened as browser tabs.
-- Knowledge hubs can be created, edited, deleted, reordered, assigned icons, and expanded as accordions.
-- Captured source cards appear as compact scrollable lists inside hubs and can be dragged between knowledge hubs.
-- Capture pipeline extracts readable page text, chunks it, embeds it locally, stores vectors on disk, and persists capture metadata.
-- AiON sidepanel provides local search and Ask mode over selected knowledge context.
-- AiON Ask supports populated knowledge hubs, current-page context, or both.
-- Browser quick actions can prompt AiON against the current page with one click.
-- AI answers render as selectable markdown with copy support, compact generation metrics, and clickable citations.
-- Flow maps captured hubs and sources into a semantic relation graph with query lenses, node inspection, and source/hub actions.
-- AiR renders selected research context into one local Obsidian-friendly Markdown dossier.
-- iCE, the Information Complexity Explorer, generates iceberg-style complexity maps for a topic using the local chat model.
-- Settings supports default search engine selection, Developer Mode, update checks, and shortcut reference.
-- Local model setup can download recommended ungated model files, and the local model menu supports runtime status and model selection for GGUF chat and embedding models.
+---
+
+## What Is ÆTHER?
+
+ÆTHER is a Tauri-native desktop browser built for local knowledge work. It turns ordinary browsing into a private research loop: save useful pages, organize them into knowledge hubs, embed them on-device, and ask AiON for citation-backed answers grounded in what you actually captured.
+
+It is not a cloud wrapper and it is not an external chatbot sidebar. The local intelligence path runs in the app process through GGUF models and a bundled llama.cpp runtime.
+
+## Product Pillars
+
+| Surface       | What it does                                                                                 |
+| ------------- | -------------------------------------------------------------------------------------------- |
+| **Dashboard** | A calm home for saved portals, knowledge hubs, and saved iCE atlases.                        |
+| **Browser**   | Normal browsing with tabs, search/address entry, quick capture, and current-page AI actions. |
+| **AiON**      | A local knowledge sidepanel that answers from captured hubs, the current page, or both.      |
+| **Flow**      | Semantic trails and relationship maps over captured sources and hubs.                        |
+| **AiR**       | Obsidian-friendly Markdown dossier rendering from selected research context.                 |
+| **iCE**       | The Information Complexity Explorer: iceberg-style conceptual maps generated locally.        |
+
+## Highlights
+
+- **Private local capture pipeline**: readable page text is extracted, chunked, embedded, and stored locally.
+- **Grounded local answers**: AiON renders markdown answers with copy support, compact metrics, and clickable citations.
+- **Knowledge hubs**: create, reorder, edit, and organize captured pages into persistent local collections.
+- **Automatic setup flow**: fresh installs can download the recommended local model pack from official sources.
+- **Semantic Flow**: map captured sources into scored relationships and contextual trails.
+- **iCE maps**: generate layered concept atlases for research topics.
+- **AiR exports**: turn local context into portable Markdown dossiers.
+- **Native shell**: Tauri, Rust commands, Vite renderer, and no required local server sidecar.
 
 ## Privacy Boundary
 
-ÆTHER's capture, retrieval, and local AI path is designed to stay on the machine.
+ÆTHER's capture, retrieval, and AI workflow is designed to stay on your machine.
 
-Local-only pieces:
+Local by design:
 
-- Extracted page text
-- Capture metadata
+- Extracted page text and capture metadata
 - Knowledge hub metadata
-- Embeddings
-- Local vector chunk storage
-- Retrieval queries
-- RAG prompts evaluated inside the app process
-- AiON answers generated through in-process local models
-- Flow graph queries and local semantic relationships
-- AiR dossier context, previews, and generated Markdown files
-- iCE topic maps generated through in-process local models
+- Embeddings and vector chunk storage
+- Retrieval queries and RAG prompts
+- AiON answers generated by in-process local models
+- Flow semantic relationships
+- AiR previews and Markdown exports
+- iCE topic maps
 
-Normal browsing is still normal browsing. Websites loaded in the browser can make their own network requests, track sessions, run JavaScript, and communicate with their own servers. The privacy boundary applies to ÆTHER's indexing and intelligence pipeline, not to websites themselves.
+Normal browsing is still normal browsing. Websites can make their own network requests, track sessions, run JavaScript, and communicate with their servers. The privacy boundary applies to ÆTHER's indexing and intelligence pipeline, not to third-party websites loaded in the browser.
 
-## Prerequisites
+## Local Model Setup
+
+Fresh installs use **AiON Launch**, the in-app setup flow for downloading local models into the app-data model directory. The same setup flow is available later from Settings for repair or manual installation.
+
+| Model         | Role                                                              | Official source                       |     Size |
+| ------------- | ----------------------------------------------------------------- | ------------------------------------- | -------: |
+| **AiON MiST** | Required embedding model for search, capture, Flow, and retrieval | `Qwen/Qwen3-Embedding-0.6B-GGUF`      | ~0.64 GB |
+| **AiON LiTE** | Smaller, faster chat model for everyday answers and summaries     | `google/gemma-4-E2B-it-qat-q4_0-gguf` | ~3.35 GB |
+| **AiON WiSE** | Larger chat model for richer synthesis and iCE maps               | `google/gemma-4-E4B-it-qat-q4_0-gguf` | ~5.15 GB |
+
+Install choices:
+
+- **MiST + LiTE**: best default for laptops, mobile-class hardware, and quick grounded answers.
+- **MiST + WiSE**: better for deeper synthesis, longer answers, and iCE generation.
+- **MiST + LiTE + WiSE**: lets the user switch between speed and depth.
+
+Manual development installs can also place models here:
+
+```text
+./aether-models/
+  embeddings/Qwen3-Embedding-0.6B-GGUF/Qwen3-Embedding-0.6B-Q8_0.gguf
+  chat/gemma-4-E2B-it-qat-q4_0-gguf/gemma-4-E2B_q4_0-it.gguf
+  chat/gemma-4-E4B-it-qat-q4_0-gguf/gemma-4-E4B_q4_0-it.gguf
+```
+
+Environment overrides:
+
+```bash
+export AETHER_CHAT_MODEL=/absolute/path/to/chat.gguf
+export AETHER_EMBEDDING_MODEL=/absolute/path/to/embedding.gguf
+export AETHER_MODEL_DIR=/absolute/path/to/a/model/folder
+```
+
+## System Requirements
+
+These requirements are based on the current three-model setup. RAM depends mostly on the active chat model: installing both LiTE and WiSE uses more disk, but the app only needs to run the selected chat model alongside MiST.
+
+| Platform                       | AiON LiTE minimum       | AiON WiSE minimum        | Recommended                              |
+| ------------------------------ | ----------------------- | ------------------------ | ---------------------------------------- |
+| **macOS Apple Silicon**        | M1, 8 GB RAM            | M1/M2, 12 GB RAM         | 16 GB RAM, SSD                           |
+| **macOS Intel**                | 4-core Intel, 16 GB RAM | Not ideal                | Apple Silicon preferred                  |
+| **Windows x64**                | 4-core CPU, 8 GB RAM    | 6-core CPU, 12-16 GB RAM | 16 GB RAM, AVX2 CPU, SSD                 |
+| **Linux x64**                  | 4-core CPU, 8 GB RAM    | 6-core CPU, 12-16 GB RAM | 16 GB RAM, AVX2 CPU, SSD                 |
+| **Linux ARM64 / Raspberry Pi** | 8 GB RAM                | 16 GB RAM                | Raspberry Pi 5 16 GB with active cooling |
+| **Android ARM64**              | 8 GB RAM                | 12-16 GB RAM             | Recent high-end SoC, 12 GB+ RAM          |
+
+Storage guidance:
+
+| Install choice     | Raw models | Minimum free storage | Comfortable |
+| ------------------ | ---------: | -------------------: | ----------: |
+| MiST only          |   ~0.64 GB |                 2 GB |        4 GB |
+| MiST + LiTE        |   ~3.99 GB |                 7 GB |       10 GB |
+| MiST + WiSE        |   ~5.79 GB |                10 GB |       14 GB |
+| MiST + LiTE + WiSE |   ~9.14 GB |                14 GB |      20 GB+ |
+
+Current runtime note: macOS builds use llama.cpp Metal acceleration. Windows and Linux builds are CPU-only in the current Cargo configuration.
+
+## Development Prerequisites
 
 Required:
 
@@ -54,47 +132,6 @@ Required:
 - CMake, required for building the bundled llama.cpp Rust binding.
 - macOS, Windows, or Linux for desktop development.
 - Android Studio, Android SDK/NDK, and Rust Android targets for Android builds.
-- GGUF model files for local chat generation and local embeddings.
-
-Recommended first-stage model setup:
-
-- Embeddings: official `Qwen/Qwen3-Embedding-0.6B-GGUF` Q8 GGUF by default.
-- Chat/iCE: a Gemma chat GGUF. Official Google Gemma 4 QAT GGUF releases are available for the Gemma 4 family; use an instruction-tuned file such as `gemma-4-E4B-it-qat-q4_0-gguf` or a larger variant if the machine has enough memory.
-
-Chosen models:
-
-Mobile / Z Fold 7:
-Gemma 4 E2B official GGUF
-Optional: E4B only if user chooses a “large mobile model” download
-
-Raspberry Pi 5 16GB:
-E4B official GGUF as the upper practical default
-E2B as fallback / fast mode
-
-Desktop MacBook Pro M5:
-Gemma 4 12B official QAT GGUF
-
-- desktop default: 12B or E4B
-- desktop light: E4B
-- Pi: E4B
-- mobile: E2B default, E4B optional download/import
-
-Model discovery:
-
-- Put chat models in `./aether-models/chat/`.
-- Put embedding GGUF files in `./aether-models/embeddings/`.
-- Or set `AETHER_CHAT_MODEL=/absolute/path/to/chat.gguf`.
-- Or set `AETHER_EMBEDDING_MODEL=/absolute/path/to/embedding.gguf`.
-- Or set `AETHER_MODEL_DIR=/absolute/path/to/a/model/folder`.
-
-Default model behavior:
-
-- Embeddings prefer filenames containing `qwen3-embedding`, `embedding`, or `embed`.
-- Chat model preference is filenames containing `gemma4`, `gemma-4`, `gemma3`, `gemma-3`, `gemma-2b`, `2b`, `gemma`, or `qwen`, then the first non-embedding GGUF.
-- The model menu can update the selected embedding and chat models.
-- Chat generation uses the GGUF's embedded chat template when present, preserving Gemma 4 system/user message formatting instead of flattening everything into one prompt. Sampling keeps conservative temperatures while aligning top-k/top-p with the Gemma 4 Ollama defaults.
-
-Fresh installs can use the in-app setup flow to download recommended ungated model files into the app-data model directory. The setup flow is also available from Settings for manual repair or model installation. For manual development installs, place `Qwen3-Embedding-0.6B-Q8_0.gguf` under `aether-models/embeddings/Qwen3-Embedding-0.6B-GGUF/`.
 
 ## Quick Start
 
@@ -859,7 +896,7 @@ If needed, delete stale `dist/` and `src-tauri/target/release/bundle/` output ma
 
 ### Update check cannot reach GitHub
 
-Settings uses the public GitHub Releases API to check whether a newer ÆTHER release exists. If the check fails, verify general network access to GitHub and that the repository has a published, non-prerelease release.
+Settings uses the public GitHub Releases API to check whether a newer ÆTHER release exists. If the check fails, verify general network access to GitHub and that the repository has a published, non-prerelease release that is publicly readable without being logged in. Private repositories or private/draft releases return `404` to the unauthenticated in-app checker even if you can see the release in your browser.
 
 ### iCE returns invalid or empty results
 
