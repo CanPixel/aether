@@ -66,6 +66,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck:web
       - run: bun run tauri build --bundles deb,appimage
+      - run: scripts/normalize-deb-package.sh src-tauri/target/release/bundle/deb/*.deb
 
       - uses: actions/upload-artifact@v4
         with:
@@ -99,6 +100,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck:web
       - run: bun run tauri build --bundles deb
+      - run: scripts/normalize-deb-package.sh src-tauri/target/release/bundle/deb/*.deb
 
       - uses: actions/upload-artifact@v4
         with:

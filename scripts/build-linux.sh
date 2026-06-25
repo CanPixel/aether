@@ -79,6 +79,10 @@ docker run --rm --platform "${PLATFORM}" \
     bun run typecheck:web
     bun run tauri build --target "${LINUX_TARGET}" --bundles "${LINUX_BUNDLES}" --ci
 
+    if compgen -G "${CARGO_TARGET_DIR}/${LINUX_TARGET}/release/bundle/deb/*.deb" > /dev/null; then
+      scripts/normalize-deb-package.sh "${CARGO_TARGET_DIR}/${LINUX_TARGET}/release/bundle/deb/"*.deb
+    fi
+
     echo
     echo "Linux ${LINUX_ARCH_SLUG} artifacts:"
     find "${CARGO_TARGET_DIR}/${LINUX_TARGET}/release/bundle" -maxdepth 5 -type f -print 2>/dev/null || true
