@@ -26,6 +26,7 @@ aether-web
 .vscode
 
 public/old
+public/screens
 
 build/dmg-background.tiff
 

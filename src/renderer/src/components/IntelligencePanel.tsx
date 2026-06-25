@@ -52,6 +52,11 @@ type IntelligencePanelProps = {
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
 }
 
+function modelOptionsWithSelected(models: string[], selected?: string | null): string[] {
+  if (!selected || models.includes(selected)) return models
+  return [selected, ...models]
+}
+
 export function IntelligencePanel({
   busy,
   chatBlocked,
@@ -96,6 +101,7 @@ export function IntelligencePanel({
   const panelRef = useRef<HTMLElement>(null)
   const modelSettingsButtonRef = useRef<HTMLButtonElement>(null)
   const modelSettingsRef = useRef<HTMLElement>(null)
+  const chatModelOptions = modelOptionsWithSelected(status?.chatModels ?? [], status?.chatModel)
   const askCollections = collections.filter((collection) => collection.captureCount > 0)
   const hasKnowledgeHubs = askCollections.length > 0
   const hasAskContext = !hasKnowledgeHubs
@@ -475,14 +481,14 @@ export function IntelligencePanel({
             <label className="inline-model-selector">
               <span>Model:</span>
               <select
-                disabled={Boolean(busy) || !status || status.chatModels.length === 0}
+                disabled={Boolean(busy) || !status || chatModelOptions.length === 0}
                 value={status?.chatModel ?? ''}
                 onChange={(event) => onUpdateModels({ chatModel: event.target.value })}
               >
                 <option value="" disabled>
                   No model
                 </option>
-                {(status?.chatModels ?? []).map((model) => (
+                {chatModelOptions.map((model) => (
                   <option key={model} value={model}>
                     {formatVisibleModelName(model, { developerMode, role: 'chat' }) ?? model}
                   </option>
@@ -769,8 +775,11 @@ function LocalModelSettings({
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
 }): React.JSX.Element {
   const models = status?.availableModels ?? []
-  const chatModels = status?.chatModels ?? []
-  const embeddingModels = status?.embeddingModels ?? []
+  const chatModels = modelOptionsWithSelected(status?.chatModels ?? [], status?.chatModel)
+  const embeddingModels = modelOptionsWithSelected(
+    status?.embeddingModels ?? [],
+    status?.embeddingModel
+  )
   const modelLabel =
     formatVisibleModelName(status?.chatModel, { developerMode, role: 'chat' }) ?? 'No chat model'
 

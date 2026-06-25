@@ -6521,6 +6521,14 @@ fn model_catalog(paths: &DataPaths, settings: &LocalModelSettings) -> ModelCatal
             Err(error) => errors.push(error),
         }
     }
+    for (value, embedding) in [
+        (settings.chat_model.as_deref(), false),
+        (settings.embedding_model.as_deref(), true),
+    ] {
+        if let Some(path) = value.and_then(|value| selected_direct_model_path(value, embedding)) {
+            models.push(path);
+        }
+    }
 
     models = dedupe_model_paths(models);
     let embedding_model = pick_embedding_model(&models, settings);
@@ -6554,6 +6562,19 @@ fn model_catalog(paths: &DataPaths, settings: &LocalModelSettings) -> ModelCatal
         } else {
             Some(errors.join(" "))
         },
+    }
+}
+
+fn selected_direct_model_path(value: &str, embedding: bool) -> Option<PathBuf> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(value);
+    if selected_model_matches_kind(&path, embedding) {
+        Some(canonical_model_path(&path))
+    } else {
+        None
     }
 }
 
