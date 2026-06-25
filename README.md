@@ -552,6 +552,7 @@ Because Tauri cannot cross-compile desktop targets, and llama.cpp builds nativel
 - `macos-latest` → styled `.dmg` installer.
 - `windows-latest` → NSIS `.exe` / MSI installer.
 - `ubuntu-latest` → x86_64 `.deb` and AppImage.
+- `ubuntu-24.04-arm` → ARM64 `.deb` for devices such as Raspberry Pi / Compute Module boards.
 - Android job → manual workflow artifact only for now; it is not published on tagged desktop releases until the mobile build is signed and product-ready.
 
 Trigger it from the GitHub Actions tab (workflow_dispatch) or by pushing a `v*` tag. Off macOS, llama.cpp runs CPU-only (the `metal` feature is gated to macOS in `src-tauri/Cargo.toml`).
@@ -561,6 +562,7 @@ On a `v*` tag push, a final `release` job publishes a clean set of stable instal
 - `AETHER_macOS.dmg`
 - `AETHER_x64-setup.exe`
 - `AETHER_amd64.deb`
+- `AETHER_arm64.deb`
 - `AETHER_amd64.AppImage`
 
 GitHub also adds source archives automatically. On a manual `workflow_dispatch` run, installers are uploaded as workflow artifacts instead of a release.

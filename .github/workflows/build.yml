@@ -75,6 +75,37 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
 
+  linux-arm64:
+    name: Linux (ARM64)
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake clang libclang-dev pkg-config file patchelf \
+            libssl-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck:web
+      - run: bun run tauri build --bundles deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aether-linux-arm64
+          path: src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
   windows:
     name: Windows installer (x86_64)
     runs-on: windows-latest
@@ -150,7 +181,7 @@ jobs:
     name: Publish GitHub Release
     # Only on tag pushes. Android is deliberately excluded from public releases
     # until the mobile build is signed and product-ready.
-    needs: [macos, linux, windows]
+    needs: [macos, linux, linux-arm64, windows]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -168,14 +199,15 @@ jobs:
 
           mkdir -p release-assets
 
-          copy_first() {
-            local pattern="$1"
-            local target="$2"
+          copy_first_from_artifact() {
+            local artifact="$1"
+            local pattern="$2"
+            local target="$3"
             local source
 
-            source="$(find artifacts -type f -name "$pattern" | sort | head -n 1)"
+            source="$(find "artifacts/$artifact" -type f -name "$pattern" | sort | head -n 1)"
             if [[ -z "$source" ]]; then
-              echo "No artifact matched $pattern; skipping $target"
+              echo "No artifact matched $artifact/$pattern; skipping $target"
               return 0
             fi
 
@@ -183,10 +215,11 @@ jobs:
             echo "Created stable alias release-assets/$target from $source"
           }
 
-          copy_first "*.dmg" "AETHER_macOS.dmg"
-          copy_first "*.exe" "AETHER_x64-setup.exe"
-          copy_first "*.deb" "AETHER_amd64.deb"
-          copy_first "*.AppImage" "AETHER_amd64.AppImage"
+          copy_first_from_artifact "aether-macos-dmg" "*.dmg" "AETHER_macOS.dmg"
+          copy_first_from_artifact "aether-windows-x86_64" "*.exe" "AETHER_x64-setup.exe"
+          copy_first_from_artifact "aether-linux-x86_64" "*.deb" "AETHER_amd64.deb"
+          copy_first_from_artifact "aether-linux-x86_64" "*.AppImage" "AETHER_amd64.AppImage"
+          copy_first_from_artifact "aether-linux-arm64" "*.deb" "AETHER_arm64.deb"
 
       - name: Create release and attach installers
         uses: softprops/action-gh-release@v2
