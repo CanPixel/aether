@@ -30,7 +30,7 @@ runCommand([
 ], "Staging release files")
 
 runCommand(["git", "commit", "-m", `chore: release ${versionTag}`], "Committing changes")
-runCommand(["git", "push", "origin", "main"], "Pushing to main")
+runCommand(["git", "push", "origin", "master"], "Pushing to master")
 runCommand(["git", "tag", versionTag], `Creating tag ${versionTag}`)
 runCommand(["git", "push", "origin", versionTag], "Pushing tag to origin")
 
