@@ -1,4 +1,5 @@
 import { FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import packageManifest from '../../../package.json'
 import {
   AetherState,
   AetherShortcutId,
@@ -70,6 +71,7 @@ import {
 // Sentinel URL for a blank tab that shows the ÆTHER start page instead of loading a
 // page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
 const START_PAGE_URL = 'aether://start'
+const APP_VERSION = packageManifest.version
 const DASHBOARD_ADDRESSES = new Set([
   'æther://dashboard',
   'ice://crystallizer',
@@ -2367,6 +2369,7 @@ function SettingsModal({
   onUpdateAutoCheck: (value: boolean) => Promise<void>
   onOpenModelSetup: () => Promise<void>
 }): React.JSX.Element {
+  const installedVersion = updateCheck?.currentVersion ?? APP_VERSION
   const searchEngines: Array<{ id: SearchEngineId; name: string; description: string }> = [
     { id: 'google', name: 'Google', description: 'Broad default web search.' },
     { id: 'bing', name: 'Bing', description: 'Microsoft web search.' },
@@ -2497,18 +2500,20 @@ function SettingsModal({
                 <label>Updates</label>
                 <p>Checks GitHub Releases and lets you decide when to install a newer build.</p>
               </div>
-              <span
-                className={updateCheck?.updateAvailable ? 'update-badge available' : 'update-badge'}
-              >
-                {updateCheck?.updateAvailable ? 'Available' : 'Tracker'}
-              </span>
+              <div className="settings-update-badges" aria-label="Update status">
+                <span className="update-version-badge">Installed {installedVersion}</span>
+                <span
+                  className={
+                    updateCheck?.updateAvailable ? 'update-badge available' : 'update-badge'
+                  }
+                >
+                  {updateCheck?.updateAvailable ? 'Available' : 'Tracker'}
+                </span>
+              </div>
             </div>
 
             <div className="settings-update-status">
               <strong>{updateStatusLabel(updateCheck)}</strong>
-              {updateCheck?.currentVersion && (
-                <span>Current version {updateCheck.currentVersion}</span>
-              )}
               {updateCheck?.latestVersion && (
                 <span>Latest release {updateCheck.latestVersion}</span>
               )}

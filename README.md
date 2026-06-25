@@ -24,13 +24,13 @@
 
 ---
 
-## What Is ÆTHER?
+## The ÆTHER That Is
 
 ÆTHER is a Tauri-native desktop browser built for local knowledge work. It turns ordinary browsing into a private research loop: save useful pages, organize them into knowledge hubs, embed them on-device, and ask AiON for citation-backed answers grounded in what you actually captured.
 
-It is not a cloud wrapper and it is not an external chatbot sidebar. The local intelligence path runs in the app process through GGUF models and a bundled llama.cpp runtime.
+It is not a cloud wrapper and it is not an external chatbot sidebar. The local wisdom path runs in the app process through GGUF models and a bundled llama.cpp runtime.
 
-## Product Pillars
+## Pillars of Eternity
 
 | Surface       | What it does                                                                                 |
 | ------------- | -------------------------------------------------------------------------------------------- |
@@ -48,7 +48,7 @@ It is not a cloud wrapper and it is not an external chatbot sidebar. The local i
 - **iCE Maps**: generate layered concept atlases for research topics. Creatre a Cartography of Topics for new research hooks.
 - **Native Shell**: Tauri, Rust commands, Vite renderer, and no required local server sidecar.
 
-## Privacy Boundary
+## Privacy Ice Wall
 
 ÆTHER's capture, retrieval, and AI workflow is designed to stay on your machine.
 
@@ -63,7 +63,7 @@ Local by design:
 
 Normal browsing is still normal browsing. Websites can make their own network requests, track sessions, run JavaScript, and communicate with their servers. The privacy boundary applies to ÆTHER's indexing and intelligence pipeline, not to third-party websites loaded in the browser.
 
-## Local Model Setup
+## Local Wisdom Setup
 
 Fresh installs use **AiON Launch**, the in-app setup flow for downloading local models into the app-data model directory. The same setup flow is available later from Settings for repair or manual installation.
 

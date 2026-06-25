@@ -13,6 +13,7 @@
     "typecheck": "bun run typecheck:web && bun run typecheck:tauri",
     "version:bump": "bun scripts/bump-version.ts",
     "version:check": "bun scripts/bump-version.ts --check",
+    "release": "bun scripts/release.ts",
     "start": "tauri dev",
     "dev": "tauri dev",
     "dev:vite": "vite --host 127.0.0.1 --port 1420",

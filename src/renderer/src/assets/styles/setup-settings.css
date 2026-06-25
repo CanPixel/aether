@@ -1023,8 +1023,15 @@
   margin: 0;
 }
 
-.update-badge {
+.settings-update-badges {
+  display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.update-badge {
   border: 1px solid rgba(105, 188, 224, 0.28);
   border-radius: 999px;
   padding: 5px 10px;
@@ -1033,6 +1040,16 @@
   font-size: 10px;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.update-version-badge {
+  border: 1px solid rgba(31, 68, 103, 0.1);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--ink-soft);
+  font-size: 10px;
+  font-weight: 900;
 }
 
 .update-badge.available {
