@@ -26,7 +26,13 @@ cd "$ROOT"
 VOLNAME="ÆTHER"
 APP="src-tauri/target/release/bundle/macos/${VOLNAME}.app"
 OUT_DIR="src-tauri/target/release/bundle/dmg"
-OUT="${OUT_DIR}/${VOLNAME}_1.0.0_aarch64.dmg"
+VERSION="$(bun -e 'console.log(require("./src-tauri/tauri.conf.json").version)')"
+case "$(uname -m)" in
+  arm64) ARCH="aarch64" ;;
+  x86_64) ARCH="x64" ;;
+  *) ARCH="$(uname -m)" ;;
+esac
+OUT="${OUT_DIR}/${VOLNAME}_${VERSION}_${ARCH}.dmg"
 BG_PNG="build/dmg-background.png"
 BG_TIFF="build/dmg-background.tiff"
 

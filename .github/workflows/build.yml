@@ -139,6 +139,33 @@ jobs:
         with:
           path: artifacts
 
+      - name: Create stable latest-download aliases
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-assets
+
+          copy_first() {
+            local pattern="$1"
+            local target="$2"
+            local source
+
+            source="$(find artifacts -type f -name "$pattern" | sort | head -n 1)"
+            if [[ -z "$source" ]]; then
+              echo "No artifact matched $pattern; skipping $target"
+              return 0
+            fi
+
+            cp "$source" "release-assets/$target"
+            echo "Created stable alias release-assets/$target from $source"
+          }
+
+          copy_first "*.exe" "AETHER_x64-setup.exe"
+          copy_first "*.AppImage" "AETHER_amd64.AppImage"
+          copy_first "*.deb" "AETHER_amd64.deb"
+          copy_first "*.apk" "AETHER_android-arm64.apk"
+
       - name: Create release and attach installers
         uses: softprops/action-gh-release@v2
         with:
@@ -149,3 +176,4 @@ jobs:
             artifacts/**/*.deb
             artifacts/**/*.AppImage
             artifacts/**/*.apk
+            release-assets/*

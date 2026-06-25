@@ -8,6 +8,7 @@ const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?
 type ManifestVersions = {
   packageJson: string
   cargoToml: string
+  cargoLock: string
   tauriConfig: string
 }
 
@@ -57,10 +58,30 @@ function updateCargoPackageVersion(content: string, version: string): string {
   return nextLines.join('\n')
 }
 
+function readCargoLockPackageVersion(content: string): string {
+  const match = content.match(
+    /^\[\[package\]\]\s*\nname\s*=\s*"aether"\s*\nversion\s*=\s*"([^"]+)"/m
+  )
+  if (!match) throw new Error('Could not find aether package version in src-tauri/Cargo.lock')
+  return match[1]
+}
+
+function updateCargoLockPackageVersion(content: string, version: string): string {
+  const next = content.replace(
+    /^(\[\[package\]\]\s*\nname\s*=\s*"aether"\s*\nversion\s*=\s*)"([^"]+)"/m,
+    `$1"${version}"`
+  )
+  if (next === content) {
+    throw new Error('Could not update aether package version in src-tauri/Cargo.lock')
+  }
+  return next
+}
+
 async function readVersions(): Promise<ManifestVersions> {
-  const [packageRaw, cargoRaw, tauriRaw] = await Promise.all([
+  const [packageRaw, cargoRaw, cargoLockRaw, tauriRaw] = await Promise.all([
     readFile('package.json', 'utf8'),
     readFile('src-tauri/Cargo.toml', 'utf8'),
+    readFile('src-tauri/Cargo.lock', 'utf8'),
     readFile('src-tauri/tauri.conf.json', 'utf8')
   ])
   const packageJson = JSON.parse(packageRaw) as { version?: string }
@@ -72,6 +93,7 @@ async function readVersions(): Promise<ManifestVersions> {
   return {
     packageJson: packageJson.version,
     cargoToml: readCargoPackageVersion(cargoRaw),
+    cargoLock: readCargoLockPackageVersion(cargoLockRaw),
     tauriConfig: tauriConfig.version
   }
 }
@@ -91,9 +113,10 @@ function assertSynced(versions: ManifestVersions, expectedVersion: string): void
 async function bumpVersion(version: string): Promise<void> {
   assertVersion(version)
 
-  const [packageRaw, cargoRaw, tauriRaw] = await Promise.all([
+  const [packageRaw, cargoRaw, cargoLockRaw, tauriRaw] = await Promise.all([
     readFile('package.json', 'utf8'),
     readFile('src-tauri/Cargo.toml', 'utf8'),
+    readFile('src-tauri/Cargo.lock', 'utf8'),
     readFile('src-tauri/tauri.conf.json', 'utf8')
   ])
 
@@ -105,6 +128,7 @@ async function bumpVersion(version: string): Promise<void> {
   await Promise.all([
     writeFile('package.json', `${JSON.stringify(packageJson, null, 2)}\n`),
     writeFile('src-tauri/Cargo.toml', updateCargoPackageVersion(cargoRaw, version)),
+    writeFile('src-tauri/Cargo.lock', updateCargoLockPackageVersion(cargoLockRaw, version)),
     writeFile('src-tauri/tauri.conf.json', `${JSON.stringify(tauriConfig, null, 2)}\n`)
   ])
 

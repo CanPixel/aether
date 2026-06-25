@@ -5,6 +5,7 @@
   "description": "Local AI-powered browser and knowledge hub",
   "author": "canpixel.com",
   "homepage": "https://canpixel.com",
+  "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",

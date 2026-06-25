@@ -2,7 +2,7 @@
   <img src="public/aether-mark.svg" alt="ÆTHER Logo" width="132" />
 </p>
 
-<h1 align="center">ÆTHER • Research Browser & Engine </h1>
+<h1 align="center">ÆTHER • Private Research Engine</h1>
 
 <p align="center">
   <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2.x-24c8db?style=for-the-badge&labelColor=132033" />
@@ -25,7 +25,7 @@
 </h4>
 
 <p align="center">
-  <code>🔒 No cloud</code> &nbsp;&nbsp;•&nbsp;&nbsp; <code>💸 No subscription</code> &nbsp;&nbsp;•&nbsp;&nbsp; <code>🚫 No telemetry</code>
+  <code>🔒 No cloud</code> &nbsp;&nbsp;•&nbsp;&nbsp; <code>💸 No subscription</code> &nbsp;&nbsp;•&nbsp;&nbsp; <code>🚫 No account</code> &nbsp;&nbsp;•&nbsp;&nbsp; <code>📊 No telemetry</code>
 </p>
 
 <p align="center">
@@ -134,257 +134,6 @@ Storage guidance:
 | MiST + LiTE + WiSE |   ~9.14 GB |                14 GB |      20 GB+ |
 
 Current runtime note: macOS builds use llama.cpp Metal acceleration. Windows and Linux builds are CPU-only in the current Cargo configuration.
-
-## Development Prerequisites
-
-Required:
-
-- Bun for dependency management and scripts.
-- Rust and the Tauri platform prerequisites for your target OS.
-- CMake, required for building the bundled llama.cpp Rust binding.
-- macOS, Windows, or Linux for desktop development.
-- Android Studio, Android SDK/NDK, and Rust Android targets for Android builds.
-
-## Quick Start
-
-Install dependencies:
-
-```bash
-bun install
-```
-
-Run the app in development:
-
-```bash
-bun run dev
-```
-
-Run checks:
-
-```bash
-bun run typecheck
-bun run lint
-bun run build:vite
-```
-
-Build compiled app bundles:
-
-```bash
-bun run build
-```
-
-## Android Build
-
-ÆTHER now has Tauri Android scripts, but the local Android SDK/NDK must be installed before Tauri can initialize or build the Android project.
-
-Install Android Studio, then install these SDK pieces through Android Studio's SDK Manager:
-
-- Android SDK Platform
-- Android SDK Build-Tools
-- Android SDK Platform-Tools
-- Android NDK
-- Android Emulator, if you want emulator testing
-
-Set the Android environment variables in your shell profile:
-
-```bash
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-export ANDROID_SDK_ROOT="$ANDROID_HOME"
-export NDK_HOME="$ANDROID_HOME/ndk/$(ls "$ANDROID_HOME/ndk" | sort -V | tail -n 1)"
-export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
-```
-
-Install Rust Android targets:
-
-```bash
-rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
-```
-
-Accept the Android SDK licenses after installing or updating SDK packages:
-
-```bash
-yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
-```
-
-Initialize the Android project once:
-
-```bash
-bun run android:init
-```
-
-Run on a connected device or emulator:
-
-```bash
-bun run android:dev
-```
-
-If this reports `No available Android Emulator detected`, start an emulator from Android Studio's Device Manager or connect a physical device with USB debugging enabled, then confirm it is visible:
-
-```bash
-adb devices
-```
-
-Build Android release artifacts:
-
-```bash
-bun run android:build
-```
-
-Build an APK:
-
-```bash
-bun run android:build:apk
-```
-
-Build an AAB for Play Store distribution:
-
-```bash
-bun run android:build:aab
-```
-
-Android outputs are generated under:
-
-```text
-src-tauri/gen/android/app/build/outputs/
-```
-
-Current mobile limitation: the React shell can be packaged for Android, but ÆTHER's current live browser tab surface uses Tauri desktop child webviews. That desktop-only browser surface must be replaced with an Android-compatible browser path before the Android app behaves like the macOS Tauri app.
-
-## Linux Build
-
-Use the Docker-based Linux build script (`scripts/build-linux.sh`) to build a Linux package from macOS or another non-Linux host. Arch is parametrized, defaulting to arm64:
-
-```bash
-bun run linux:arm64:build   # aarch64 .deb
-bun run linux:x64:build     # x86_64 .deb
-```
-
-This runs an `ubuntu:24.04` container, installs the Linux Tauri + llama.cpp build dependencies (including `cmake`/`clang`), installs Bun and Rust inside Docker volumes, and builds a `.deb`.
-
-The default export is a Debian package for Ubuntu:
-
-```bash
-bun run linux:arm64:deb
-bun run linux:x64:deb
-```
-
-Artifacts are generated under (slug is `arm64` or `x64`):
-
-```text
-src-tauri/target-linux-<slug>/<target-triple>/release/bundle/
-```
-
-The script keeps Linux-specific dependencies out of the host project by mounting per-arch Docker volumes for `/work/node_modules`, `/root/.cargo`, `/root/.rustup`, and `/root/.bun`.
-
-Note: building x86_64 on an arm64 Mac (or vice-versa) runs under QEMU emulation, which is very slow for the llama.cpp C++ compile. For the non-native arch, prefer CI (see below).
-
-Optional overrides:
-
-```bash
-LINUX_IMAGE=ubuntu:24.04 bun run linux:arm64:build
-LINUX_BUNDLES=deb,appimage bun run linux:arm64:build
-LINUX_DOCKER_PLATFORM=linux/amd64 LINUX_TARGET=x86_64-unknown-linux-gnu LINUX_ARCH_SLUG=x64 bun run linux:arm64:build
-```
-
-## Windows, Linux, and Android via CI
-
-Because Tauri cannot cross-compile desktop targets, and llama.cpp builds natively per-OS, the cross-platform installers are produced by `.github/workflows/build.yml`:
-
-- `windows-latest` → NSIS `.exe` / MSI installer.
-- `ubuntu-latest` → x86_64 `.deb` and AppImage.
-- Android job → APK (best-effort; see the Android limitation note above — and release signing needs a keystore).
-
-Trigger it from the GitHub Actions tab (workflow_dispatch) or by pushing a `v*` tag. Off macOS, llama.cpp runs CPU-only (the `metal` feature is gated to macOS in `src-tauri/Cargo.toml`).
-
-On a `v*` tag push, a final `release` job collects every job's installers and publishes them to a GitHub Release for that tag (Windows `.exe`, Linux `.deb`/AppImage, and the APK if it built). On a manual `workflow_dispatch` run, the installers are uploaded as workflow artifacts instead of a release.
-
-Keep release versions synced from `package.json`:
-
-```bash
-bun run version:bump 1.0.1
-bun run version:check
-git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
-git commit -m "chore: release v1.0.1"
-git tag v1.0.1
-git push origin main
-git push origin v1.0.1
-```
-
-Build the current desktop app with Tauri:
-
-```bash
-bun run build
-```
-
-## Project Scripts
-
-| Script                        | Purpose                                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| `bun run dev`                 | Start the Tauri desktop app in development.                                                      |
-| `bun run start`               | Alias for the Tauri desktop development app.                                                     |
-| `bun run dev:vite`            | Start only the Vite renderer dev server on `127.0.0.1:1420`.                                     |
-| `bun run format`              | Format the project with Prettier.                                                                |
-| `bun run typecheck:web`       | Run renderer TypeScript checks.                                                                  |
-| `bun run typecheck:tauri`     | Run Rust `cargo check` for the Tauri backend.                                                    |
-| `bun run typecheck`           | Run renderer TypeScript checks and Rust `cargo check` for the Tauri backend.                     |
-| `bun run version:bump 1.2.3`  | Sync `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to one app version. |
-| `bun run version:check`       | Verify the app version manifests match `package.json`.                                           |
-| `bun run lint`                | Run ESLint.                                                                                      |
-| `bun run build:vite`          | Build only the Vite renderer assets into `dist/`.                                                |
-| `bun run build`               | Typecheck and build the Tauri desktop app.                                                       |
-| `bun run build:desktop-local` | Build local desktop packages for the current Tauri target plus Docker Linux arm64/x64 packages.  |
-| `bun run android:dev`         | Run the Tauri Android app on a connected device or emulator.                                     |
-| `bun run android:build:apk`   | Build an Android APK.                                                                            |
-| `bun run android:build:aab`   | Build an Android App Bundle.                                                                     |
-| `bun run linux:arm64:build`   | Build an Ubuntu arm64 Tauri package in Docker.                                                   |
-| `bun run linux:x64:build`     | Build an Ubuntu x86_64 Tauri package in Docker.                                                  |
-| `bun run linux:arm64:deb`     | Build an Ubuntu arm64 `.deb` package in Docker.                                                  |
-| `bun run linux:x64:deb`       | Build an Ubuntu x86_64 `.deb` package in Docker.                                                 |
-
-## Build Outputs
-
-Important output/resource directories:
-
-| Path                                       | Owner                 | Purpose                                                                                |
-| ------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------- |
-| `dist/`                                    | Vite/Tauri frontend   | Compiled renderer assets consumed by Tauri. This is not a distributable app by itself. |
-| `src-tauri/target/`                        | Tauri/Cargo           | Desktop app binaries and bundles generated by `tauri build`.                           |
-| `src-tauri/target-linux-<slug>/`           | Tauri/Cargo in Docker | Ubuntu Linux build cache and bundle output (`arm64` or `x64`).                         |
-| `src-tauri/gen/android/app/build/outputs/` | Tauri Android/Gradle  | Android APK/AAB outputs.                                                               |
-| `build/`                                   | project resources     | Packaging resources such as icons. This is input to packaging, not output.             |
-
-Common Tauri outputs:
-
-```text
-src-tauri/target/release/bundle/
-src-tauri/target-linux-arm64/aarch64-unknown-linux-gnu/release/bundle/deb/ÆTHER_1.0.0_arm64.deb
-src-tauri/target-linux-x64/x86_64-unknown-linux-gnu/release/bundle/deb/ÆTHER_1.0.0_amd64.deb
-src-tauri/gen/android/app/build/outputs/
-```
-
-For quick local desktop testing, prefer:
-
-```bash
-bun run dev
-```
-
-Use `bun run build` when you need packaged Tauri desktop artifacts.
-
-## Desktop Packaging Notes
-
-Desktop packaging is now driven by Tauri config:
-
-- `src-tauri/tauri.conf.json` is the main desktop/mobile Tauri configuration.
-- `src-tauri/tauri.linux.conf.json` limits the Docker Linux arm64 export to `.deb` by default.
-- `src-tauri/capabilities/default.json` controls the default Tauri permissions surface.
-
-Local desktop builds are suitable for development on your own machine. For external macOS distribution, configure Apple Developer ID signing and notarization in the Tauri packaging flow before shipping.
-
-If a packaged app behaves differently from development, rebuild from a clean package state:
-
-```bash
-bun run build
-```
 
 ## Application Surfaces
 
@@ -643,140 +392,258 @@ Renderer responsibilities:
 - Drag/drop interactions for portals, hubs, and captured source cards.
 - Calls typed `window.aether` APIs instead of direct Tauri, database, or file-system access.
 
-## Typed Renderer API
+---
 
-Renderer code accesses privileged functionality through `window.aether`. The source of truth is `src/shared/aether.ts`.
+## Development Prerequisites
 
-Representative API surface:
+Required:
 
-```ts
-window.aether.apps.list()
-window.aether.apps.activate(appId)
-window.aether.apps.navigate(appId, url)
-window.aether.apps.goBack(appId)
-window.aether.apps.goForward(appId)
+- Bun for dependency management and scripts.
+- Rust and the Tauri platform prerequisites for your target OS.
+- CMake, required for building the bundled llama.cpp Rust binding.
+- macOS, Windows, or Linux for desktop development.
+- Android Studio, Android SDK/NDK, and Rust Android targets for Android builds.
 
-window.aether.tabs.list()
-window.aether.tabs.create({ url })
-window.aether.tabs.activate(tabId)
-window.aether.tabs.close(tabId)
-window.aether.tabs.navigate(tabId, url)
-window.aether.tabs.goBack(tabId)
-window.aether.tabs.goForward(tabId)
+## Quick Start
 
-window.aether.dashboard.open()
+Install dependencies:
 
-window.aether.hub.list()
-window.aether.hub.create({ title, url })
-window.aether.hub.reorder(ids)
-window.aether.hub.delete(id)
-
-window.aether.collections.list()
-window.aether.collections.create({ name, description, icon })
-window.aether.collections.update({ id, name, description, icon })
-window.aether.collections.reorder(ids)
-window.aether.collections.delete(id)
-window.aether.collections.captures(collectionId)
-
-window.aether.capture.currentPage({ collectionId })
-window.aether.capture.move({ captureId, collectionId })
-window.aether.capture.delete(captureId)
-window.aether.capture.suggestHub()
-
-window.aether.search.collection({ collectionId, query, limit })
-window.aether.semanticTrail.generate({ query, limit })
-window.aether.flow.graph({ query, sourceLimit })
-window.aether.chat.ask({ collectionId, prompt, includeCurrentPage, requestId })
-window.aether.chat.cancel()
-
-window.aether.air.prepare({ lensKind, lens, collectionId, captureId, savedIcebergId, answer })
-window.aether.air.render({ lensKind, lens, collectionId, captureId, savedIcebergId, answer })
-window.aether.air.listRecent()
-window.aether.air.open(path)
-window.aether.air.reveal(path)
-
-window.aether.crystallizer.generate({ keyword })
-window.aether.crystallizer.listSaved()
-window.aether.crystallizer.getSaved(id)
-window.aether.crystallizer.save({ title, keyword, model, generatedAt, items })
-window.aether.crystallizer.reorderSaved(ids)
-window.aether.crystallizer.deleteSaved(id)
-
-window.aether.system.status()
-window.aether.system.settings()
-window.aether.system.updateSettings({ browser: { defaultSearchEngine }, developerMode })
-window.aether.system.updateModels({ embeddingModel, chatModel })
-
-window.aether.layout.setIntelligencePanelCollapsed(collapsed)
-window.aether.layout.setModalOverlayOpen(open)
-window.aether.layout.showStatusToast({ kind, message })
-
-window.aether.events.onState(listener)
-window.aether.events.onCaptureProgress(listener)
-window.aether.events.onChatStream(listener)
-window.aether.events.onShortcut(listener)
-window.aether.events.onFindRequested(listener)
-window.aether.events.onFindResult(listener)
+```bash
+bun install
 ```
 
-## Source Layout
+Run the app in development:
+
+```bash
+bun run dev
+```
+
+Run checks:
+
+```bash
+bun run typecheck
+bun run lint
+bun run build:vite
+```
+
+Build compiled app bundles:
+
+```bash
+bun run build
+```
+
+## Android Build
+
+ÆTHER now has Tauri Android scripts, but the local Android SDK/NDK must be installed before Tauri can initialize or build the Android project.
+
+Install Android Studio, then install these SDK pieces through Android Studio's SDK Manager:
+
+- Android SDK Platform
+- Android SDK Build-Tools
+- Android SDK Platform-Tools
+- Android NDK
+- Android Emulator, if you want emulator testing
+
+Set the Android environment variables in your shell profile:
+
+```bash
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export ANDROID_SDK_ROOT="$ANDROID_HOME"
+export NDK_HOME="$ANDROID_HOME/ndk/$(ls "$ANDROID_HOME/ndk" | sort -V | tail -n 1)"
+export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+```
+
+Install Rust Android targets:
+
+```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi i686-linux-android x86_64-linux-android
+```
+
+Accept the Android SDK licenses after installing or updating SDK packages:
+
+```bash
+yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
+```
+
+Initialize the Android project once:
+
+```bash
+bun run android:init
+```
+
+Run on a connected device or emulator:
+
+```bash
+bun run android:dev
+```
+
+If this reports `No available Android Emulator detected`, start an emulator from Android Studio's Device Manager or connect a physical device with USB debugging enabled, then confirm it is visible:
+
+```bash
+adb devices
+```
+
+Build Android release artifacts:
+
+```bash
+bun run android:build
+```
+
+Build an APK:
+
+```bash
+bun run android:build:apk
+```
+
+Build an AAB for Play Store distribution:
+
+```bash
+bun run android:build:aab
+```
+
+Android outputs are generated under:
 
 ```text
-src/
-  shared/
-    aether.ts                     Shared API, state, settings, capture, chat, and iCE types
-  renderer/
-    index.html                    Renderer HTML entry
-    src/
-      App.tsx                     Main shell, app switching, settings, task orchestration
-      main.tsx                    React mount
-      assets/
-        base.css                  Base styling
-        main.css                  Main UI system and animations
-      components/
-        BrowserChrome.tsx         Tabs, address bar, capture controls, favicon/theme tinting
-        CaptureDetailCard.tsx     Capture card variant for detail/recent views
-        CollectionDialog.tsx      Knowledge hub create/edit/delete modal
-        Crystallizer.tsx          iCE Information Complexity Explorer
-        Dashboard.tsx             Portals, saved iCE atlases, knowledge hubs, captures
-        IntelligencePanel.tsx     AiON search/ask sidepanel and model controls
-        SourceTray.tsx            Search/citation source display
-        StartPage.tsx             Browser start page surface
-        icons.tsx                 Local icon components
-      utils/
-        aether-ui.ts              UI formatting helpers
-        collection-icon-data.ts   Knowledge hub icon option data
-        collection-icons.tsx      Knowledge hub icon renderer
-      tauri-aether.ts             Tauri invoke bridge exposed as window.aether
-src-tauri/
-  src/
-    lib.rs                        Rust Tauri backend, browser views, stores, commands, RAG, iCE
-    main.rs                       Tauri entrypoint
-  tauri.conf.json                 Main Tauri configuration
-  tauri.linux.conf.json           Linux arm64 bundle override
-  capabilities/
-    default.json                  Tauri permission capability
-  gen/android/                    Generated Tauri Android project
+src-tauri/gen/android/app/build/outputs/
 ```
 
-## Development Guidelines
+Current mobile limitation: the React shell can be packaged for Android, but ÆTHER's current live browser tab surface uses Tauri desktop child webviews. That desktop-only browser surface must be replaced with an Android-compatible browser path before the Android app behaves like the macOS Tauri app.
 
-Prefer:
+## Linux Build
 
-- Bun scripts over npm scripts.
-- Vite/Tauri-native development over Next.js-style web app assumptions.
-- Rust backend ownership for privileged APIs, database work, file writes, and web contents access.
-- Typed renderer API contracts through `src/shared/aether.ts` and `src/renderer/src/tauri-aether.ts`.
-- Renderer-only components for presentation and interaction logic.
-- In-process local model inference rather than cloud model SDKs or local REST sidecars for app intelligence.
+Use the Docker-based Linux build script (`scripts/build-linux.sh`) to build a Linux package from macOS or another non-Linux host. Arch is parametrized, defaulting to arm64:
 
-Avoid:
+```bash
+bun run linux:arm64:build   # aarch64 .deb
+bun run linux:x64:build     # x86_64 .deb
+```
 
-- Direct database access from the renderer.
-- Raw Tauri `invoke()` calls spread through renderer components.
-- Hard-coded absolute asset URLs that break in packaged Tauri builds.
-- Moving capture metadata without also updating chunk metadata.
-- Adding runtime-only packages to `devDependencies`.
+This runs an `ubuntu:24.04` container, installs the Linux Tauri + llama.cpp build dependencies (including `cmake`/`clang`), installs Bun and Rust inside Docker volumes, and builds a `.deb`.
+
+The default export is a Debian package for Ubuntu:
+
+```bash
+bun run linux:arm64:deb
+bun run linux:x64:deb
+```
+
+Artifacts are generated under (slug is `arm64` or `x64`):
+
+```text
+src-tauri/target-linux-<slug>/<target-triple>/release/bundle/
+```
+
+The script keeps Linux-specific dependencies out of the host project by mounting per-arch Docker volumes for `/work/node_modules`, `/root/.cargo`, `/root/.rustup`, and `/root/.bun`.
+
+Note: building x86_64 on an arm64 Mac (or vice-versa) runs under QEMU emulation, which is very slow for the llama.cpp C++ compile. For the non-native arch, prefer CI (see below).
+
+Optional overrides:
+
+```bash
+LINUX_IMAGE=ubuntu:24.04 bun run linux:arm64:build
+LINUX_BUNDLES=deb,appimage bun run linux:arm64:build
+LINUX_DOCKER_PLATFORM=linux/amd64 LINUX_TARGET=x86_64-unknown-linux-gnu LINUX_ARCH_SLUG=x64 bun run linux:arm64:build
+```
+
+## Windows, Linux, and Android via CI
+
+Because Tauri cannot cross-compile desktop targets, and llama.cpp builds natively per-OS, the cross-platform installers are produced by `.github/workflows/build.yml`:
+
+- `windows-latest` → NSIS `.exe` / MSI installer.
+- `ubuntu-latest` → x86_64 `.deb` and AppImage.
+- Android job → APK (best-effort; see the Android limitation note above — and release signing needs a keystore).
+
+Trigger it from the GitHub Actions tab (workflow_dispatch) or by pushing a `v*` tag. Off macOS, llama.cpp runs CPU-only (the `metal` feature is gated to macOS in `src-tauri/Cargo.toml`).
+
+On a `v*` tag push, a final `release` job collects every job's installers and publishes them to a GitHub Release for that tag (Windows `.exe`, Linux `.deb`/AppImage, and the APK if it built). On a manual `workflow_dispatch` run, the installers are uploaded as workflow artifacts instead of a release.
+
+Keep release versions synced from `package.json`:
+
+```bash
+bun run version:bump 1.0.1
+bun run version:check
+git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
+git commit -m "chore: release v1.0.1"
+git tag v1.0.1
+git push origin main
+git push origin v1.0.1
+```
+
+Build the current desktop app with Tauri:
+
+```bash
+bun run build
+```
+
+## Project Scripts
+
+| Script                        | Purpose                                                                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| `bun run dev`                 | Start the Tauri desktop app in development.                                                      |
+| `bun run start`               | Alias for the Tauri desktop development app.                                                     |
+| `bun run dev:vite`            | Start only the Vite renderer dev server on `127.0.0.1:1420`.                                     |
+| `bun run format`              | Format the project with Prettier.                                                                |
+| `bun run typecheck:web`       | Run renderer TypeScript checks.                                                                  |
+| `bun run typecheck:tauri`     | Run Rust `cargo check` for the Tauri backend.                                                    |
+| `bun run typecheck`           | Run renderer TypeScript checks and Rust `cargo check` for the Tauri backend.                     |
+| `bun run version:bump 1.2.3`  | Sync `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to one app version. |
+| `bun run version:check`       | Verify the app version manifests match `package.json`.                                           |
+| `bun run lint`                | Run ESLint.                                                                                      |
+| `bun run build:vite`          | Build only the Vite renderer assets into `dist/`.                                                |
+| `bun run build`               | Typecheck and build the Tauri desktop app.                                                       |
+| `bun run build:desktop-local` | Build local desktop packages for the current Tauri target plus Docker Linux arm64/x64 packages.  |
+| `bun run android:dev`         | Run the Tauri Android app on a connected device or emulator.                                     |
+| `bun run android:build:apk`   | Build an Android APK.                                                                            |
+| `bun run android:build:aab`   | Build an Android App Bundle.                                                                     |
+| `bun run linux:arm64:build`   | Build an Ubuntu arm64 Tauri package in Docker.                                                   |
+| `bun run linux:x64:build`     | Build an Ubuntu x86_64 Tauri package in Docker.                                                  |
+| `bun run linux:arm64:deb`     | Build an Ubuntu arm64 `.deb` package in Docker.                                                  |
+| `bun run linux:x64:deb`       | Build an Ubuntu x86_64 `.deb` package in Docker.                                                 |
+
+## Build Outputs
+
+Important output/resource directories:
+
+| Path                                       | Owner                 | Purpose                                                                                |
+| ------------------------------------------ | --------------------- | -------------------------------------------------------------------------------------- |
+| `dist/`                                    | Vite/Tauri frontend   | Compiled renderer assets consumed by Tauri. This is not a distributable app by itself. |
+| `src-tauri/target/`                        | Tauri/Cargo           | Desktop app binaries and bundles generated by `tauri build`.                           |
+| `src-tauri/target-linux-<slug>/`           | Tauri/Cargo in Docker | Ubuntu Linux build cache and bundle output (`arm64` or `x64`).                         |
+| `src-tauri/gen/android/app/build/outputs/` | Tauri Android/Gradle  | Android APK/AAB outputs.                                                               |
+| `build/`                                   | project resources     | Packaging resources such as icons. This is input to packaging, not output.             |
+
+Common Tauri outputs:
+
+```text
+src-tauri/target/release/bundle/
+src-tauri/target-linux-arm64/aarch64-unknown-linux-gnu/release/bundle/deb/ÆTHER_1.0.0_arm64.deb
+src-tauri/target-linux-x64/x86_64-unknown-linux-gnu/release/bundle/deb/ÆTHER_1.0.0_amd64.deb
+src-tauri/gen/android/app/build/outputs/
+```
+
+For quick local desktop testing, prefer:
+
+```bash
+bun run dev
+```
+
+Use `bun run build` when you need packaged Tauri desktop artifacts.
+
+## Desktop Packaging Notes
+
+Desktop packaging is now driven by Tauri config:
+
+- `src-tauri/tauri.conf.json` is the main desktop/mobile Tauri configuration.
+- `src-tauri/tauri.linux.conf.json` limits the Docker Linux arm64 export to `.deb` by default.
+- `src-tauri/capabilities/default.json` controls the default Tauri permissions surface.
+
+Local desktop builds are suitable for development on your own machine. For external macOS distribution, configure Apple Developer ID signing and notarization in the Tauri packaging flow before shipping.
+
+If a packaged app behaves differently from development, rebuild from a clean package state:
+
+```bash
+bun run build
+```
 
 ## Troubleshooting
 
@@ -874,4 +741,21 @@ Likely next improvements:
 
 ## License
 
-No license file is currently included. Add one before distributing or accepting external contributions.
+ÆTHER's own code and releases are **source-available** under the
+**PolyForm Strict License 1.0.0** (see [`LICENSE`](LICENSE)). You may download
+and use ÆTHER for permitted noncommercial purposes under that license.
+
+Redistribution, resale, paid redistribution, commercial hosted/service use,
+modified builds, or derivative works require separate written permission from
+CanPixel. This is not an OSI open-source license because it restricts commercial
+use, redistribution, and modification.
+
+Modified builds are not official ÆTHER releases and must not imply endorsement
+by CanPixel. See [`TRADEMARKS.md`](TRADEMARKS.md) for the project branding
+policy. External contributions require a signed Contributor License Agreement
+(CLA) or another written contributor agreement.
+
+Bundled and downloaded third-party software and AI model weights (Gemma 4 E2B /
+E4B and Qwen3-Embedding-0.6B, all Apache-2.0, plus libraries such as llama.cpp,
+Tauri, and candle) are governed by their own licenses, reproduced in
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md), not by the ÆTHER license.
