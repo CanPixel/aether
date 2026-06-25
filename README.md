@@ -1,9 +1,20 @@
 <p align="center">
-  <img src="public/aether-mark.svg" alt="ÆTHER Logo" width="142" />
+  <img src="public/aether-mark.svg" alt="ÆTHER Logo" width="132" />
 </p>
 
 <h1 align="center">ÆTHER • Research Browser & Engine </h1>
-<p align="center"><strong>Welcome to ÆTHER</strong></p>
+
+<p align="center">
+  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2.x-24c8db?style=for-the-badge&labelColor=132033" />
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-local_runtime-bd7cff?style=for-the-badge&labelColor=132033" />
+  <img alt="Bun" src="https://img.shields.io/badge/Bun-Vite-f5d76e?style=for-the-badge&labelColor=132033" />
+</p>
+
+<p align="center">
+  <img alt="Local LLM" src="https://img.shields.io/badge/LLM-Gemma_4_(E2B/E4B)_GGUF-174EA6?style=for-the-badge&labelColor=132033" />
+  <img alt="Embeddings" src="https://img.shields.io/badge/Embeddings-Qwen3_0.6B_(Q8_GGUF)-7209b7?style=for-the-badge&labelColor=1a1423" />
+</p>
+
 <p align="center">
   A private research browser using local AI for capturing the web, running entirely on your own hardware. <br>
   Build Knowledge Hubs, generate new research hooks, and ask grounded questions to the web pages you explore.
@@ -17,26 +28,17 @@
   <code>🔒 No cloud</code> &nbsp;&nbsp;•&nbsp;&nbsp; <code>💸 No subscription</code> &nbsp;&nbsp;•&nbsp;&nbsp; <code>🚫 No telemetry</code>
 </p>
 
-<br />
-
 <p align="center">
-  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2.x-24c8db?style=for-the-badge&labelColor=132033" />
-  <img alt="Rust" src="https://img.shields.io/badge/Rust-local_runtime-bd7cff?style=for-the-badge&labelColor=132033" />
-  <img alt="Bun" src="https://img.shields.io/badge/Bun-Vite-f5d76e?style=for-the-badge&labelColor=132033" />
+  <img src="docs/images/readme/aether-dashboard.png" alt="ÆTHER dashboard with portals, knowledge hubs, saved iCE atlases, and AiON" />
 </p>
-
-<p align="center">
-  <img alt="Local LLM" src="https://img.shields.io/badge/LLM-Gemma_4_(E2B/E4B)_GGUF-174EA6?style=for-the-badge&labelColor=132033" />
-  <img alt="Embeddings" src="https://img.shields.io/badge/Embeddings-Qwen3_0.6B_(Q8_GGUF)-7209b7?style=for-the-badge&labelColor=1a1423" />
-</p>
-
----
 
 ## The Æther That Is
 
 ÆTHER is a Tauri-native desktop browser built for local knowledge work. It turns ordinary browsing into a private research loop: save useful pages, organize them into knowledge hubs, embed them on-device, and ask AiON for citation-backed answers grounded in what you actually captured.
 
 It is not a cloud wrapper and it is not an external chatbot sidebar. The local wisdom path runs in the app process through GGUF models and a bundled llama.cpp runtime.
+
+<img src="docs/images/readme/aether-browser-flow.png" alt="ÆTHER Browser + Flow" />
 
 ## Pillars of Eternity
 
@@ -55,6 +57,10 @@ It is not a cloud wrapper and it is not an external chatbot sidebar. The local w
 - **Knowledge Hubs**: create, reorder, edit, and organize captured pages into persistent local collections.
 - **iCE Maps**: generate layered concept atlases for research topics. Create a Cartography of Topics for new research hooks.
 - **Native Shell**: Tauri, Rust commands, Vite renderer, and no required local server sidecar.
+
+| Grounded local answers | Complexity maps |
+| --- | --- |
+| ![AiON grounded answer](docs/images/readme/aether-aion-answer.png) | ![iCE complexity map](docs/images/readme/aether-ice-map.png) |
 
 ## Privacy Ice Wall
 
