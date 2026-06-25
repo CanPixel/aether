@@ -2,14 +2,17 @@
   <img src="public/aether-mark.svg" alt="ÆTHER" width="132" />
 </p>
 
-<h1 align="center">ÆTHER Browser</h1>
+<h1 align="center">ÆTHER • Research Engine </h1>
 
 <p align="center">
-  A private local-AI research browser for capturing the web, building knowledge hubs, and asking grounded questions without sending your saved pages to a cloud model.
+  Welcome to ÆTHER: A private local-AI research browser for capturing the web, building knowledge hubs, and asking grounded questions without sending your saved pages to a cloud model. No cloud, no subscription, no telemetry.
 </p>
 
 <p align="center">
-  <strong>Browse.</strong> Capture. Retrieve. Ask. Map. Export.
+  Browse, Map, Discover, Capture and Retrieve.
+</p>
+<p align="center">
+  <strong>Directly ask the web you explore.</strong>
 </p>
 
 <p align="center">
@@ -42,7 +45,6 @@ It is not a cloud wrapper and it is not an external chatbot sidebar. The local i
 - **Grounded Local Answers**: AiON renders markdown answers with copy support, compact metrics, and clickable citations.
 - **Knowledge Hubs**: create, reorder, edit, and organize captured pages into persistent local collections.
 - **Automatic Setup Flow**: fresh installs can download the recommended local model pack from official sources.
-- **Semantic Flow**: map captured sources into scored relationships and contextual trails.
 - **iCE Maps**: generate layered concept atlases for research topics. Creatre a Cartography of Topics for new research hooks.
 - **Native Shell**: Tauri, Rust commands, Vite renderer, and no required local server sidecar.
 
@@ -67,7 +69,7 @@ Fresh installs use **AiON Launch**, the in-app setup flow for downloading local 
 
 | Model         | Role                                                              | Official source                       |     Size |
 | ------------- | ----------------------------------------------------------------- | ------------------------------------- | -------: |
-| **AiON MiST** | Required embedding model for search, capture, Flow, and retrieval | `Qwen/Qwen3-Embedding-0.6B-GGUF`      | ~0.64 GB |
+| **AiON MiST** | Required embedding model for search, capture, and retrieval       | `Qwen/Qwen3-Embedding-0.6B-GGUF`      | ~0.64 GB |
 | **AiON LiTE** | Smaller, faster chat model for everyday answers and summaries     | `google/gemma-4-E2B-it-qat-q4_0-gguf` | ~3.35 GB |
 | **AiON WiSE** | Larger chat model for richer synthesis and iCE maps               | `google/gemma-4-E4B-it-qat-q4_0-gguf` | ~5.15 GB |
 
@@ -377,7 +379,6 @@ The left rail is the main app switcher:
 
 - ÆTHER opens the dashboard.
 - iCE opens the Information Complexity Explorer.
-- Flow opens the semantic relation graph for captured knowledge. This rail button is shown in Developer Mode.
 - Web View switches back to browser content.
 - Settings opens the global settings modal.
 - AiON can be opened from the right-side panel control.
@@ -723,8 +724,6 @@ src/
         CollectionDialog.tsx      Knowledge hub create/edit/delete modal
         Crystallizer.tsx          iCE Information Complexity Explorer
         Dashboard.tsx             Portals, saved iCE atlases, knowledge hubs, captures
-        FlowView.tsx              Semantic relation graph for captured knowledge
-        AirView.tsx               Markdown dossier preview, render controls, and history
         IntelligencePanel.tsx     AiON search/ask sidepanel and model controls
         SourceTray.tsx            Search/citation source display
         StartPage.tsx             Browser start page surface
