@@ -473,3 +473,12 @@
   inset: var(--top-bar-height) 0 0;
   background: rgba(246, 249, 253, 0.42);
 }
+
+/* Android: placeholder marking where the native per-tab WebView (layered
+   above the app UI by the Kotlin TabsPlugin) should be positioned. Its rect
+   is measured and reported to Rust; the WebView paints on top of it. */
+.mobile-tab-view {
+  position: absolute;
+  inset: var(--top-bar-height) 0 0;
+  background: rgba(246, 249, 253, 0.42);
+}

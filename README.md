@@ -444,7 +444,7 @@ Install Android Studio, then install these SDK pieces through Android Studio's S
 - Android NDK
 - Android Emulator, if you want emulator testing
 
-Set the Android environment variables in your shell profile:
+The `bun run android:*` scripts go through `scripts/android.sh`, which resolves `ANDROID_HOME`, picks the newest installed NDK, and exports the NDK variable spellings the whole toolchain needs (llama.cpp's build script reads `ANDROID_NDK_ROOT`, which the Tauri CLI does not set). If your SDK lives somewhere other than `~/Library/Android/sdk`, set the variables in your shell profile:
 
 ```bash
 export ANDROID_HOME="$HOME/Library/Android/sdk"
@@ -507,7 +507,7 @@ Android outputs are generated under:
 src-tauri/gen/android/app/build/outputs/
 ```
 
-Current mobile limitation: the React shell can be packaged for Android, but ÆTHER's current live browser tab surface uses Tauri desktop child webviews. That desktop-only browser surface must be replaced with an Android-compatible browser path before the Android app behaves like the macOS Tauri app.
+Android browser behavior: Tauri's per-tab child webviews (`Window::add_child`) are desktop-only, so on Android each browser tab gets a real native `android.webkit.WebView` managed by the Kotlin `TabsPlugin` (`src-tauri/gen/android/.../TabsPlugin.kt`), layered above the app UI exactly where the renderer's tab surface sits. Rust stays the single source of truth for tab state: it drives the plugin through the same `*_native_webview` functions the desktop uses, and navigation, title, and find-in-page events flow back into Rust so the address bar, tab titles, and back/forward history stay correct. The hardware back button walks the in-app layers (find bar → page history → dashboard) before backgrounding the app.
 
 ## Linux Build
 

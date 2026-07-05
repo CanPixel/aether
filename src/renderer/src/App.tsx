@@ -1,4 +1,5 @@
 import { FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { addPluginListener, invoke, type PluginListener } from '@tauri-apps/api/core'
 import packageManifest from '../../../package.json'
 import {
   AetherState,
@@ -36,6 +37,7 @@ import {
   UpdateCheckResult
 } from '../../shared/aether'
 import { BrowserChrome } from './components/BrowserChrome'
+import { MobileTabView } from './components/MobileTabView'
 import { StartPage } from './components/StartPage'
 import { CollectionDialog, CollectionDialogState } from './components/CollectionDialog'
 import { Crystallizer } from './components/Crystallizer'
@@ -53,6 +55,7 @@ import {
   getTabTint,
   normalizeComparableUrl
 } from './utils/aether-ui'
+import { HAS_NATIVE_TAB_WEBVIEWS, IS_ANDROID } from './utils/platform'
 import {
   ChevronDown,
   ChevronUp,
@@ -1843,6 +1846,49 @@ function App(): React.JSX.Element {
     await window.aether.layout.setIntelligencePanelCollapsed(next)
   }
 
+  // Android hardware back: peel UI layers before letting the system have it.
+  // Registering a `back-button` listener makes Tauri's AppPlugin route every
+  // back press here instead of applying its default (webview history) handling.
+  // The ref keeps the plugin subscription stable across renders while the
+  // handler always sees current state.
+  const androidBackRef = useRef<() => void>(() => undefined)
+  androidBackRef.current = () => {
+    if (findOpen) {
+      closeFindBar()
+      return
+    }
+    if (!dashboardOpen && activeTab?.canGoBack) {
+      void goBack()
+      return
+    }
+    if (!dashboardOpen) {
+      void openDashboard()
+      return
+    }
+    // Dashboard is the root of the app — hand back to Android, which
+    // backgrounds/finishes the activity like any other browser at its root.
+    void invoke('plugin:app|exit').catch(() => undefined)
+  }
+
+  useEffect(() => {
+    if (!IS_ANDROID) return
+    let disposed = false
+    let listener: PluginListener | null = null
+    void addPluginListener('app', 'back-button', () => androidBackRef.current())
+      .then((registered) => {
+        if (disposed) {
+          void registered.unregister()
+        } else {
+          listener = registered
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      disposed = true
+      void listener?.unregister()
+    }
+  }, [])
+
   async function runTask(label: string, task: () => Promise<void>): Promise<void> {
     setBusy(label)
     setNotice(null)
@@ -2122,6 +2168,8 @@ function App(): React.JSX.Element {
             shortcuts={shortcuts}
             selectCollection={selectCollection}
           />
+        ) : !HAS_NATIVE_TAB_WEBVIEWS && activeTab ? (
+          <MobileTabView />
         ) : (
           <div className="webview-underlay" aria-hidden="true" />
         )}

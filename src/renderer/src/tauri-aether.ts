@@ -23,6 +23,7 @@ import {
   HubShortcutSummary,
   IcebergResult,
   ModelDownloadProgress,
+  NativeTabEvent,
   SaveIcebergInput,
   SavedIceberg,
   SavedIcebergSummary,
@@ -32,6 +33,7 @@ import {
   SystemStatus,
   UpdateCheckResult
 } from '../../shared/aether'
+import { IS_ANDROID } from './utils/platform'
 
 const isTauri = typeof window !== 'undefined' && Boolean(window.__TAURI_INTERNALS__)
 
@@ -127,7 +129,9 @@ if (isTauri) {
         call<void>('aether_layout_set_panel_collapsed', { collapsed }),
       setModalOverlayOpen: (open) => call<void>('aether_layout_set_modal_overlay_open', { open }),
       showStatusToast: (input: StatusToastInput) =>
-        call<void>('aether_layout_show_status_toast', { input })
+        call<void>('aether_layout_show_status_toast', { input }),
+      setMobileTabBounds: (bounds) =>
+        call<void>('aether_layout_set_mobile_tab_bounds', { ...bounds })
     },
     events: {
       onState: (listener: (state: AetherState) => void) => {
@@ -196,4 +200,13 @@ if (isTauri) {
   }
 
   window.aether = api
+
+  // Android: the Kotlin TabsPlugin reports per-tab navigation/title/find
+  // updates by evaluating this hook in the main webview. Forward them to Rust,
+  // which owns tab state and re-emits it to the whole UI.
+  if (IS_ANDROID) {
+    window.__AETHER_TAB_EVENT__ = (event: NativeTabEvent) => {
+      void call<void>('aether_tabs_report_native_event', { input: event }).catch(() => undefined)
+    }
+  }
 }

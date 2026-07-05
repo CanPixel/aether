@@ -182,6 +182,10 @@ struct Backend {
     tabs: Mutex<TabState>,
     #[cfg(desktop)]
     webviews: Mutex<NativeBrowserViews>,
+    // Where the renderer wants Android tab WebViews placed, in CSS pixels
+    // (reported by MobileTabView via aether_layout_set_mobile_tab_bounds).
+    #[cfg(not(desktop))]
+    mobile_tab_bounds: Mutex<MobileTabBounds>,
     client: Client,
     native_runtime: Arc<Mutex<NativeModelRuntime>>,
     vectors: tokio::sync::RwLock<Option<VectorStoreData>>,
@@ -192,6 +196,15 @@ struct Backend {
 #[derive(Default)]
 struct NativeBrowserViews {
     views: HashMap<String, Webview>,
+}
+
+#[cfg(not(desktop))]
+#[derive(Clone, Copy, Default)]
+struct MobileTabBounds {
+    top: f64,
+    left: f64,
+    width: f64,
+    height: f64,
 }
 
 #[derive(Default)]
@@ -282,6 +295,12 @@ struct ManagedTab {
     theme_color: Option<String>,
     history: Vec<String>,
     history_index: usize,
+    // On Android the tab's real history lives in its native WebView, whose
+    // canGoBack/canGoForward are reported via aether_tabs_report_native_event.
+    // They extend (OR with) the Rust-side history, which still tracks entries
+    // the WebView never saw — most notably the aether://start page.
+    native_can_go_back: Option<bool>,
+    native_can_go_forward: Option<bool>,
 }
 
 #[derive(Clone, Serialize)]
@@ -845,6 +864,29 @@ struct FindMatchSnapshot {
     total: usize,
 }
 
+// Event payload forwarded by the renderer from the Kotlin TabsPlugin
+// (window.__AETHER_TAB_EVENT__): per-tab navigation, title, and find updates.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeTabEventInput {
+    tab_id: String,
+    kind: String,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    is_loading: Option<bool>,
+    #[serde(default)]
+    can_go_back: Option<bool>,
+    #[serde(default)]
+    can_go_forward: Option<bool>,
+    #[serde(default)]
+    current: Option<usize>,
+    #[serde(default)]
+    total: Option<usize>,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FindResultPayload {
@@ -969,7 +1011,6 @@ struct UpdateCheckResult {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct GithubRelease {
     tag_name: String,
     name: Option<String>,
@@ -1177,6 +1218,8 @@ impl Backend {
             tabs: Mutex::new(TabState::new()),
             #[cfg(desktop)]
             webviews: Mutex::new(NativeBrowserViews::default()),
+            #[cfg(not(desktop))]
+            mobile_tab_bounds: Mutex::new(MobileTabBounds::default()),
             client: Client::builder()
                 .user_agent("Aether/1.0 Tauri")
                 .build()
@@ -1268,6 +1311,8 @@ impl ManagedTab {
             theme_color: None,
             history: vec![url],
             history_index: 0,
+            native_can_go_back: None,
+            native_can_go_forward: None,
         }
     }
 
@@ -1281,24 +1326,9 @@ impl ManagedTab {
         self.history.truncate(self.history_index + 1);
         self.history.push(url);
         self.history_index = self.history.len().saturating_sub(1);
-    }
-
-    #[cfg(not(desktop))]
-    fn go_back(&mut self) {
-        if self.can_go_back() {
-            self.history_index -= 1;
-            self.url = self.history[self.history_index].clone();
-            self.title = title_from_url(&self.url);
-        }
-    }
-
-    #[cfg(not(desktop))]
-    fn go_forward(&mut self) {
-        if self.can_go_forward() {
-            self.history_index += 1;
-            self.url = self.history[self.history_index].clone();
-            self.title = title_from_url(&self.url);
-        }
+        // Unknown until the native webview reports in after the load.
+        self.native_can_go_back = None;
+        self.native_can_go_forward = None;
     }
 
     fn commit_history_url(&mut self, url: String) {
@@ -1339,8 +1369,8 @@ impl ManagedTab {
             host: get_tab_host(&self.url),
             is_active,
             is_loading: self.is_loading,
-            can_go_back: self.can_go_back(),
-            can_go_forward: self.can_go_forward(),
+            can_go_back: self.can_go_back() || self.native_can_go_back.unwrap_or(false),
+            can_go_forward: self.can_go_forward() || self.native_can_go_forward.unwrap_or(false),
             favicon: self.favicon.clone(),
             theme_color: self.theme_color.clone(),
         }
@@ -1384,8 +1414,35 @@ fn ensure_native_webview(app: &AppHandle, state: &State<Backend>, tab_id: &str) 
 }
 
 #[cfg(not(desktop))]
-fn ensure_native_webview(_app: &AppHandle, _state: &State<Backend>, _tab_id: &str) -> Cmd<()> {
-    Ok(())
+fn ensure_native_webview(app: &AppHandle, state: &State<Backend>, tab_id: &str) -> Cmd<()> {
+    #[cfg(target_os = "android")]
+    {
+        let tab = {
+            let tabs = lock_tabs(state)?;
+            tabs.tabs
+                .iter()
+                .find(|tab| tab.id == tab_id)
+                .cloned()
+                .ok_or_else(|| format!("Unknown tab: {tab_id}"))?
+        };
+        // Like the desktop path: a start-page tab has nothing to load, only
+        // visibility to reconcile so the renderer's start page shows.
+        if tab.url != START_PAGE_URL {
+            app.state::<android_tabs::AndroidTabs>().run(
+                "ensure",
+                android_tabs::TabUrlPayload {
+                    tab_id: &tab.id,
+                    url: &tab.url,
+                },
+            )?;
+        }
+        return sync_native_webview_visibility(app, state);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
@@ -1491,16 +1548,27 @@ fn navigate_native_webview(
 
 #[cfg(not(desktop))]
 fn navigate_native_webview(
-    _app: &AppHandle,
-    _state: &State<Backend>,
-    _tab_id: &str,
-    _url: &str,
+    app: &AppHandle,
+    state: &State<Backend>,
+    tab_id: &str,
+    url: &str,
 ) -> Cmd<()> {
-    Ok(())
+    #[cfg(target_os = "android")]
+    {
+        app.state::<android_tabs::AndroidTabs>()
+            .run("navigate", android_tabs::TabUrlPayload { tab_id, url })?;
+        return sync_native_webview_visibility(app, state);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id, url);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
 fn navigate_native_webview_history(
+    _app: &AppHandle,
     state: &State<Backend>,
     tab_id: &str,
     direction: WebviewHistoryDirection,
@@ -1522,15 +1590,36 @@ fn navigate_native_webview_history(
 
 #[cfg(not(desktop))]
 fn navigate_native_webview_history(
-    _state: &State<Backend>,
-    _tab_id: &str,
-    _direction: WebviewHistoryDirection,
+    app: &AppHandle,
+    state: &State<Backend>,
+    tab_id: &str,
+    direction: WebviewHistoryDirection,
 ) -> Cmd<()> {
-    Ok(())
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        let command = match direction {
+            WebviewHistoryDirection::Back => "goBack",
+            WebviewHistoryDirection::Forward => "goForward",
+        };
+        return app
+            .state::<android_tabs::AndroidTabs>()
+            .run(command, android_tabs::TabPayload { tab_id });
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id, direction);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
-fn scroll_native_webview_to_text(state: &State<Backend>, tab_id: &str, text: &str) -> Cmd<()> {
+fn scroll_native_webview_to_text(
+    _app: &AppHandle,
+    state: &State<Backend>,
+    tab_id: &str,
+    text: &str,
+) -> Cmd<()> {
     let source_text = text.trim();
     if source_text.is_empty() {
         return Ok(());
@@ -1549,8 +1638,30 @@ fn scroll_native_webview_to_text(state: &State<Backend>, tab_id: &str, text: &st
 }
 
 #[cfg(not(desktop))]
-fn scroll_native_webview_to_text(_state: &State<Backend>, _tab_id: &str, _text: &str) -> Cmd<()> {
-    Ok(())
+fn scroll_native_webview_to_text(
+    app: &AppHandle,
+    state: &State<Backend>,
+    tab_id: &str,
+    text: &str,
+) -> Cmd<()> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        let source_text = text.trim();
+        if source_text.is_empty() {
+            return Ok(());
+        }
+        let text_json = serde_json::to_string(source_text).map_err(|error| error.to_string())?;
+        let script = scroll_to_text_script().replace("__AETHER_SOURCE_TEXT__", &text_json);
+        return app
+            .state::<android_tabs::AndroidTabs>()
+            .run("eval", android_tabs::EvalPayload { tab_id, script });
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id, text);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
@@ -1598,17 +1709,36 @@ fn find_native_webview_text(
 
 #[cfg(not(desktop))]
 fn find_native_webview_text(
-    _app: &AppHandle,
-    _state: &State<Backend>,
-    _tab_id: &str,
-    _query: Option<&str>,
-    _action: &str,
+    app: &AppHandle,
+    state: &State<Backend>,
+    tab_id: &str,
+    query: Option<&str>,
+    action: &str,
 ) -> Cmd<()> {
-    Ok(())
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        // Android WebView has native find support (findAllAsync/findNext); the
+        // match counts come back through the FindListener as a "find" event on
+        // aether_tabs_report_native_event.
+        return app.state::<android_tabs::AndroidTabs>().run(
+            "find",
+            android_tabs::FindPayload {
+                tab_id,
+                query: query.map(str::trim).filter(|value| !value.is_empty()),
+                action,
+            },
+        );
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id, query, action);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
-fn close_native_webview(state: &State<Backend>, tab_id: &str) -> Cmd<()> {
+fn close_native_webview(_app: &AppHandle, state: &State<Backend>, tab_id: &str) -> Cmd<()> {
     if let Some(webview) = state
         .webviews
         .lock()
@@ -1622,8 +1752,19 @@ fn close_native_webview(state: &State<Backend>, tab_id: &str) -> Cmd<()> {
 }
 
 #[cfg(not(desktop))]
-fn close_native_webview(_state: &State<Backend>, _tab_id: &str) -> Cmd<()> {
-    Ok(())
+fn close_native_webview(app: &AppHandle, state: &State<Backend>, tab_id: &str) -> Cmd<()> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        return app
+            .state::<android_tabs::AndroidTabs>()
+            .run("close", android_tabs::TabPayload { tab_id });
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id);
+        Ok(())
+    }
 }
 
 fn find_in_page_script() -> &'static str {
@@ -2082,8 +2223,42 @@ fn sync_native_webview_visibility(app: &AppHandle, state: &State<Backend>) -> Cm
 }
 
 #[cfg(not(desktop))]
-fn sync_native_webview_visibility(_app: &AppHandle, _state: &State<Backend>) -> Cmd<()> {
-    Ok(())
+fn sync_native_webview_visibility(app: &AppHandle, state: &State<Backend>) -> Cmd<()> {
+    #[cfg(target_os = "android")]
+    {
+        let (active_tab_id, show_active) = {
+            let tabs = lock_tabs(state)?;
+            // Same rules as desktop: keep webviews hidden behind the dashboard,
+            // modal overlays, and the renderer's start-page overlay.
+            let active_is_start = tabs
+                .active_tab()
+                .map(|tab| tab.url == START_PAGE_URL)
+                .unwrap_or(false);
+            (
+                tabs.active_tab_id.clone(),
+                !tabs.dashboard_open && !tabs.modal_overlay_open && !active_is_start,
+            )
+        };
+        let bounds = *state
+            .mobile_tab_bounds
+            .lock()
+            .map_err(|_| "Æther layout bounds are unavailable.".to_string())?;
+        return app.state::<android_tabs::AndroidTabs>().run(
+            "sync",
+            android_tabs::SyncPayload {
+                active_tab_id: show_active.then_some(active_tab_id.as_str()),
+                top: bounds.top,
+                left: bounds.left,
+                width: bounds.width,
+                height: bounds.height,
+            },
+        );
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
@@ -2261,6 +2436,79 @@ fn force_exit() -> ! {
     unsafe { _exit(0) }
 }
 
+// Bridge to the Kotlin TabsPlugin (gen/android/.../TabsPlugin.kt), which hosts
+// one android.webkit.WebView per browser tab above the main app webview. This
+// is the Android counterpart of the desktop `Window::add_child` path: the same
+// `*_native_webview` functions drive it, keeping Rust the source of truth for
+// tab state. Navigation events come back through the renderer via the
+// `aether_tabs_report_native_event` command.
+#[cfg(target_os = "android")]
+mod android_tabs {
+    use serde::Serialize;
+    use tauri::{
+        plugin::{Builder, PluginHandle, TauriPlugin},
+        Manager, Wry,
+    };
+
+    pub struct AndroidTabs(PluginHandle<Wry>);
+
+    impl AndroidTabs {
+        pub fn run(&self, command: &str, payload: impl Serialize) -> Result<(), String> {
+            self.0
+                .run_mobile_plugin::<()>(command, payload)
+                .map_err(|error| error.to_string())
+        }
+    }
+
+    pub fn init() -> TauriPlugin<Wry> {
+        Builder::new("aether-tabs")
+            .setup(|app, api| {
+                let handle = api.register_android_plugin("com.canur.aether", "TabsPlugin")?;
+                app.manage(AndroidTabs(handle));
+                Ok(())
+            })
+            .build()
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct TabUrlPayload<'a> {
+        pub tab_id: &'a str,
+        pub url: &'a str,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SyncPayload<'a> {
+        pub active_tab_id: Option<&'a str>,
+        pub top: f64,
+        pub left: f64,
+        pub width: f64,
+        pub height: f64,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct TabPayload<'a> {
+        pub tab_id: &'a str,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct EvalPayload<'a> {
+        pub tab_id: &'a str,
+        pub script: String,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct FindPayload<'a> {
+        pub tab_id: &'a str,
+        pub query: Option<&'a str>,
+        pub action: &'a str,
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default();
@@ -2391,8 +2639,11 @@ pub fn run() {
             }
         });
 
+    let builder = builder.plugin(tauri_plugin_opener::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(android_tabs::init());
+
     builder
-        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir().expect("app data dir");
             app.manage(Backend::new(app_data_dir));
@@ -2438,6 +2689,8 @@ pub fn run() {
             aether_tabs_find,
             aether_tabs_go_back,
             aether_tabs_go_forward,
+            aether_tabs_report_native_event,
+            aether_layout_set_mobile_tab_bounds,
             aether_dashboard_open,
             aether_hub_list,
             aether_hub_create,
@@ -2655,7 +2908,7 @@ fn aether_tabs_close(app: AppHandle, state: State<Backend>, tab_id: String) -> C
             }
         }
     }
-    close_native_webview(&state, &tab_id)?;
+    close_native_webview(&app, &state, &tab_id)?;
     if let Some(active_tab_id) = next_active_tab_id {
         ensure_native_webview(&app, &state, &active_tab_id)?;
     } else {
@@ -2690,14 +2943,19 @@ async fn aether_tabs_navigate(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-fn aether_tabs_scroll_to_text(state: State<Backend>, tab_id: String, text: String) -> Cmd<()> {
+fn aether_tabs_scroll_to_text(
+    app: AppHandle,
+    state: State<Backend>,
+    tab_id: String,
+    text: String,
+) -> Cmd<()> {
     {
         let tabs = lock_tabs(&state)?;
         if !tabs.tabs.iter().any(|tab| tab.id == tab_id) {
             return Err(format!("Unknown tab: {tab_id}"));
         }
     }
-    scroll_native_webview_to_text(&state, &tab_id, &text)
+    scroll_native_webview_to_text(&app, &state, &tab_id, &text)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -2748,17 +3006,17 @@ fn aether_tabs_go_back(app: AppHandle, state: State<Backend>, tab_id: String) ->
             tab.is_loading = false;
             restore_start_page = true;
         }
-        let target_tab_id = tab.id.clone();
-        #[cfg(not(desktop))]
-        if !restore_start_page {
-            tab.go_back();
-        }
-        target_tab_id
+        tab.id.clone()
     };
     if restore_start_page {
         sync_native_webview_visibility(&app, &state)?;
     } else {
-        navigate_native_webview_history(&state, &target_tab_id, WebviewHistoryDirection::Back)?;
+        navigate_native_webview_history(
+            &app,
+            &state,
+            &target_tab_id,
+            WebviewHistoryDirection::Back,
+        )?;
     }
     emit_state(&app, &state)
 }
@@ -2786,19 +3044,113 @@ fn aether_tabs_go_forward(app: AppHandle, state: State<Backend>, tab_id: String)
             tab.is_loading = false;
             leave_start_page = true;
         }
-        let target_tab_id = tab.id.clone();
-        #[cfg(not(desktop))]
-        if !leave_start_page {
-            tab.go_forward();
-        }
-        target_tab_id
+        tab.id.clone()
     };
     if leave_start_page {
         ensure_native_webview(&app, &state, &target_tab_id)?;
     } else {
-        navigate_native_webview_history(&state, &target_tab_id, WebviewHistoryDirection::Forward)?;
+        navigate_native_webview_history(
+            &app,
+            &state,
+            &target_tab_id,
+            WebviewHistoryDirection::Forward,
+        )?;
     }
     emit_state(&app, &state)
+}
+
+// Mobile-only feedback channel: the Kotlin TabsPlugin evaluates
+// `window.__AETHER_TAB_EVENT__(...)` in the main webview and the renderer
+// forwards the payload here, mirroring how desktop child-webview callbacks
+// (on_navigation / on_page_load / on_document_title_changed) feed tab state.
+#[tauri::command]
+fn aether_tabs_report_native_event(
+    app: AppHandle,
+    state: State<Backend>,
+    input: NativeTabEventInput,
+) -> Cmd<()> {
+    match input.kind.as_str() {
+        "navigation" => {
+            let parked_on_start_page = {
+                let tabs = lock_tabs(&state)?;
+                tabs.tabs
+                    .iter()
+                    .find(|tab| tab.id == input.tab_id)
+                    .map(|tab| tab.url == START_PAGE_URL)
+                    .unwrap_or(true)
+            };
+            // A tab parked on the start page keeps its (hidden) webview alive;
+            // ignore its stray events so the start-page sentinel survives.
+            if parked_on_start_page {
+                return Ok(());
+            }
+            if let Some(url) = input.url.as_deref() {
+                update_tab_navigation_state(
+                    &state,
+                    &input.tab_id,
+                    url,
+                    input.is_loading.unwrap_or(false),
+                );
+            }
+            {
+                let mut tabs = lock_tabs(&state)?;
+                if let Some(tab) = tabs.tabs.iter_mut().find(|tab| tab.id == input.tab_id) {
+                    tab.native_can_go_back = input.can_go_back;
+                    tab.native_can_go_forward = input.can_go_forward;
+                }
+            }
+            emit_state(&app, &state)
+        }
+        "title" => {
+            if let Some(title) = input.title.as_deref() {
+                update_tab_title(&state, &input.tab_id, title);
+            }
+            emit_state(&app, &state)
+        }
+        "find" => app
+            .emit(
+                AETHER_FIND_RESULT_EVENT,
+                FindResultPayload {
+                    tab_id: input.tab_id,
+                    current: input.current.unwrap_or(0),
+                    total: input.total.unwrap_or(0),
+                },
+            )
+            .map_err(|error| error.to_string()),
+        _ => Ok(()),
+    }
+}
+
+// The renderer measures where Android tab WebViews belong (MobileTabView's
+// bounding rect, CSS px) and reports it here; desktop computes bounds natively
+// from the window size instead, so this is a no-op there.
+#[tauri::command(rename_all = "camelCase")]
+fn aether_layout_set_mobile_tab_bounds(
+    app: AppHandle,
+    state: State<Backend>,
+    top: f64,
+    left: f64,
+    width: f64,
+    height: f64,
+) -> Cmd<()> {
+    #[cfg(not(desktop))]
+    {
+        *state
+            .mobile_tab_bounds
+            .lock()
+            .map_err(|_| "Æther layout bounds are unavailable.".to_string())? = MobileTabBounds {
+            top,
+            left,
+            width,
+            height,
+        };
+        return sync_native_webview_visibility(&app, &state);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, top, left, width, height);
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -8161,6 +8513,22 @@ mod tests {
         assert!(version_is_newer("1.0.1", "1.0.0"));
         assert!(!version_is_newer("1.0.0", "1.0.0"));
         assert!(!version_is_newer("0.9.9", "1.0.0"));
+    }
+
+    #[test]
+    fn github_release_parses_snake_case_api_payload() {
+        let payload = serde_json::json!({
+            "tag_name": "v1.0.28",
+            "name": "v1.0.28",
+            "html_url": "https://github.com/CanPixel/aether/releases/tag/v1.0.28",
+            "body": "**Full Changelog**: ...",
+            "published_at": "2026-06-25T20:49:36Z",
+            "draft": false,
+            "prerelease": false
+        });
+        let release: GithubRelease = serde_json::from_value(payload).expect("release parses");
+        assert_eq!(release_version_from_tag(&release.tag_name), "1.0.28");
+        assert_eq!(release.published_at.as_deref(), Some("2026-06-25T20:49:36Z"));
     }
 
     #[test]

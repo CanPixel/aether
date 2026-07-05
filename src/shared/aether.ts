@@ -497,6 +497,8 @@ export interface AetherApi {
     setIntelligencePanelCollapsed(collapsed: boolean): Promise<void>
     setModalOverlayOpen(open: boolean): Promise<void>
     showStatusToast(input: StatusToastInput): Promise<void>
+    // Android only: where the native tab WebView should be placed, in CSS px.
+    setMobileTabBounds(bounds: MobileTabBounds): Promise<void>
   }
   events: {
     onState(listener: (state: AetherState) => void): () => void
@@ -515,4 +517,25 @@ export interface FindResult {
   tabId: string
   current: number
   total: number
+}
+
+export interface MobileTabBounds {
+  top: number
+  left: number
+  width: number
+  height: number
+}
+
+// Payload the Kotlin TabsPlugin delivers through window.__AETHER_TAB_EVENT__;
+// forwarded verbatim to the aether_tabs_report_native_event command.
+export interface NativeTabEvent {
+  tabId: string
+  kind: 'navigation' | 'title' | 'find'
+  url?: string
+  title?: string
+  isLoading?: boolean
+  canGoBack?: boolean
+  canGoForward?: boolean
+  current?: number
+  total?: number
 }
