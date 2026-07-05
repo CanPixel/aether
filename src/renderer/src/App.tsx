@@ -1921,6 +1921,21 @@ function App(): React.JSX.Element {
             <Snowflake />
             <span className="app-dot" aria-hidden="true" />
           </button>
+          {settings.developerMode ? (
+            <>
+              <button
+                className={`app-button air-button tooltip-host ${airOpen ? 'active' : ''}`}
+                data-tooltip={showRailTooltips ? 'AiR' : undefined}
+                data-tooltip-side="right"
+                onClick={openAir}
+                title="AiR"
+                type="button"
+              >
+                <Wind />
+                <span className="app-dot" aria-hidden="true" />
+              </button>
+            </>
+          ) : (<></>)}
           <button
             className={`app-button tooltip-host ${!dashboardOpen ? 'active' : ''}`}
             data-tooltip={showRailTooltips ? 'Discover' : undefined}
@@ -1946,21 +1961,8 @@ function App(): React.JSX.Element {
                 <Waves />
                 <span className="app-dot" aria-hidden="true" />
               </button>
-              <button
-                className={`app-button air-button tooltip-host ${airOpen ? 'active' : ''}`}
-                data-tooltip={showRailTooltips ? 'AiR' : undefined}
-                data-tooltip-side="right"
-                onClick={openAir}
-                title="AiR"
-                type="button"
-              >
-                <Wind />
-                <span className="app-dot" aria-hidden="true" />
-              </button>
             </>
-          ) : (
-            <></>
-          )}
+          ) : (<></>)}
         </nav>
         <button
           className="app-button settings-button"
@@ -1988,7 +1990,7 @@ function App(): React.JSX.Element {
               : flowOpen
                 ? 'Semantic Relation Flow'
                 : airOpen
-                  ? 'Automated Info Renderer'
+                  ? 'Automatic Info Renderer'
                   : 'Knowledge Gatherer'
           }
           dashboardTitle={crystallizerOpen ? 'iCE' : flowOpen ? 'Flow' : airOpen ? 'AiR' : 'ÆTHER'}
