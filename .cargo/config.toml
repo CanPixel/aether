@@ -1,0 +1,9 @@
+# Android inference speed depends on these reaching llama-cpp-sys-2's build
+# script: it hardcodes -march=armv8-a (2014 baseline, no dotprod/i8mm/fp16
+# SIMD), and env CFLAGS are appended after its own flags, so the last -march
+# wins. Set here (not in shell wrappers) because the Gradle daemon invokes
+# cargo with its own frozen environment — exports in scripts/android.sh never
+# reach it. Target-scoped names make this a no-op for desktop builds.
+[env]
+CFLAGS_aarch64_linux_android = "-march=armv8.6-a+fp16"
+CXXFLAGS_aarch64_linux_android = "-march=armv8.6-a+fp16"

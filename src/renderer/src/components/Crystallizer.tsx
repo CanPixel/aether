@@ -1034,14 +1034,14 @@ export function Crystallizer({
         </aside>
       </section>
 
-      <div style={{ position: 'absolute', bottom: '10px', left: '12px' }}>
+      <div className="crystallizer-floor-note" style={{ position: 'absolute', bottom: '10px', left: '12px' }}>
         <span className="atlas-heading">
           <Compass size={15} />
           Semantic Cartography
         </span>
       </div>
 
-      <div style={{ position: 'absolute', bottom: '10px', right: '330px' }}>
+      <div className="crystallizer-floor-note" style={{ position: 'absolute', bottom: '10px', right: '330px' }}>
         <span className="atlas-heading">
           <Move size={15} />
           Pan

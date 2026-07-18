@@ -33,3 +33,13 @@ uuid = { version = "1", features = ["v4", "serde"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 # Cargo unions features across target tables, so on macOS llama.cpp gets metal + sampler.
 llama-cpp-2 = { version = "0.1.146", default-features = false, features = ["metal"] }
+
+# llama.cpp compiled at -O0 (the dev-profile default for native deps) runs CPU
+# inference 20-50x slower than release. Desktop dev hides this behind Metal;
+# Android dev builds do real CPU prefill, so keep the inference stack optimized
+# even in dev.
+[profile.dev.package.llama-cpp-sys-2]
+opt-level = 3
+
+[profile.dev.package.llama-cpp-2]
+opt-level = 3

@@ -22,6 +22,7 @@ import {
   FlowGraphResult,
   HubShortcutSummary,
   IcebergResult,
+  MOBILE_TAB_SCROLL_EVENT,
   ModelDownloadProgress,
   NativeTabEvent,
   SaveIcebergInput,
@@ -59,7 +60,8 @@ if (isTauri) {
       scrollToText: (tabId, text) => call<void>('aether_tabs_scroll_to_text', { tabId, text }),
       find: (tabId, query, action) => call<void>('aether_tabs_find', { tabId, query, action }),
       goBack: (tabId) => call<void>('aether_tabs_go_back', { tabId }),
-      goForward: (tabId) => call<void>('aether_tabs_go_forward', { tabId })
+      goForward: (tabId) => call<void>('aether_tabs_go_forward', { tabId }),
+      thumbnail: (tabId) => call<string | null>('aether_tabs_thumbnail', { tabId })
     },
     dashboard: {
       open: () => call<void>('aether_dashboard_open')
@@ -130,6 +132,10 @@ if (isTauri) {
       setModalOverlayOpen: (open) => call<void>('aether_layout_set_modal_overlay_open', { open }),
       showStatusToast: (input: StatusToastInput) =>
         call<void>('aether_layout_show_status_toast', { input }),
+      windowInsets: () =>
+        call<{ top: number; bottom: number; left: number; right: number }>(
+          'aether_layout_window_insets'
+        ),
       setMobileTabBounds: (bounds) =>
         call<void>('aether_layout_set_mobile_tab_bounds', { ...bounds })
     },
@@ -206,6 +212,12 @@ if (isTauri) {
   // which owns tab state and re-emits it to the whole UI.
   if (IS_ANDROID) {
     window.__AETHER_TAB_EVENT__ = (event: NativeTabEvent) => {
+      // Scroll ticks only drive the mobile chrome's auto-hide; keep them in the
+      // renderer instead of round-tripping through Rust tab state.
+      if (event.kind === 'scroll') {
+        window.dispatchEvent(new CustomEvent(MOBILE_TAB_SCROLL_EVENT, { detail: event }))
+        return
+      }
       void call<void>('aether_tabs_report_native_event', { input: event }).catch(() => undefined)
     }
   }

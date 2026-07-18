@@ -1,0 +1,1468 @@
+/* ÆTHER Android shell: bottom chrome (mini tab strip + compact address row),
+   card-grid tab switcher, and bottom sheets. Everything is scoped under
+   .aether-mobile so the desktop shells are untouched. The Kotlin TabsPlugin
+   pushes --aether-inset-* CSS variables (system bars / cutout, in CSS px)
+   because the activity runs edge-to-edge. */
+
+.aether-mobile {
+  display: block;
+  padding: 0;
+}
+
+/* Android WebView paints taps as a squared-off highlight rectangle that
+   ignores border-radius; kill it and give pressables their own rounded
+   feedback instead. */
+.aether-mobile,
+.aether-mobile * {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.aether-mobile button:active,
+.aether-mobile [role='button']:active,
+.aether-mobile .mobile-tab-chip:active,
+.aether-mobile .hub-shortcut:active {
+  filter: brightness(0.93) saturate(1.06);
+}
+
+/* Focus: desktop's 4px halo ring renders unevenly inside the transformed
+   sheet layer on Android WebView (fractional pixel snapping per edge). A
+   plain border-color change stays crisp everywhere. */
+.aether-mobile input:focus,
+.aether-mobile select:focus,
+.aether-mobile textarea:focus {
+  border-color: rgba(78, 134, 215, 0.62);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* ------------------------------------------------------------ performance
+   Android WebView pays dearly for effects that are free on desktop GPUs;
+   these are the main scroll-jank sources, disabled wholesale on mobile. */
+
+/* The styled 12px gradient scrollbars force classic (non-overlay) scrollbars
+   that repaint every scrolled frame. Use the platform's overlay ones. */
+.aether-mobile,
+.aether-mobile * {
+  scrollbar-width: none;
+}
+
+.aether-mobile::-webkit-scrollbar,
+.aether-mobile *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+
+/* Full-screen mix-blend-mode overlay recomposites the whole page per frame. */
+.aether-mobile::after {
+  content: none;
+}
+
+/* Every backdrop-filter forces an offscreen readback under scroll. The
+   surfaces using it all have near-opaque backgrounds anyway. */
+.aether-mobile *,
+.aether-mobile *::before,
+.aether-mobile *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Always-on decorative animations (orb float/halo/sheen/rays, hero shimmer)
+   burn frames the moment the dashboard or start page scrolls. Freeze them;
+   functional spinners elsewhere keep animating. */
+.aether-mobile [class*='hero-orb'],
+.aether-mobile [class*='hero-orb']::before,
+.aether-mobile [class*='hero-orb']::after,
+.aether-mobile [class*='hero-orb'] img,
+.aether-mobile [class*='start-orb'],
+.aether-mobile [class*='start-orb']::before,
+.aether-mobile [class*='start-orb']::after,
+.aether-mobile [class*='start-orb'] img,
+.aether-mobile .start-page-hero-copy::before,
+.aether-mobile .start-page-hero-copy h1 {
+  animation: none !important;
+}
+
+.mobile-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-top: var(--aether-inset-top, 0px);
+  padding-right: var(--aether-inset-right, 0px);
+  padding-left: var(--aether-inset-left, 0px);
+}
+
+/* Main row between find bar and chrome: page content, plus — on the unfolded
+   inner screen — the docked AiON panel beside it. */
+.mobile-main {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.mobile-content {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Docked AiON (unfolded): the sheet's content classes in a fixed right-hand
+   column. The native page WebView tracks .mobile-tab-view's rect, so the page
+   automatically shrinks to the left half while the panel is open. */
+.mobile-aion-dock {
+  display: flex;
+  flex: 0 0 min(50%, 560px);
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border-left: 1px solid var(--line-strong);
+  padding: 10px 16px 16px;
+  background:
+    radial-gradient(circle at 24% 0%, rgba(224, 249, 255, 0.9), transparent 42%),
+    linear-gradient(175deg, #fdfeff 0%, #eef8ff 100%);
+}
+
+/* The native tab WebView placeholder fills the content area; its rect is
+   measured from here, so the webview always sits between find bar and chrome. */
+.aether-mobile .mobile-tab-view {
+  position: absolute;
+  inset: 0;
+}
+
+.mobile-find-slot {
+  flex: none;
+}
+
+.aether-mobile .find-bar {
+  position: static;
+  grid-template-columns: 18px minmax(0, 1fr) auto auto 30px;
+  width: auto;
+  height: 46px;
+  margin: 6px 8px;
+  border-radius: 12px;
+}
+
+/* ------------------------------------------------------------------ chrome */
+
+/* Hide/show animates by collapsing the grid track (1fr → 0fr): the chrome's
+   layout height shrinks every frame, so the content area grows with it and
+   MobileTabView streams the changing rect to the native webview — page and
+   chrome edge move together. Visuals live on the outer box; the inner wrapper
+   only carries the collapsing content. */
+.mobile-chrome {
+  z-index: 40;
+  display: grid;
+  flex: none;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(233, 247, 255, 0.96));
+  box-shadow: 0 -10px 30px rgba(62, 132, 163, 0.12);
+  transition:
+    grid-template-rows 240ms cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s 0s;
+}
+
+/* visibility (delayed until the slide finishes) keeps the collapsed chrome's
+   buttons out of the tab order and kills the residual border/shadow line. */
+.mobile-chrome.hidden {
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows 240ms cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0s 240ms;
+}
+
+.mobile-chrome-inner {
+  min-height: 0;
+  padding-bottom: var(--aether-inset-bottom, 0px);
+}
+
+.mobile-tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  height: 40px;
+  padding: 4px 6px 0;
+}
+
+.mobile-tab-strip-scroll {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mobile-tab-strip-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-tab-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  max-width: 138px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 10px 10px 3px 3px;
+  padding: 0 9px;
+  color: var(--soft-ink);
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 -2px 0 var(--tab-tint, transparent);
+}
+
+.mobile-tab-chip.active {
+  border-color: var(--line-strong);
+  color: var(--ink);
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.mobile-tab-chip-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+}
+
+.mobile-tab-chip-icon img,
+.mobile-tab-chip-icon svg {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.mobile-tab-chip-title {
+  overflow: hidden;
+  min-width: 0;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mobile-tab-chip-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--muted);
+  background: rgba(23, 36, 58, 0.06);
+}
+
+.mobile-tab-chip-close svg {
+  width: 11px;
+  height: 11px;
+}
+
+.mobile-tab-new,
+.mobile-tab-grid-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  color: var(--accent-strong);
+  background: transparent;
+}
+
+.mobile-tab-grid-button {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.mobile-tab-new svg,
+.mobile-tab-grid-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.mobile-address-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 54px;
+  padding: 6px 8px 8px;
+}
+
+.mobile-nav-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 40px;
+  border: none;
+  border-radius: 12px;
+  color: var(--soft-ink);
+  background: transparent;
+}
+
+.mobile-nav-button svg {
+  width: 21px;
+  height: 21px;
+}
+
+.mobile-nav-button.active {
+  color: var(--accent-strong);
+  background: rgba(78, 184, 223, 0.14);
+}
+
+.mobile-nav-button.aion {
+  color: var(--accent-strong);
+}
+
+.mobile-nav-button:disabled {
+  opacity: 0.38;
+}
+
+.mobile-address-pill {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: inset 0 1px 4px rgba(51, 103, 137, 0.08);
+}
+
+.mobile-address-pill svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--muted);
+}
+
+.mobile-address-pill input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  color: var(--ink);
+  font-size: 15px;
+  background: transparent;
+  outline: none;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------- overlays */
+
+.mobile-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--aether-inset-top, 0px);
+  background:
+    radial-gradient(circle at 20% 6%, rgba(204, 247, 255, 0.6), transparent 34%),
+    linear-gradient(160deg, #f3fbff 0%, #e7f4fd 60%, #f6fbff 100%);
+}
+
+.mobile-overlay-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+}
+
+.mobile-overlay-header strong {
+  color: var(--ink);
+  font-family: var(--font-old);
+  font-size: 17px;
+  letter-spacing: 0.04em;
+}
+
+.mobile-overlay-header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--soft-ink);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.mobile-overlay-header button svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* --------------------------------------------------------------- tab grid */
+
+.mobile-tab-grid {
+  display: grid;
+  flex: 1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+  padding: 4px 14px calc(18px + var(--aether-inset-bottom, 0px));
+  overflow-y: auto;
+}
+
+.mobile-tab-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--soft-shadow);
+}
+
+.mobile-tab-card.active {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px rgba(78, 184, 223, 0.22),
+    var(--soft-shadow);
+}
+
+.mobile-tab-card header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  box-sizing: border-box;
+  height: 34px;
+  border-bottom: 1px solid var(--line);
+  padding: 0 6px 0 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(240, 250, 255, 0.9));
+  box-shadow: inset 0 2px 0 var(--tab-tint, transparent);
+}
+
+.mobile-tab-card-icon {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+
+.mobile-tab-card-icon img,
+.mobile-tab-card-icon svg {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.mobile-tab-card-title {
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mobile-tab-card-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.mobile-tab-card-close svg {
+  width: 14px;
+  height: 14px;
+}
+
+.mobile-tab-card-preview {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 3 / 4;
+  background: rgba(246, 249, 253, 0.9);
+}
+
+.mobile-tab-card-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.mobile-tab-card-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.3;
+}
+
+.mobile-tab-card-placeholder img,
+.mobile-tab-card-placeholder svg {
+  width: 38px;
+  height: 38px;
+}
+
+.mobile-tab-card footer {
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: 6px 10px 8px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mobile-tab-card-new {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-height: 130px;
+  border-style: dashed;
+  color: var(--accent-strong);
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.mobile-tab-card-new svg {
+  width: 26px;
+  height: 26px;
+}
+
+/* ------------------------------------------------------------------ sheets */
+
+.mobile-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: rgba(23, 36, 58, 0.4);
+  animation: mobile-sheet-fade 200ms ease;
+}
+
+@keyframes mobile-sheet-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Slight overshoot on entry; exit and drag transforms are driven inline by
+   MobileSheet's pointer handlers. */
+@keyframes mobile-sheet-rise {
+  from {
+    transform: translateY(62%);
+  }
+}
+
+/* Wide touch target for the swipe-down gesture; the visual grip sits inside. */
+.mobile-sheet-drag-zone {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  margin: -8px -16px 2px;
+  padding: 12px 0 10px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.mobile-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: visible;
+  box-sizing: border-box;
+  max-height: 86vh;
+  animation: mobile-sheet-rise 340ms cubic-bezier(0.2, 0.9, 0.3, 1.04);
+  border: 1px solid var(--line-strong);
+  border-bottom: none;
+  border-radius: 22px 22px 0 0;
+  padding: 8px 16px calc(18px + var(--aether-inset-bottom, 0px));
+  background:
+    radial-gradient(circle at 24% 0%, rgba(224, 249, 255, 0.9), transparent 42%),
+    linear-gradient(175deg, #fdfeff 0%, #eef8ff 100%);
+  box-shadow: 0 -20px 60px rgba(51, 103, 137, 0.28);
+}
+
+/* Solid bleed hanging below the sheet: while a drag translates the sheet
+   down, this fills what would otherwise open up as a gap above the bottom
+   edge of the screen, so the sheet reads as anchored. */
+.mobile-sheet::after {
+  position: absolute;
+  top: 100%;
+  right: -1px;
+  left: -1px;
+  height: 45vh;
+  background: #eef8ff;
+  content: '';
+}
+
+/* Content scroller: scrolling lives here (not on the sheet) so the sheet box
+   can overflow visibly for the bleed; contain keeps an at-top downward pull
+   from turning into page overscroll, which lets the body drag engage. */
+.mobile-sheet-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mobile-sheet-grip {
+  flex: none;
+  width: 44px;
+  height: 4px;
+  margin: 0;
+  border-radius: 999px;
+  background: rgba(113, 129, 154, 0.4);
+}
+
+/* actions sheet */
+
+.mobile-capture-block {
+  margin-bottom: 14px;
+}
+
+.mobile-capture-block > label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mobile-capture-row {
+  display: flex;
+  gap: 8px;
+}
+
+.mobile-capture-row select {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  padding: 0 10px;
+  color: var(--ink);
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.mobile-capture-button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  padding: 0 16px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  box-shadow: 0 8px 22px rgba(36, 127, 167, 0.32);
+}
+
+.mobile-capture-button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.mobile-capture-button:disabled {
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.mobile-action-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.mobile-action-list button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 48px;
+  border: none;
+  border-bottom: 1px solid rgba(123, 158, 190, 0.16);
+  padding: 0 4px;
+  color: var(--ink);
+  font-size: 15px;
+  text-align: left;
+  background: transparent;
+}
+
+.mobile-action-list button:last-child {
+  border-bottom: none;
+}
+
+.mobile-action-list button svg {
+  flex: none;
+  width: 19px;
+  height: 19px;
+  color: var(--accent-strong);
+}
+
+.mobile-action-list button:disabled {
+  opacity: 0.38;
+}
+
+.mobile-action-list button.active {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+/* AiON sheet */
+
+.mobile-aion-sheet {
+  min-height: 46vh;
+}
+
+.mobile-aion-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.mobile-aion-header strong {
+  flex: 1;
+  color: var(--ink);
+  font-family: var(--font-old);
+  font-size: 17px;
+  letter-spacing: 0.08em;
+}
+
+.mobile-aion-header button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  color: var(--soft-ink);
+  background: rgba(23, 36, 58, 0.05);
+}
+
+.mobile-aion-header button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.mobile-aion-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px 2px 16px;
+}
+
+.mobile-aion-setup p {
+  margin: 0;
+  color: var(--soft-ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.mobile-aion-setup button {
+  align-self: flex-start;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  padding: 0 18px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+}
+
+.mobile-aion-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.mobile-context-chip {
+  overflow: hidden;
+  max-width: 100%;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 13px;
+  color: var(--muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.mobile-context-chip.active {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 600;
+  background: rgba(78, 184, 223, 0.12);
+}
+
+.mobile-aion-context select {
+  flex: 1;
+  min-width: 130px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 10px;
+  color: var(--soft-ink);
+  font-size: 12.5px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.mobile-quick-actions {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 10px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mobile-quick-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-quick-actions button {
+  flex: none;
+  height: 32px;
+  border: 1px solid rgba(143, 114, 207, 0.34);
+  border-radius: 999px;
+  padding: 0 12px;
+  color: var(--prism);
+  font-size: 12.5px;
+  background: rgba(143, 114, 207, 0.08);
+}
+
+.mobile-aion-form {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.mobile-aion-form textarea {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  padding: 10px 12px;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 15px;
+  background: rgba(255, 255, 255, 0.92);
+  resize: none;
+  outline: none;
+}
+
+.mobile-aion-form button {
+  flex: none;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  padding: 0 18px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+}
+
+.mobile-aion-form button:disabled {
+  opacity: 0.45;
+}
+
+.mobile-aion-form .mobile-aion-cancel {
+  background: linear-gradient(135deg, #a0616a, var(--danger));
+}
+
+.mobile-aion-phase {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.mobile-aion-phase svg {
+  width: 15px;
+  height: 15px;
+}
+
+.mobile-aion-answer {
+  margin-top: 12px;
+  color: var(--ink);
+  font-size: 14.5px;
+  line-height: 1.55;
+  user-select: text;
+}
+
+.mobile-aion-answer p {
+  margin: 0 0 10px;
+}
+
+/* The shared markdown renderer emits lists, headings, and dividers too. */
+.mobile-aion-answer ul,
+.mobile-aion-answer ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.mobile-aion-answer li {
+  margin-bottom: 6px;
+}
+
+.mobile-aion-answer li:last-child {
+  margin-bottom: 0;
+}
+
+.mobile-aion-answer .answer-heading {
+  display: inline-block;
+  margin: 4px 0 8px;
+  border-radius: 8px;
+  padding: 3px 9px;
+}
+
+.mobile-aion-answer .answer-divider {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--line-strong);
+}
+
+.mobile-aion-metrics {
+  margin: 2px 0 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.mobile-aion-citations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* height:auto beats the desktop-global `button { height: 36px }`, which
+   otherwise clamps these cards and lets the two-line body spill out. */
+.mobile-aion-citations button {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.mobile-aion-citations button > svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+.mobile-citation-index {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(78, 184, 223, 0.16);
+}
+
+.mobile-citation-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.mobile-citation-body strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mobile-citation-body small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Toasts must live inside a DOM-owned screen region: while browsing, the
+   native tab WebView paints over the app DOM everywhere except the bottom
+   chrome. Dock them over the tab-strip row. */
+/* Rides the top edge of the bottom chrome (measured height variable follows
+   the hide/show animation frame by frame); with the chrome fully hidden it
+   rests just above the gesture bar instead. */
+.aether-mobile .status-toast {
+  top: auto;
+  right: 10px;
+  bottom: calc(max(var(--mobile-chrome-height, 0px), var(--aether-inset-bottom, 0px)) + 10px);
+  left: 10px;
+  /* Above every mobile layer, including the settings/model overlays (320):
+     "Saved portal" et al. are transient feedback and must never be buried. */
+  z-index: 360;
+  max-width: none;
+  justify-content: center;
+}
+
+/* --------------------------------------------- reused desktop views, phone */
+
+.aether-mobile .dashboard,
+.aether-mobile .crystallizer,
+.aether-mobile .start-page {
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+/* Desktop offsets the start page below its 150px top bar; the mobile shell has
+   no top bar, so that inset becomes a dead band that also makes the (otherwise
+   viewport-sized) page overflow the content scroller. Pin it to the full area:
+   everything fits, so the panel never scrolls. */
+.aether-mobile .start-page {
+  inset: 0;
+  padding: 18px 22px;
+}
+
+/* The desktop dashboard owns its scroll (100vh minus the top bar); on mobile
+   the shell's content area is the scroller, so the dashboard just flows.
+   Horizontal padding is 0: every band below runs full-bleed and manages the
+   same inner gutter, so nothing depends on desktop's -34px margin tricks. */
+.aether-mobile .dashboard {
+  --mobile-gutter: 18px;
+
+  height: auto;
+  overflow: visible;
+  padding: 0 0 32px;
+}
+
+/* Hero, rebuilt for a handset: stacked and centered — orb, wordmark, tagline.
+   The desktop composition floats a 320px orb over a flex row, which lands on
+   top of the copy anywhere narrower than a laptop. */
+.aether-mobile .dashboard-hero {
+  flex-direction: column;
+  gap: 2px;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 0;
+  margin: 0;
+  padding: 30px var(--mobile-gutter) 28px;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0));
+}
+
+/* No decorative layers on the phone hero: the blurred ellipse, dust field,
+   orb halo, and aura ring/glow shadows merge into one giant capsule blob at
+   this scale. The orb artwork carries the hero on its own. */
+.aether-mobile .dashboard-hero::before,
+.aether-mobile .dashboard-hero::after,
+.aether-mobile .hero-orb::before {
+  content: none;
+}
+
+.aether-mobile .hero-orb-aura {
+  display: none;
+}
+
+.aether-mobile .dashboard-hero .wavy-lines {
+  display: none;
+}
+
+.aether-mobile .hero-orb {
+  position: static;
+  order: -1;
+  width: 124px;
+  height: 124px;
+}
+
+.aether-mobile .hero-orb img {
+  width: 124px;
+  height: 124px;
+  filter: drop-shadow(0 14px 22px rgba(58, 115, 146, 0.22));
+}
+
+/* Desktop fills the wordmark with a gradient that fades the tail letters into
+   the background ("ÆTHE R"). Solid ink on mobile. */
+.aether-mobile .dashboard-hero h1 {
+  max-width: none;
+  margin-top: 12px;
+  color: #14233c;
+  -webkit-text-fill-color: currentcolor;
+  background: none;
+  font-size: 40px;
+  letter-spacing: 0.16em;
+  text-shadow: 0 10px 24px rgba(67, 127, 154, 0.14);
+}
+
+.aether-mobile .dashboard-hero p {
+  margin-top: 6px;
+  font-size: 16px;
+}
+
+.aether-mobile .hero-copy p {
+  margin-left: 0;
+}
+
+/* Bands: single column, full-bleed, one shared gutter. The desktop layout
+   puts Portals and Icebergs side by side with -34px margins and asymmetric
+   paddings; none of that survives a 380dp viewport. */
+.aether-mobile .saved-shelves {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+}
+
+.aether-mobile .hub-row,
+.aether-mobile .iceberg-band,
+.aether-mobile .knowledge-band {
+  margin: 0;
+  padding: 20px var(--mobile-gutter) 22px;
+}
+
+.aether-mobile .saved-shelves .iceberg-band {
+  border-top: 1px solid rgba(143, 165, 196, 0.18);
+  border-left: none;
+}
+
+/* Section headers: icon + copy on one row, action button full-width below,
+   so "Knowledge Hubs" copy never gets crushed against the button. */
+.aether-mobile .section-title {
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.aether-mobile .section-title .new-collection-button {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
+/* ------------------------------------------- foldables / larger inner screens
+   Cover screen (~380dp) gets the base styles; the unfolded inner display
+   (Z Fold: ~600dp+) reads as a small tablet. Fold/unfold is a plain viewport
+   resize — MobileTabView re-reports the webview rect, these queries do the
+   DOM side. */
+
+@media (min-width: 600px) {
+  .aether-mobile .dashboard {
+    --mobile-gutter: 36px;
+  }
+
+  /* Room for the desktop composition again, at reduced scale: copy left,
+     orb right, in-flow instead of floating. */
+  .aether-mobile .dashboard-hero {
+    flex-direction: row;
+    gap: 28px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 32px calc(var(--mobile-gutter) + 10px) 34px;
+    text-align: left;
+  }
+
+  .aether-mobile .hero-orb {
+    order: 0;
+    flex: none;
+    width: 190px;
+    height: 190px;
+  }
+
+  .aether-mobile .hero-orb img {
+    width: 190px;
+    height: 190px;
+  }
+
+  .aether-mobile .dashboard-hero h1 {
+    margin-top: 0;
+    font-size: 56px;
+  }
+
+  /* Portals and Icebergs fit side by side again on the inner display. */
+  .aether-mobile .saved-shelves {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+  }
+
+  .aether-mobile .saved-shelves .iceberg-band {
+    border-top: 0;
+    border-left: 1px solid rgba(143, 165, 196, 0.18);
+  }
+
+  .aether-mobile .section-title {
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .aether-mobile .section-title .new-collection-button {
+    grid-column: auto;
+    width: 168px;
+  }
+
+  /* Tab switcher: three columns of cards. */
+  .mobile-tab-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+    padding: 8px 22px calc(20px + var(--aether-inset-bottom, 0px));
+  }
+
+  /* Bottom sheets become floating cards: centered, capped width, detached
+     from the screen edges — full-width sheets look absurd on a tablet. */
+  .mobile-sheet-backdrop {
+    align-items: center;
+  }
+
+  .mobile-sheet {
+    width: 100%;
+    max-width: 640px;
+    max-height: 82vh;
+    border-bottom: 1px solid var(--line-strong);
+    border-radius: 22px;
+    margin-bottom: calc(20px + var(--aether-inset-bottom, 0px));
+    padding-bottom: 18px;
+  }
+
+  /* Floating card: it is detached from the screen edge by design, so no
+     anchor bleed — a moving gap below it is the correct read. */
+  .mobile-sheet::after {
+    content: none;
+  }
+
+  /* Settings / model setup: centered dialogs instead of full-screen takeover. */
+  .aether-mobile .settings-overlay,
+  .aether-mobile .model-setup-overlay {
+    padding: calc(28px + var(--aether-inset-top, 0px)) 32px
+      calc(28px + var(--aether-inset-bottom, 0px));
+  }
+
+  .aether-mobile .settings-modal {
+    width: 100%;
+    max-width: 720px;
+    height: auto;
+    max-height: 100%;
+    border-radius: 22px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .aether-mobile .model-setup-shell {
+    max-width: 760px;
+    height: auto;
+    max-height: 100%;
+  }
+
+  .aether-mobile .model-setup-modal {
+    width: 100%;
+    height: auto;
+    max-height: 100%;
+    border-radius: 22px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+}
+
+@media (min-width: 840px) {
+  .mobile-tab-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .aether-mobile .dashboard {
+    --mobile-gutter: 48px;
+  }
+}
+
+.aether-mobile .settings-overlay,
+.aether-mobile .model-setup-overlay {
+  z-index: 320;
+  padding: 0;
+}
+
+.aether-mobile .settings-modal {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  padding-top: var(--aether-inset-top, 0px);
+  padding-bottom: var(--aether-inset-bottom, 0px);
+}
+
+.aether-mobile .model-setup-shell {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+}
+
+.aether-mobile .model-setup-modal {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  border-radius: 0;
+  padding-top: calc(12px + var(--aether-inset-top, 0px));
+  padding-bottom: calc(12px + var(--aether-inset-bottom, 0px));
+}
+
+/* ------------------------------------------------- crystallizer (iCE), phone */
+
+/* Desktop iCE is a window-sized cockpit: fixed 100vh height, a 318px side
+   dock, and controls floating over the canvas. On the phone everything joins
+   the normal document flow instead — header, control rows, a fixed-height
+   canvas, then the dock full-width below — so nothing can overlap and the
+   shell's content area scrolls through it naturally. */
+.aether-mobile .crystallizer {
+  height: auto;
+  overflow: visible;
+}
+
+.aether-mobile .crystallizer-header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  min-height: 0;
+  padding: 12px 14px;
+}
+
+.aether-mobile .crystallizer-search {
+  width: 100%;
+}
+
+.aether-mobile .crystallizer-search button {
+  width: auto;
+  flex: 0 0 auto;
+  padding: 0 16px;
+}
+
+/* Single column: canvas on top, dock below. */
+.aether-mobile .crystallizer-body {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  min-height: 0;
+}
+
+.aether-mobile .crystallizer-canvas-shell {
+  display: flex;
+  flex-direction: column;
+  height: 58vh;
+  min-height: 340px;
+  flex: none;
+}
+
+.aether-mobile .crystallizer-canvas {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+/* Zoom/reset tools: a slim centered row above the canvas instead of a card
+   floating over it. */
+.aether-mobile .crystallizer-tools {
+  position: static;
+  justify-content: center;
+  margin: 10px 14px 0;
+  box-shadow: none;
+}
+
+/* Layer chips: one horizontally swipeable row instead of a translucent stack
+   parked on top of the iceberg. */
+.aether-mobile .canvas-layer-hud {
+  position: static;
+  display: flex;
+  flex-direction: row;
+  max-width: none;
+  margin: 8px 14px 10px;
+  overflow-x: auto;
+  box-shadow: none;
+  scrollbar-width: none;
+}
+
+.aether-mobile .canvas-layer-hud::-webkit-scrollbar {
+  display: none;
+}
+
+.aether-mobile .canvas-layer-hud.layer-strip.compact button {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+/* The empty/loading veil spans the whole shell; with the controls now in
+   flow, keep its card comfortably inside a phone width. */
+.aether-mobile .crystallizer-state-card {
+  min-width: min(300px, 80vw);
+  padding: 22px 26px;
+}
+
+/* Dock: full-width section under the canvas rather than a right sidebar. */
+.aether-mobile .crystallizer-dock {
+  height: auto;
+  border-left: 0;
+  border-top: 1px solid rgba(125, 211, 252, 0.26);
+  padding: 14px 14px 18px;
+}
+
+/* Desktop pins "Semantic Cartography" / "Pan" to the window's bottom corners,
+   which lands them on top of the dock here. Pure decor — drop them. */
+.aether-mobile .crystallizer-floor-note {
+  display: none;
+}

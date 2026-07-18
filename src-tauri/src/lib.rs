@@ -26,32 +26,44 @@ use std::{
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     webview::{NewWindowResponse, PageLoadEvent},
-    Webview, WebviewBuilder, WebviewUrl, Window,
+    LogicalPosition, LogicalSize, Position, Rect, Size, Webview, WebviewBuilder, WebviewUrl,
+    Window, WindowEvent,
 };
-use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Position, Rect, Size, State,
-    WindowEvent,
-};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::AsyncWriteExt;
 use tokio::task;
 use url::Url;
 
 const CHUNKS_TABLE: &str = "chunks";
+#[cfg(desktop)]
 const SIDEBAR_WIDTH: f64 = 76.0;
+#[cfg(desktop)]
 const BROWSER_VIEW_TOP: f64 = 172.0;
+#[cfg(desktop)]
 const PANEL_WIDTH: f64 = 404.0;
+#[cfg(desktop)]
 const PANEL_COLLAPSED_WIDTH: f64 = 58.0;
 const LOCAL_RUNTIME_NAME: &str = "llama.cpp";
+#[cfg(desktop)]
 const AETHER_SHORTCUT_EVENT: &str = "aether:shortcut";
+#[cfg(desktop)]
 const AETHER_FIND_MENU_ID: &str = "aether-find-in-page";
+#[cfg(desktop)]
 const AETHER_FOCUS_ADDRESS_MENU_ID: &str = "aether-focus-address";
+#[cfg(desktop)]
 const AETHER_NEW_TAB_MENU_ID: &str = "aether-new-tab";
+#[cfg(desktop)]
 const AETHER_OPEN_DASHBOARD_MENU_ID: &str = "aether-open-dashboard";
+#[cfg(desktop)]
 const AETHER_OPEN_ICE_MENU_ID: &str = "aether-open-ice";
+#[cfg(desktop)]
 const AETHER_OPEN_BROWSER_MENU_ID: &str = "aether-open-browser";
+#[cfg(desktop)]
 const AETHER_TOGGLE_AION_MENU_ID: &str = "aether-toggle-aion";
+#[cfg(desktop)]
 const AETHER_CAPTURE_PAGE_MENU_ID: &str = "aether-capture-page";
+#[cfg(desktop)]
 const AETHER_FIND_REQUESTED_EVENT: &str = "aether:find-requested";
 const AETHER_FIND_RESULT_EVENT: &str = "aether:find-result";
 const AETHER_CHAT_STREAM_EVENT: &str = "aether:chat-stream";
@@ -104,8 +116,10 @@ const PREFERRED_CHAT_MODEL_HINTS: [&str; 8] = [
     "gemma4", "gemma-4", "gemma3", "gemma-3", "gemma-2b", "2b", "gemma", "qwen",
 ];
 const MIN_CAPTURE_TEXT_LENGTH: usize = 120;
+#[cfg(desktop)]
 const DESKTOP_BROWSER_USER_AGENT: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
+#[cfg(desktop)]
 const NATIVE_WEBVIEW_SCROLLBAR_SCRIPT: &str = r##"
 (() => {
   const styleId = 'aether-native-scrollbar-style';
@@ -851,6 +865,7 @@ struct CreateShortcutInput {
     theme_color: Option<String>,
 }
 
+#[cfg(desktop)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PageMetadataSnapshot {
@@ -858,6 +873,7 @@ struct PageMetadataSnapshot {
     favicon: Option<String>,
 }
 
+#[cfg(desktop)]
 #[derive(Deserialize)]
 struct FindMatchSnapshot {
     current: usize,
@@ -1767,6 +1783,7 @@ fn close_native_webview(app: &AppHandle, state: &State<Backend>, tab_id: &str) -
     }
 }
 
+#[cfg(desktop)]
 fn find_in_page_script() -> &'static str {
     r#"
 (() => {
@@ -2178,11 +2195,6 @@ fn resize_native_webviews(app: &AppHandle, state: &State<Backend>) -> Cmd<()> {
     sync_native_webview_visibility(app, state)
 }
 
-#[cfg(not(desktop))]
-fn resize_native_webviews(_app: &AppHandle, _state: &State<Backend>) -> Cmd<()> {
-    Ok(())
-}
-
 #[cfg(desktop)]
 fn sync_native_webview_visibility(app: &AppHandle, state: &State<Backend>) -> Cmd<()> {
     let (active_tab_id, show_active, panel_collapsed) = {
@@ -2388,6 +2400,7 @@ fn is_transient_webview_url(url: &str) -> bool {
         || normalized == "about:srcdoc"
 }
 
+#[cfg(desktop)]
 fn update_tab_metadata(
     state: &State<Backend>,
     tab_id: &str,
@@ -2444,7 +2457,8 @@ fn force_exit() -> ! {
 // `aether_tabs_report_native_event` command.
 #[cfg(target_os = "android")]
 mod android_tabs {
-    use serde::Serialize;
+    use serde::{de::DeserializeOwned, Deserialize, Serialize};
+    use std::sync::OnceLock;
     use tauri::{
         plugin::{Builder, PluginHandle, TauriPlugin},
         Manager, Wry,
@@ -2452,22 +2466,70 @@ mod android_tabs {
 
     pub struct AndroidTabs(PluginHandle<Wry>);
 
+    // The plugin handle, additionally kept in a module global so helpers that
+    // only receive `State<Backend>` (page capture) can reach the Kotlin side
+    // without threading an AppHandle through every call site.
+    static HANDLE: OnceLock<PluginHandle<Wry>> = OnceLock::new();
+
     impl AndroidTabs {
         pub fn run(&self, command: &str, payload: impl Serialize) -> Result<(), String> {
             self.0
                 .run_mobile_plugin::<()>(command, payload)
                 .map_err(|error| error.to_string())
         }
+
+        pub fn run_for<T: DeserializeOwned>(
+            &self,
+            command: &str,
+            payload: impl Serialize,
+        ) -> Result<T, String> {
+            self.0
+                .run_mobile_plugin::<T>(command, payload)
+                .map_err(|error| error.to_string())
+        }
+    }
+
+    // Run a plugin command via the global handle. Blocks until Kotlin resolves,
+    // so only call from async commands (tokio workers), never the main thread —
+    // Kotlin resolves on the Android UI thread and would deadlock against it.
+    pub fn run_for_global<T: DeserializeOwned>(
+        command: &str,
+        payload: impl Serialize,
+    ) -> Result<T, String> {
+        HANDLE
+            .get()
+            .ok_or_else(|| "Android tabs plugin is not ready.".to_string())?
+            .run_mobile_plugin::<T>(command, payload)
+            .map_err(|error| error.to_string())
     }
 
     pub fn init() -> TauriPlugin<Wry> {
         Builder::new("aether-tabs")
             .setup(|app, api| {
                 let handle = api.register_android_plugin("com.canur.aether", "TabsPlugin")?;
+                let _ = HANDLE.set(handle.clone());
                 app.manage(AndroidTabs(handle));
                 Ok(())
             })
             .build()
+    }
+
+    #[derive(Deserialize)]
+    pub struct ThumbnailResponse {
+        pub image: Option<String>,
+    }
+
+    #[derive(Deserialize)]
+    pub struct SnapshotResponse {
+        pub payload: String,
+    }
+
+    #[derive(Deserialize, Serialize, Default)]
+    pub struct InsetsResponse {
+        pub top: f64,
+        pub bottom: f64,
+        pub left: f64,
+        pub right: f64,
     }
 
     #[derive(Serialize)]
@@ -2690,6 +2752,8 @@ pub fn run() {
             aether_tabs_go_back,
             aether_tabs_go_forward,
             aether_tabs_report_native_event,
+            aether_tabs_thumbnail,
+            aether_layout_window_insets,
             aether_layout_set_mobile_tab_bounds,
             aether_dashboard_open,
             aether_hub_list,
@@ -2735,9 +2799,9 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building Æther")
-        .run(|_app_handle, event| {
+        .run(|_app_handle, _event| {
             #[cfg(desktop)]
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+            if let tauri::RunEvent::ExitRequested { .. } = _event {
                 force_exit();
             }
         });
@@ -3118,6 +3182,48 @@ fn aether_tabs_report_native_event(
             )
             .map_err(|error| error.to_string()),
         _ => Ok(()),
+    }
+}
+
+// Preview image (data-URI JPEG) for the mobile tab-grid switcher. Desktop
+// renders live child webviews and never asks for one, so it returns None.
+// Async on purpose: the Kotlin side resolves on the Android UI thread, so the
+// blocking run_mobile_plugin call must sit on a tokio worker.
+#[tauri::command(rename_all = "camelCase")]
+async fn aether_tabs_thumbnail(app: AppHandle, tab_id: String) -> Cmd<Option<String>> {
+    #[cfg(target_os = "android")]
+    {
+        let response: android_tabs::ThumbnailResponse = app
+            .state::<android_tabs::AndroidTabs>()
+            .run_for("thumbnail", android_tabs::TabPayload { tab_id: &tab_id })?;
+        return Ok(response.image);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, tab_id);
+        Ok(None)
+    }
+}
+
+// System-bar/cutout insets (CSS px) for the edge-to-edge Android activity;
+// zero on desktop, where the OS window frame handles this. Async for the same
+// UI-thread reason as aether_tabs_thumbnail.
+#[tauri::command]
+async fn aether_layout_window_insets(app: AppHandle) -> Cmd<serde_json::Value> {
+    #[cfg(target_os = "android")]
+    {
+        let response: android_tabs::InsetsResponse = app
+            .state::<android_tabs::AndroidTabs>()
+            .run_for("insets", serde_json::json!({}))?;
+        return serde_json::to_value(response).map_err(|error| error.to_string());
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = app;
+        serde_json::to_value(serde_json::json!({
+            "top": 0.0, "bottom": 0.0, "left": 0.0, "right": 0.0
+        }))
+        .map_err(|error| error.to_string())
     }
 }
 
@@ -3699,7 +3805,11 @@ async fn aether_chat_ask(
             if let Some(captured) = captured {
                 // Give the current page fewer slots when a hub is also in play so the
                 // hub still contributes; let it use the full budget on its own.
-                let page_limit = if input.collection_id.is_some() { 3 } else { 8 };
+                let page_limit = if input.collection_id.is_some() {
+                    3
+                } else {
+                    chat_citation_limit()
+                };
                 let page_citations = current_page_citations(
                     &state,
                     &settings,
@@ -3716,7 +3826,7 @@ async fn aether_chat_ask(
     }
     let citations = dedupe_citations(citations)
         .into_iter()
-        .take(8)
+        .take(chat_citation_limit())
         .collect::<Vec<_>>();
     local_chat(&state, &settings, &prompt, citations, Some(stream)).await
 }
@@ -6033,8 +6143,11 @@ async fn local_chat(
         let mut runtime = runtime
             .lock()
             .map_err(|_| "Local model runtime is unavailable.".to_string())?;
-        let on_token: Option<Box<dyn FnMut(&str) + Send>> = stream
+        let token_stream = stream.clone();
+        let on_token: Option<Box<dyn FnMut(&str) + Send>> = token_stream
             .map(|stream| Box::new(move |delta: &str| stream.delta(delta)) as Box<dyn FnMut(&str) + Send>);
+        let on_status: Option<Box<dyn FnMut(String) + Send>> = stream
+            .map(|stream| Box::new(move |status: String| stream.status(&status)) as Box<dyn FnMut(String) + Send>);
         runtime.complete_chat(
             &model_path,
             messages,
@@ -6042,6 +6155,7 @@ async fn local_chat(
             0.2,
             &cancel,
             on_token,
+            on_status,
         )
     })
     .await
@@ -6097,6 +6211,7 @@ async fn local_generate_iceberg(
             0.35,
             &cancel,
             None,
+            None,
         )
     })
     .await
@@ -6143,7 +6258,13 @@ impl NativeModelRuntime {
             .backend
             .as_ref()
             .ok_or_else(|| "Local model backend is not initialized.".to_string())?;
-        let mut params = LlamaModelParams::default().with_use_mmap(backend.supports_mmap());
+        // Mobile: load weights into anonymous memory instead of mmapping the
+        // GGUF. Mmapped weight pages are ordinary page cache, and Android
+        // evicts them under the memory pressure the native tab WebViews
+        // create — after which every generated token faults back to flash and
+        // decode slows to a crawl. Malloc'd weights are app RSS and stay put.
+        let use_mmap = if cfg!(mobile) { false } else { backend.supports_mmap() };
+        let mut params = LlamaModelParams::default().with_use_mmap(use_mmap);
         let use_gpu = match kind {
             NativeModelKind::Chat => local_gpu_enabled(),
             NativeModelKind::Embedding => embedding_gpu_enabled(),
@@ -6315,6 +6436,7 @@ impl NativeModelRuntime {
         Ok(embeddings)
     }
 
+    #[cfg(desktop)]
     fn warm_embedding_model(&mut self, model_path: &Path) -> Cmd<()> {
         self.ensure_model(NativeModelKind::Embedding, model_path)
     }
@@ -6327,7 +6449,23 @@ impl NativeModelRuntime {
         temperature: f32,
         cancel: &AtomicBool,
         on_token: Option<Box<dyn FnMut(&str) + Send>>,
+        mut on_status: Option<Box<dyn FnMut(String) + Send>>,
     ) -> Cmd<ChatCompletion> {
+        // The first ask pays for the multi-GB model load; on phone-class
+        // storage that is long enough to read as a hang without a status.
+        let needs_load = self
+            .chat
+            .as_ref()
+            .map(|loaded| loaded.path != canonical_model_path(model_path))
+            .unwrap_or(true);
+        if needs_load {
+            if let Some(callback) = on_status.as_mut() {
+                callback(format!(
+                    "Loading {} (first ask takes a moment)",
+                    friendly_model_label(model_path)
+                ));
+            }
+        }
         self.ensure_model(NativeModelKind::Chat, model_path)?;
         let rendered = {
             let model = &self
@@ -6344,9 +6482,11 @@ impl NativeModelRuntime {
             rendered.add_bos,
             cancel,
             on_token,
+            on_status,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn complete_loaded_prompt(
         &mut self,
         prompt: &str,
@@ -6355,6 +6495,7 @@ impl NativeModelRuntime {
         add_bos: AddBos,
         cancel: &AtomicBool,
         mut on_token: Option<Box<dyn FnMut(&str) + Send>>,
+        mut on_status: Option<Box<dyn FnMut(String) + Send>>,
     ) -> Cmd<ChatCompletion> {
         let backend = self
             .backend
@@ -6379,7 +6520,14 @@ impl NativeModelRuntime {
             tokens = tokens[tokens.len() - max_prompt_tokens..].to_vec();
         }
         let n_batch = (chat_batch_token_limit() as u32).min(n_ctx).max(512);
-        let n_ubatch = n_batch.min(2048).max(512);
+        // Mobile: small micro-batches keep the compute buffer allocation
+        // phone-sized and make prefill progress tick in visible steps.
+        let n_ubatch = if cfg!(mobile) {
+            n_batch.min(512)
+        } else {
+            n_batch.min(2048)
+        }
+        .max(512);
         let threads = auto_thread_count();
         let offload_ops = local_gpu_enabled();
         let ctx_params = LlamaContextParams::default()
@@ -6395,12 +6543,21 @@ impl NativeModelRuntime {
             .map_err(|error| error.to_string())?;
 
         let last_prompt_index = tokens.len().saturating_sub(1);
-        let prompt_batch_limit = n_batch as usize;
+        let prompt_batch_limit = if cfg!(mobile) {
+            (n_batch as usize).min(512)
+        } else {
+            n_batch as usize
+        };
+        let total_prompt_tokens = tokens.len();
         let mut prompt_cursor = 0usize;
         let mut sample_index = 0;
         while prompt_cursor < tokens.len() {
             if cancel.load(AtomicOrdering::Relaxed) {
                 return Err("Generation stopped.".to_string());
+            }
+            if let Some(callback) = on_status.as_mut() {
+                let percent = prompt_cursor * 100 / total_prompt_tokens;
+                callback(format!("Reading context {percent}%"));
             }
             let prompt_end = (prompt_cursor + prompt_batch_limit).min(tokens.len());
             let mut prompt_batch = LlamaBatch::new(prompt_end - prompt_cursor, 1);
@@ -6416,6 +6573,9 @@ impl NativeModelRuntime {
                 sample_index = prompt_batch.n_tokens() - 1;
             }
             prompt_cursor = prompt_end;
+        }
+        if let Some(callback) = on_status.as_mut() {
+            callback("Generating answer".to_string());
         }
 
         let mut sampler = LlamaSampler::chain_simple([
@@ -6951,7 +7111,9 @@ fn collect_gguf_models(root: &Path, models: &mut Vec<PathBuf>) {
 }
 
 fn default_models_path(app_data_dir: &Path) -> PathBuf {
-    if cfg!(debug_assertions) {
+    // The repo-relative dev path is a compile-time string from the build
+    // machine; on a phone it would point at a nonexistent host filesystem.
+    if cfg!(all(debug_assertions, desktop)) {
         project_models_path()
     } else {
         app_data_dir.join("aether-models")
@@ -7170,6 +7332,17 @@ fn model_label(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
+/// Product name for user-facing status text. Filenames must stay in sync with
+/// `managed_model_spec`; anything unmanaged falls back to its cleaned filename.
+fn friendly_model_label(path: &Path) -> String {
+    match path.file_name().and_then(|name| name.to_str()) {
+        Some("gemma-4-E2B_q4_0-it.gguf") => "AiON LiTE".to_string(),
+        Some("gemma-4-E4B_q4_0-it.gguf") => "AiON WiSE".to_string(),
+        Some("Qwen3-Embedding-0.6B-Q8_0.gguf") => "AiON MiST".to_string(),
+        _ => model_label(path),
+    }
+}
+
 fn strip_gguf_extension(value: &str) -> String {
     value
         .strip_suffix(".gguf")
@@ -7179,10 +7352,18 @@ fn strip_gguf_extension(value: &str) -> String {
 }
 
 fn chat_context_tokens() -> u32 {
+    // Phones get half the desktop window: the KV cache plus compute buffers
+    // for 6k context put a multi-GB model into zram-thrashing territory,
+    // which reads as a silent hang during prefill.
+    let default = if cfg!(mobile) {
+        3072
+    } else {
+        DEFAULT_CHAT_CONTEXT_TOKENS
+    };
     env::var(AETHER_LLM_CONTEXT_ENV)
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_CHAT_CONTEXT_TOKENS)
+        .unwrap_or(default)
         .clamp(1024, 65_536)
 }
 
@@ -7230,8 +7411,12 @@ fn embedding_context_tokens(input_tokens: usize) -> u32 {
 }
 
 fn auto_thread_count() -> i32 {
+    // Mobile keeps one core free instead of two: recent flagships (like the
+    // all-big-core Snapdragon 8 Elite) have no little cores to avoid, prefill
+    // is compute-bound, and the UI sits idle while AiON works.
+    let reserve = if cfg!(mobile) { 1 } else { 2 };
     std::thread::available_parallelism()
-        .map(|threads| threads.get().saturating_sub(2).clamp(2, 12) as i32)
+        .map(|threads| threads.get().saturating_sub(reserve).clamp(2, 12) as i32)
         .unwrap_or(6)
 }
 
@@ -7250,12 +7435,37 @@ fn normalize_embedding(values: &[f32]) -> Vec<f32> {
         .collect()
 }
 
+// Phones prefill on CPU, so prompt length is the ask latency. The mobile
+// budget (5 sources x ~1100 chars + system + question) fits the 2048-token
+// prompt window, where desktop's 8 full chunks would overflow it and get
+// front-truncated — losing the system message and top-ranked sources while
+// still paying full prefill cost.
+fn chat_citation_limit() -> usize {
+    if cfg!(mobile) {
+        5
+    } else {
+        8
+    }
+}
+
+fn chat_snippet_char_limit() -> usize {
+    if cfg!(mobile) {
+        1100
+    } else {
+        usize::MAX
+    }
+}
+
 fn build_chat_messages(prompt: &str, citations: &[SearchResult]) -> Vec<ChatPromptMessage> {
+    let snippet_limit = chat_snippet_char_limit();
     let context_block = citations
         .iter()
         .enumerate()
         .map(|(index, item)| {
-            let source_text = strip_numeric_bracket_markers(&item.text);
+            let mut source_text = strip_numeric_bracket_markers(&item.text);
+            if source_text.chars().count() > snippet_limit {
+                source_text = source_text.chars().take(snippet_limit).collect();
+            }
             format!(
                 "[{}] {}\nURL: {}\nCollection: {}\n{}",
                 index + 1,
@@ -7272,11 +7482,18 @@ fn build_chat_messages(prompt: &str, citations: &[SearchResult]) -> Vec<ChatProm
     } else {
         &context_block
     };
+    // Phones decode on CPU, so every generated token is user-visible latency:
+    // steer the model toward tight answers instead of hard-truncating them.
+    let brevity = if cfg!(mobile) {
+        " Keep answers concise: a few sentences or a short list unless the question needs more."
+    } else {
+        ""
+    };
     vec![
         ChatPromptMessage {
             role: "system",
             content: format!(
-                "You are Æther, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources only with Æther source numbers [1] through [{}]. Do not copy bracketed reference numbers from webpage text.",
+                "You are Æther, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources only with Æther source numbers [1] through [{}]. Do not copy bracketed reference numbers from webpage text.{brevity}",
                 citations.len().max(1)
             ),
         },
@@ -7507,7 +7724,35 @@ async fn extract_readable_active_page(
         }
     }
 
+    #[cfg(target_os = "android")]
+    {
+        match extract_readable_page_from_android(active_tab) {
+            Ok(page) => return Ok(page),
+            Err(_) => {}
+        }
+    }
+
     extract_readable_page(&state.client, &active_tab.url).await
+}
+
+// Android counterpart of extract_readable_page_from_webview: the Kotlin
+// TabsPlugin's `snapshot` command reads the live DOM through
+// evaluateJavascript's value callback, so logged-in and JS-rendered pages
+// capture correctly instead of falling back to an anonymous HTTP re-fetch.
+#[cfg(target_os = "android")]
+fn extract_readable_page_from_android(active_tab: &ManagedTab) -> Cmd<CapturedPage> {
+    let response: android_tabs::SnapshotResponse = android_tabs::run_for_global(
+        "snapshot",
+        android_tabs::TabPayload {
+            tab_id: &active_tab.id,
+        },
+    )?;
+    let payload = response.payload.trim();
+    if payload.is_empty() || payload == "null" {
+        return Err("Unable to read the active page.".to_string());
+    }
+    let snapshot = parse_page_snapshot(payload)?;
+    snapshot_to_captured_page(snapshot, &active_tab.title)
 }
 
 #[cfg(desktop)]
@@ -8212,6 +8457,7 @@ fn active_tab_url(state: &State<Backend>) -> Cmd<String> {
         .ok_or_else(|| "No active browser tab.".to_string())
 }
 
+#[cfg(desktop)]
 fn active_tab_id(state: &State<Backend>) -> Cmd<String> {
     Ok(lock_tabs(state)?.active_tab_id.clone())
 }

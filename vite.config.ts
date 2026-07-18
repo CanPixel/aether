@@ -7,7 +7,9 @@ export default defineConfig({
   publicDir: resolve('public'),
   clearScreen: false,
   server: {
-    host: '127.0.0.1',
+    // `tauri android dev` sets TAURI_DEV_HOST to the LAN address the device
+    // loads from; the server must bind there (or 0.0.0.0) to be reachable.
+    host: process.env.TAURI_DEV_HOST || '127.0.0.1',
     port: 1420,
     strictPort: true
   },

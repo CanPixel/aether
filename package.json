@@ -18,7 +18,7 @@
     "release": "bun scripts/release.ts",
     "start": "tauri dev",
     "dev": "tauri dev",
-    "dev:vite": "vite --host 127.0.0.1 --port 1420",
+    "dev:vite": "vite",
     "build:vite": "vite build",
     "prepare:dmg-background": "bash scripts/prepare-dmg-background.sh",
     "build": "bun run typecheck && tauri build --bundles app && bun run dmg",

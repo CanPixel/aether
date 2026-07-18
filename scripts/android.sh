@@ -26,4 +26,26 @@ export ANDROID_HOME NDK_HOME
 export ANDROID_NDK_ROOT="${ANDROID_NDK_ROOT:-$NDK_HOME}"
 export ANDROID_NDK="${ANDROID_NDK:-$NDK_HOME}"
 
-exec bun tauri android "$@"
+# llama-cpp-sys-2 hardcodes -march=armv8-a (2014 baseline) for Android, which
+# leaves ggml's dotprod/i8mm/fp16 quantized-matmul kernels compiled out — CPU
+# prefill runs several times slower than the silicon allows. Env CFLAGS are
+# appended after the build script's own flags, and clang honors the last
+# -march, so this override wins. armv8.6-a mandates dotprod+i8mm+bf16 (any
+# Snapdragon 8 Gen 1+ / recent flagship); override AETHER_ANDROID_MARCH for
+# older devices, e.g. armv8.2-a+dotprod+fp16.
+: "${AETHER_ANDROID_MARCH:=armv8.6-a+fp16}"
+export CFLAGS_aarch64_linux_android="-march=${AETHER_ANDROID_MARCH}${CFLAGS_aarch64_linux_android:+ ${CFLAGS_aarch64_linux_android}}"
+export CXXFLAGS_aarch64_linux_android="-march=${AETHER_ANDROID_MARCH}${CXXFLAGS_aarch64_linux_android:+ ${CXXFLAGS_aarch64_linux_android}}"
+
+# llama.cpp does not compile for 32-bit ARM, and every device that can run
+# ÆTHER's local AI stack is arm64 anyway — so builds default to aarch64 only
+# unless the caller picks targets explicitly.
+args=("$@")
+if [ "${1:-}" = "build" ]; then
+  case " $* " in
+    *" --target "*) ;;
+    *) args+=(--target aarch64) ;;
+  esac
+fi
+
+exec bun tauri android "${args[@]}"

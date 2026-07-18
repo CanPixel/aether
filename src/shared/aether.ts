@@ -410,6 +410,8 @@ export interface AetherApi {
     find(tabId: string, query?: string, action?: FindAction): Promise<void>
     goBack(tabId: string): Promise<void>
     goForward(tabId: string): Promise<void>
+    // Android-only tab-grid preview (data-URI JPEG); resolves null on desktop.
+    thumbnail(tabId: string): Promise<string | null>
   }
   dashboard: {
     open(): Promise<void>
@@ -497,6 +499,8 @@ export interface AetherApi {
     setIntelligencePanelCollapsed(collapsed: boolean): Promise<void>
     setModalOverlayOpen(open: boolean): Promise<void>
     showStatusToast(input: StatusToastInput): Promise<void>
+    // Edge-to-edge system-bar insets in CSS px (Android); zeros on desktop.
+    windowInsets(): Promise<{ top: number; bottom: number; left: number; right: number }>
     // Android only: where the native tab WebView should be placed, in CSS px.
     setMobileTabBounds(bounds: MobileTabBounds): Promise<void>
   }
@@ -530,7 +534,7 @@ export interface MobileTabBounds {
 // forwarded verbatim to the aether_tabs_report_native_event command.
 export interface NativeTabEvent {
   tabId: string
-  kind: 'navigation' | 'title' | 'find'
+  kind: 'navigation' | 'title' | 'find' | 'scroll'
   url?: string
   title?: string
   isLoading?: boolean
@@ -538,4 +542,10 @@ export interface NativeTabEvent {
   canGoForward?: boolean
   current?: number
   total?: number
+  scrollY?: number
+  deltaY?: number
 }
+
+// Renderer-local DOM event dispatched for NativeTabEvent kind "scroll"; the
+// mobile chrome listens for it to auto-hide. Never forwarded to Rust.
+export const MOBILE_TAB_SCROLL_EVENT = 'aether:mobile-tab-scroll'
