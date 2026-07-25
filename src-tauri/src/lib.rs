@@ -3798,6 +3798,8 @@ async fn capture_page_into_collection(
         .map(|(index, text)| ChunkRecord {
             id: uuid(),
             vector: embeddings[index].clone(),
+            // Assigned by push_chunks when the store accepts the record.
+            vector_slot: 0,
             text,
             collection_id: collection.id.clone(),
             capture_id: capture_id.clone(),
@@ -3809,8 +3811,9 @@ async fn capture_page_into_collection(
         })
         .collect::<Vec<_>>();
 
+    // push_chunks assigns the sidecar slots; never extend `chunks` directly.
     with_vectors_mut(state, |vectors| {
-        vectors.chunks.extend(records.iter().cloned());
+        vectors.push_chunks(records.iter().cloned());
     })
     .await?;
 
@@ -4396,9 +4399,13 @@ async fn aether_system_export_library(
         .await
         .map_err(|error| error.to_string())?;
 
-    let sources = [
+    // chunks.json holds only metadata; without the binary sidecar beside it the
+    // export would restore a library whose sources cannot be searched.
+    let chunks_vec_path = vector_data_path(&paths.chunks_path);
+    let sources: [(&PathBuf, &str); 5] = [
         (&paths.library_path, "library.json"),
         (&paths.chunks_path, "chunks.json"),
+        (&chunks_vec_path, "chunks.vec"),
         (&paths.settings_path, "settings.json"),
         (&paths.icebergs_path, "icebergs.json"),
     ];
@@ -6465,7 +6472,103 @@ async fn load_icebergs(path: &Path) -> Cmd<IcebergData> {
 }
 
 async fn load_vectors(path: &Path) -> Cmd<VectorStoreData> {
-    read_json_or_default(path).await
+    // A v1 store carries its vectors inline, so it must be detected before the v2
+    // deserializer silently drops them (`vector` is #[serde(skip)] there).
+    if let Ok(raw) = tokio::fs::read_to_string(path).await {
+        let declared_version = serde_json::from_str::<serde_json::Value>(&raw)
+            .ok()
+            .and_then(|value| value.get("version").and_then(serde_json::Value::as_u64));
+        if declared_version.unwrap_or(1) < VECTOR_STORE_VERSION as u64 {
+            return migrate_legacy_vectors(path, &raw).await;
+        }
+    }
+
+    let mut data: VectorStoreData = read_json_or_default(path).await?;
+    hydrate_vectors(path, &mut data).await?;
+    Ok(data)
+}
+
+// Reads the sidecar and attaches each chunk's vector. Chunks whose slot is missing
+// from the file are dropped rather than fatal: a partial sidecar should cost the
+// affected sources, not the whole library.
+async fn hydrate_vectors(path: &Path, data: &mut VectorStoreData) -> Cmd<()> {
+    if data.chunks.is_empty() {
+        return Ok(());
+    }
+    if data.dim == 0 {
+        eprintln!("aether: vector store has chunks but no dimension; dropping stale metadata");
+        data.chunks.clear();
+        return Ok(());
+    }
+
+    let vector_path = vector_data_path(path);
+    let bytes = match tokio::fs::read(&vector_path).await {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            eprintln!(
+                "aether: vector sidecar {} unreadable ({error}); captures need re-indexing",
+                vector_path.display()
+            );
+            data.chunks.clear();
+            return Ok(());
+        }
+    };
+
+    let stride = data.dim * 4;
+    let available = (bytes.len() / stride) as u64;
+    let before = data.chunks.len();
+
+    data.chunks.retain(|chunk| chunk.vector_slot < available);
+    for chunk in &mut data.chunks {
+        let start = chunk.vector_slot as usize * stride;
+        chunk.vector = bytes[start..start + stride]
+            .chunks_exact(4)
+            .map(|word| f32::from_le_bytes([word[0], word[1], word[2], word[3]]))
+            .collect();
+    }
+
+    if data.chunks.len() != before {
+        eprintln!(
+            "aether: dropped {} chunk(s) missing from the vector sidecar",
+            before - data.chunks.len()
+        );
+    }
+    Ok(())
+}
+
+async fn migrate_legacy_vectors(path: &Path, raw: &str) -> Cmd<VectorStoreData> {
+    let legacy: LegacyVectorStoreData = match serde_json::from_str(raw) {
+        Ok(legacy) => legacy,
+        Err(error) => {
+            eprintln!("aether: could not read legacy vector store ({error}); starting fresh");
+            return Ok(VectorStoreData::default());
+        }
+    };
+
+    let mut data = VectorStoreData::default();
+    data.push_chunks(legacy.chunks.into_iter().map(|chunk| ChunkRecord {
+        id: chunk.id,
+        vector: chunk.vector,
+        vector_slot: 0,
+        text: chunk.text,
+        collection_id: chunk.collection_id,
+        capture_id: chunk.capture_id,
+        title: chunk.title,
+        url: chunk.url,
+        app_id: chunk.app_id,
+        captured_at: chunk.captured_at,
+        chunk_index: chunk.chunk_index,
+    }));
+
+    eprintln!(
+        "aether: migrating {} chunk(s) to the binary vector store",
+        data.chunks.len()
+    );
+    // Rewrite the sidecar from scratch; save_vectors rotates the v1 JSON to .bak, so
+    // the original file survives the migration.
+    write_vector_sidecar(path, &data, 0).await?;
+    save_vector_metadata(path, &data).await?;
+    Ok(data)
 }
 
 async fn with_vectors_read<T>(
@@ -6499,11 +6602,95 @@ async fn with_vectors_mut<T>(
     Ok(result)
 }
 
-// Vector rows are large and machine-managed, so they are persisted as compact
+// Vector rows are large and machine-managed, so the metadata is persisted as compact
 // JSON instead of the pretty format used for small user-editable stores.
-async fn save_vectors(path: &Path, data: &VectorStoreData) -> Cmd<()> {
+async fn save_vector_metadata(path: &Path, data: &VectorStoreData) -> Cmd<()> {
     let raw = serde_json::to_string(data).map_err(|error| error.to_string())?;
     write_store_durably(path, raw.as_bytes()).await
+}
+
+// Writes vectors for every chunk whose slot is at or beyond `slots_present`.
+// `slots_present == 0` rewrites the sidecar from scratch.
+async fn write_vector_sidecar(
+    path: &Path,
+    data: &VectorStoreData,
+    slots_present: u64,
+) -> Cmd<()> {
+    let vector_path = vector_data_path(path);
+    ensure_parent_dir(&vector_path).await?;
+
+    let mut pending = data
+        .chunks
+        .iter()
+        .filter(|chunk| chunk.vector_slot >= slots_present)
+        .collect::<Vec<_>>();
+    if pending.is_empty() && slots_present > 0 {
+        return Ok(());
+    }
+    // Slot order is file order; appending out of order would corrupt the stride index.
+    pending.sort_by_key(|chunk| chunk.vector_slot);
+
+    let mut buffer = Vec::with_capacity(pending.len() * data.dim.max(1) * 4);
+    for chunk in pending {
+        for value in &chunk.vector {
+            buffer.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+
+    let mut file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(slots_present > 0)
+        .truncate(slots_present == 0)
+        .open(&vector_path)
+        .await
+        .map_err(|error| error.to_string())?;
+    file.write_all(&buffer)
+        .await
+        .map_err(|error| error.to_string())?;
+    // The metadata written next will reference these slots, so they must be on disk
+    // before it lands. Orphaned vector bytes are harmless; dangling slots are not.
+    file.sync_all().await.map_err(|error| error.to_string())
+}
+
+async fn sidecar_slots_present(path: &Path, dim: usize) -> u64 {
+    if dim == 0 {
+        return 0;
+    }
+    match tokio::fs::metadata(vector_data_path(path)).await {
+        Ok(meta) => meta.len() / (dim as u64 * 4),
+        Err(_) => 0,
+    }
+}
+
+// Deletes leave dead slots behind. Once they dominate the sidecar, renumber the live
+// chunks and rewrite it so the file cannot grow without bound.
+async fn compact_vectors_if_needed(path: &Path, data: &mut VectorStoreData) -> Cmd<bool> {
+    let live = data.chunks.len() as u64;
+    if data.next_slot < VECTOR_COMPACTION_MIN_SLOTS {
+        return Ok(false);
+    }
+    let dead = data.next_slot.saturating_sub(live);
+    if (dead as f64) < data.next_slot as f64 * VECTOR_COMPACTION_DEAD_RATIO {
+        return Ok(false);
+    }
+
+    data.chunks.sort_by_key(|chunk| chunk.vector_slot);
+    for (index, chunk) in data.chunks.iter_mut().enumerate() {
+        chunk.vector_slot = index as u64;
+    }
+    data.next_slot = live;
+    eprintln!("aether: compacted vector store, reclaimed {dead} dead slot(s)");
+    write_vector_sidecar(path, data, 0).await?;
+    Ok(true)
+}
+
+async fn save_vectors(path: &Path, data: &mut VectorStoreData) -> Cmd<()> {
+    if !compact_vectors_if_needed(path, data).await? {
+        let slots_present = sidecar_slots_present(path, data.dim).await;
+        write_vector_sidecar(path, data, slots_present).await?;
+    }
+    save_vector_metadata(path, data).await
 }
 
 fn backup_path(path: &Path) -> PathBuf {
@@ -9420,10 +9607,176 @@ mod tests {
         assert_eq!(corrupt_count(&dir.0), 0);
     }
 
+    fn vector_chunk(capture_id: &str, vector: Vec<f32>) -> ChunkRecord {
+        ChunkRecord {
+            id: uuid(),
+            vector,
+            vector_slot: 0,
+            text: format!("text for {capture_id}"),
+            collection_id: "hub-1".to_string(),
+            capture_id: capture_id.to_string(),
+            title: format!("Title {capture_id}"),
+            url: format!("https://example.com/{capture_id}"),
+            app_id: "browser".to_string(),
+            captured_at: "2026-07-01T00:00:00Z".to_string(),
+            chunk_index: 0,
+        }
+    }
+
+    // Vectors must survive the JSON/sidecar split byte-for-byte; a silent precision or
+    // ordering change here would quietly degrade every future search result.
+    #[test]
+    fn vector_store_round_trips_vectors_through_the_sidecar() {
+        let dir = TempDir::new();
+        let path = dir.path("chunks.json");
+
+        let mut store = VectorStoreData::default();
+        store.push_chunks(vec![
+            vector_chunk("a", vec![0.5, -0.25, 0.125, 1.0]),
+            vector_chunk("b", vec![-1.0, 0.0, 0.75, 0.5]),
+        ]);
+        block_on(save_vectors(&path, &mut store)).expect("save");
+
+        let loaded = block_on(load_vectors(&path)).expect("load");
+
+        assert_eq!(loaded.version, VECTOR_STORE_VERSION);
+        assert_eq!(loaded.dim, 4);
+        assert_eq!(loaded.chunks.len(), 2);
+        assert_eq!(loaded.chunks[0].vector, vec![0.5, -0.25, 0.125, 1.0]);
+        assert_eq!(loaded.chunks[1].vector, vec![-1.0, 0.0, 0.75, 0.5]);
+        // The whole point of the split: no vector numbers in the JSON.
+        let raw = fs::read_to_string(&path).expect("metadata");
+        assert!(!raw.contains("0.125"), "vectors must not be in the JSON");
+    }
+
+    #[test]
+    fn vector_store_appends_without_rewriting_existing_slots() {
+        let dir = TempDir::new();
+        let path = dir.path("chunks.json");
+
+        let mut store = VectorStoreData::default();
+        store.push_chunks(vec![vector_chunk("a", vec![1.0, 2.0, 3.0, 4.0])]);
+        block_on(save_vectors(&path, &mut store)).expect("first save");
+        let size_after_first = fs::metadata(vector_data_path(&path)).expect("sidecar").len();
+
+        store.push_chunks(vec![vector_chunk("b", vec![5.0, 6.0, 7.0, 8.0])]);
+        block_on(save_vectors(&path, &mut store)).expect("second save");
+        let size_after_second = fs::metadata(vector_data_path(&path)).expect("sidecar").len();
+
+        // 4 dims * 4 bytes per append.
+        assert_eq!(size_after_first, 16);
+        assert_eq!(size_after_second, 32);
+
+        let loaded = block_on(load_vectors(&path)).expect("load");
+        assert_eq!(loaded.chunks[0].vector, vec![1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(loaded.chunks[1].vector, vec![5.0, 6.0, 7.0, 8.0]);
+    }
+
+    // Existing installs have a v1 store with inline vectors. Losing them on upgrade
+    // would silently empty every hub, so migration is the highest-risk path here.
+    #[test]
+    fn vector_store_migrates_a_v1_json_store_without_losing_vectors() {
+        let dir = TempDir::new();
+        let path = dir.path("chunks.json");
+        let legacy = serde_json::json!({
+            "version": 1,
+            "chunks": [
+                {
+                    "id": "chunk-1",
+                    "vector": [0.25, 0.5, 0.75, 1.0],
+                    "text": "legacy text",
+                    "collectionId": "hub-1",
+                    "captureId": "capture-1",
+                    "title": "Legacy source",
+                    "url": "https://example.com/legacy",
+                    "appId": "browser",
+                    "capturedAt": "2026-06-01T00:00:00Z",
+                    "chunkIndex": 0
+                }
+            ]
+        });
+        fs::write(&path, serde_json::to_string(&legacy).unwrap()).expect("seed v1");
+
+        let migrated = block_on(load_vectors(&path)).expect("migrate");
+
+        assert_eq!(migrated.version, VECTOR_STORE_VERSION);
+        assert_eq!(migrated.chunks.len(), 1);
+        assert_eq!(migrated.chunks[0].vector, vec![0.25, 0.5, 0.75, 1.0]);
+        assert_eq!(migrated.chunks[0].text, "legacy text");
+        // The pre-migration file must still be recoverable.
+        assert!(backup_path(&path).exists(), "v1 store should be kept as .bak");
+
+        // Reloading must now take the v2 path and produce the same vectors.
+        let reloaded = block_on(load_vectors(&path)).expect("reload");
+        assert_eq!(reloaded.chunks[0].vector, vec![0.25, 0.5, 0.75, 1.0]);
+    }
+
+    #[test]
+    fn vector_store_survives_a_missing_sidecar_without_losing_the_library() {
+        let dir = TempDir::new();
+        let path = dir.path("chunks.json");
+
+        let mut store = VectorStoreData::default();
+        store.push_chunks(vec![vector_chunk("a", vec![1.0, 0.0, 0.0, 0.0])]);
+        block_on(save_vectors(&path, &mut store)).expect("save");
+        fs::remove_file(vector_data_path(&path)).expect("drop sidecar");
+
+        let loaded = block_on(load_vectors(&path)).expect("load without sidecar");
+
+        // Chunks are dropped (they cannot be searched) but the load itself succeeds.
+        assert!(loaded.chunks.is_empty());
+    }
+
+    #[test]
+    fn vector_store_compacts_once_dead_slots_dominate() {
+        let dir = TempDir::new();
+        let path = dir.path("chunks.json");
+
+        let mut store = VectorStoreData::default();
+        let total = VECTOR_COMPACTION_MIN_SLOTS as usize + 8;
+        store.push_chunks(
+            (0..total).map(|index| vector_chunk(&format!("c{index}"), vec![index as f32, 0.0, 0.0, 0.0])),
+        );
+        block_on(save_vectors(&path, &mut store)).expect("save");
+        assert_eq!(store.next_slot, total as u64);
+
+        // Drop most chunks, which leaves their slots dead.
+        store.chunks.retain(|chunk| chunk.vector_slot % 8 == 0);
+        let survivors = store.chunks.len() as u64;
+        block_on(save_vectors(&path, &mut store)).expect("save after delete");
+
+        assert_eq!(store.next_slot, survivors, "slots should be renumbered");
+        let sidecar = fs::metadata(vector_data_path(&path)).expect("sidecar").len();
+        assert_eq!(sidecar, survivors * 4 * 4, "dead slots should be reclaimed");
+
+        let loaded = block_on(load_vectors(&path)).expect("load");
+        assert_eq!(loaded.chunks.len() as u64, survivors);
+        // Values must still line up with their chunks after renumbering.
+        for chunk in &loaded.chunks {
+            let expected: f32 = chunk.capture_id.trim_start_matches('c').parse().unwrap();
+            assert_eq!(chunk.vector[0], expected);
+        }
+    }
+
+    #[test]
+    fn vector_store_rejects_chunks_with_mismatched_dimensions() {
+        let mut store = VectorStoreData::default();
+        store.push_chunks(vec![
+            vector_chunk("a", vec![1.0, 2.0, 3.0, 4.0]),
+            vector_chunk("b", vec![1.0, 2.0]),
+            vector_chunk("c", vec![]),
+        ]);
+
+        assert_eq!(store.dim, 4);
+        assert_eq!(store.chunks.len(), 1, "only the matching chunk is stored");
+        assert_eq!(store.next_slot, 1);
+    }
+
     fn chunk_for_search(capture_id: &str, title: &str, url: &str, text: &str) -> ChunkRecord {
         ChunkRecord {
             id: uuid(),
             vector: vec![0.0; 4],
+            vector_slot: 0,
             text: text.to_string(),
             collection_id: "hub-1".to_string(),
             capture_id: capture_id.to_string(),
@@ -9832,6 +10185,7 @@ mod tests {
             chunk: ChunkRecord {
                 id: uuid(),
                 vector: vec![1.0, 0.0],
+                vector_slot: 0,
                 text: text.to_string(),
                 collection_id: "collection".to_string(),
                 capture_id: "capture".to_string(),

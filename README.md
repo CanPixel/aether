@@ -263,10 +263,18 @@ Current storage paths:
 ```text
 <appData>/aether-library/library.json
 <appData>/aether-realms/chunks.json
+<appData>/aether-realms/chunks.vec
 <appData>/aether-settings/settings.json
 <appData>/aether-icebergs/icebergs.json
+<appData>/aether-backups/aether-export-<timestamp>/
 ./aether-models/
 ```
+
+Every store is written temp-file-then-rename and keeps the previous good copy as
+`<name>.bak`. On load, an unreadable store falls back to its backup, and the damaged
+file is preserved as `<name>.corrupt-<timestamp>` rather than overwritten. Settings
+also offers **Export Library**, which snapshots every store into a timestamped folder
+under `aether-backups/`.
 
 `library.json` stores:
 
@@ -277,10 +285,10 @@ Current storage paths:
 - Chunk counts.
 - Legacy migration flags.
 
-`chunks.json` stores embedded chunk rows:
+`chunks.json` stores chunk **metadata** (store format v2):
 
 - `id`
-- `vector`
+- `vectorSlot` — index into `chunks.vec`
 - `text`
 - `collectionId`
 - `captureId`
@@ -289,6 +297,16 @@ Current storage paths:
 - `appId`
 - `capturedAt`
 - `chunkIndex`
+
+`chunks.vec` stores the embeddings themselves as raw little-endian `f32`, at a fixed
+stride of `dim * 4` bytes per slot. Keeping vectors out of JSON matters at scale: as
+decimal text a 1024-dim vector costs roughly 12 KB versus 4 KB binary, and — more
+importantly — the sidecar is **append-only**, so capturing a page writes only the new
+vectors instead of re-serializing every vector in the library. Deleting sources leaves
+dead slots behind; once they exceed half the file, the store compacts and renumbers.
+
+A v1 `chunks.json` (vectors inline) is migrated automatically on first load, and the
+original file is kept as `chunks.json.bak`.
 
 `settings.json` stores app preferences such as the default search engine, Developer Mode, and selected local model paths.
 
