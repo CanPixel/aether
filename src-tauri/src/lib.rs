@@ -215,10 +215,10 @@ struct Backend {
     tabs: Mutex<TabState>,
     #[cfg(desktop)]
     webviews: Mutex<NativeBrowserViews>,
-    // Where the renderer wants Android tab WebViews placed, in CSS pixels
-    // (reported by MobileTabView via aether_layout_set_mobile_tab_bounds).
-    #[cfg(not(desktop))]
-    mobile_tab_bounds: Mutex<MobileTabBounds>,
+    // Where the renderer wants live web content placed, in CSS pixels, reported via
+    // aether_layout_set_web_content_bounds. Both shells use it; on desktop it takes
+    // precedence over the SIDEBAR_WIDTH/BROWSER_VIEW_TOP/PANEL_WIDTH constants.
+    web_content_bounds: Mutex<WebContentBounds>,
     client: Client,
     native_runtime: Arc<Mutex<NativeModelRuntime>>,
     vectors: tokio::sync::RwLock<Option<VectorStoreData>>,
@@ -231,9 +231,12 @@ struct NativeBrowserViews {
     views: HashMap<String, Webview>,
 }
 
-#[cfg(not(desktop))]
-#[derive(Clone, Copy, Default)]
-struct MobileTabBounds {
+// Where live web content belongs inside the window, in CSS px, as measured by the
+// renderer. Both shells report the same rect: Android positions native WebViews with
+// it, desktop positions its child webviews with it. Measuring beats hardcoding,
+// because the chrome that defines these edges is owned by CSS.
+#[derive(Clone, Copy, Default, PartialEq)]
+struct WebContentBounds {
     top: f64,
     left: f64,
     width: f64,
@@ -1446,8 +1449,7 @@ impl Backend {
             tabs: Mutex::new(TabState::new()),
             #[cfg(desktop)]
             webviews: Mutex::new(NativeBrowserViews::default()),
-            #[cfg(not(desktop))]
-            mobile_tab_bounds: Mutex::new(MobileTabBounds::default()),
+            web_content_bounds: Mutex::new(WebContentBounds::default()),
             client: Client::builder()
                 .user_agent("Aether/1.0 Tauri")
                 .build()
@@ -2423,10 +2425,17 @@ fn sync_native_webview_visibility(app: &AppHandle, state: &State<Backend>) -> Cm
             tabs.panel_collapsed,
         )
     };
-    let window = app
-        .get_window("main")
-        .ok_or_else(|| "Æther main window is not ready.".to_string())?;
-    let bounds = native_webview_bounds_for_window(&window, panel_collapsed)?;
+    // Prefer the renderer-measured slot; fall back to the layout constants until the
+    // first report arrives.
+    let bounds = match reported_webview_bounds(state) {
+        Some(bounds) => bounds,
+        None => {
+            let window = app
+                .get_window("main")
+                .ok_or_else(|| "Æther main window is not ready.".to_string())?;
+            native_webview_bounds_for_window(&window, panel_collapsed)?
+        }
+    };
     let webviews = state
         .webviews
         .lock()
@@ -2464,7 +2473,7 @@ fn sync_native_webview_visibility(app: &AppHandle, state: &State<Backend>) -> Cm
             )
         };
         let bounds = *state
-            .mobile_tab_bounds
+            .web_content_bounds
             .lock()
             .map_err(|_| "Æther layout bounds are unavailable.".to_string())?;
         return app.state::<android_tabs::AndroidTabs>().run(
@@ -2487,6 +2496,9 @@ fn sync_native_webview_visibility(app: &AppHandle, state: &State<Backend>) -> Cm
 
 #[cfg(desktop)]
 fn native_webview_bounds(window: &Window, state: &State<Backend>) -> Cmd<Rect> {
+    if let Some(bounds) = reported_webview_bounds(state) {
+        return Ok(bounds);
+    }
     let panel_collapsed = lock_tabs(state)?.panel_collapsed;
     native_webview_bounds_for_window(window, panel_collapsed)
 }
@@ -2508,6 +2520,24 @@ fn native_webview_bounds_for_window(window: &Window, panel_collapsed: bool) -> C
     Ok(Rect {
         position: Position::Logical(LogicalPosition::new(SIDEBAR_WIDTH, BROWSER_VIEW_TOP)),
         size: Size::Logical(LogicalSize::new(width, height)),
+    })
+}
+
+// Preferred over the constants above: the renderer measures the actual content slot,
+// so the chrome's real height and the panel's real width define the web view instead
+// of numbers that silently drift whenever the CSS changes. The constants remain the
+// fallback for the first frames, before the renderer has reported anything.
+#[cfg(desktop)]
+fn reported_webview_bounds(state: &State<Backend>) -> Option<Rect> {
+    let bounds = *state.web_content_bounds.lock().ok()?;
+    // A zero-size rect means the content slot is not laid out (dashboard open, or the
+    // very first frame); positioning a webview to it would collapse the view.
+    if bounds.width < 1.0 || bounds.height < 1.0 {
+        return None;
+    }
+    Some(Rect {
+        position: Position::Logical(LogicalPosition::new(bounds.left, bounds.top)),
+        size: Size::Logical(LogicalSize::new(bounds.width, bounds.height)),
     })
 }
 
@@ -2966,7 +2996,7 @@ pub fn run() {
             aether_tabs_report_native_event,
             aether_tabs_thumbnail,
             aether_layout_window_insets,
-            aether_layout_set_mobile_tab_bounds,
+            aether_layout_set_web_content_bounds,
             aether_dashboard_open,
             aether_hub_list,
             aether_hub_create,
@@ -3446,10 +3476,12 @@ async fn aether_layout_window_insets(app: AppHandle) -> Cmd<serde_json::Value> {
 }
 
 // The renderer measures where Android tab WebViews belong (MobileTabView's
-// bounding rect, CSS px) and reports it here; desktop computes bounds natively
-// from the window size instead, so this is a no-op there.
+// The renderer measures the slot where live web content belongs (a placeholder div's
+// bounding rect, CSS px) and reports it here. Both shells position their native web
+// views from this, so a chrome restyle or a panel resize moves the content with it
+// instead of drifting away from hardcoded offsets.
 #[tauri::command(rename_all = "camelCase")]
-fn aether_layout_set_mobile_tab_bounds(
+fn aether_layout_set_web_content_bounds(
     app: AppHandle,
     state: State<Backend>,
     top: f64,
@@ -3457,24 +3489,25 @@ fn aether_layout_set_mobile_tab_bounds(
     width: f64,
     height: f64,
 ) -> Cmd<()> {
-    #[cfg(not(desktop))]
+    let next = WebContentBounds {
+        top,
+        left,
+        width,
+        height,
+    };
     {
-        *state
-            .mobile_tab_bounds
+        let mut stored = state
+            .web_content_bounds
             .lock()
-            .map_err(|_| "Æther layout bounds are unavailable.".to_string())? = MobileTabBounds {
-            top,
-            left,
-            width,
-            height,
-        };
-        return sync_native_webview_visibility(&app, &state);
+            .map_err(|_| "Æther layout bounds are unavailable.".to_string())?;
+        // A ResizeObserver fires on every layout pass; repositioning native webviews
+        // for an unchanged rect causes visible flicker on desktop.
+        if *stored == next {
+            return Ok(());
+        }
+        *stored = next;
     }
-    #[allow(unreachable_code)]
-    {
-        let _ = (app, state, top, left, width, height);
-        Ok(())
-    }
+    sync_native_webview_visibility(&app, &state)
 }
 
 #[tauri::command]

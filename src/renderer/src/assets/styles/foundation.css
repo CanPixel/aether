@@ -163,6 +163,61 @@ button:disabled {
   grid-template-columns: var(--rail-width) minmax(0, 1fr) var(--panel-collapsed-width);
 }
 
+/* The 600ms column transition is right for collapse/expand but wrong for a drag: it
+   makes the panel lag the pointer, and the native webview lags the panel. */
+.aether-shell.is-resizing {
+  transition: none;
+  /* Keep the drag cursor while the pointer is outside the handle. */
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* Grab target on the seam between web content and the AiON panel. Overlaps the seam
+   symmetrically so it is hittable without widening the visible chrome. */
+.panel-resize-handle {
+  position: absolute;
+  top: var(--titlebar-height);
+  right: calc(var(--panel-width) - 4px);
+  bottom: 0;
+  z-index: 6;
+  width: 9px;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+}
+
+.panel-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  border-radius: 2px;
+  background: rgba(75, 163, 206, 0);
+  transition: background 160ms ease;
+}
+
+.panel-resize-handle:hover::after,
+.panel-resize-handle:focus-visible::after,
+.aether-shell.is-resizing .panel-resize-handle::after {
+  background: rgba(75, 163, 206, 0.5);
+}
+
+.panel-resize-handle:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aether-shell {
+    transition: none;
+  }
+
+  .panel-resize-handle::after {
+    transition: none;
+  }
+}
+
 .window-titlebar {
   position: absolute;
   top: 0;

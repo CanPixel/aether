@@ -147,8 +147,8 @@ if (isTauri) {
         call<{ top: number; bottom: number; left: number; right: number }>(
           'aether_layout_window_insets'
         ),
-      setMobileTabBounds: (bounds) =>
-        call<void>('aether_layout_set_mobile_tab_bounds', { ...bounds })
+      setWebContentBounds: (bounds) =>
+        call<void>('aether_layout_set_web_content_bounds', { ...bounds })
     },
     events: {
       onState: (listener: (state: AetherState) => void) => {

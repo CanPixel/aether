@@ -569,8 +569,9 @@ export interface AetherApi {
     showStatusToast(input: StatusToastInput): Promise<void>
     // Edge-to-edge system-bar insets in CSS px (Android); zeros on desktop.
     windowInsets(): Promise<{ top: number; bottom: number; left: number; right: number }>
-    // Android only: where the native tab WebView should be placed, in CSS px.
-    setMobileTabBounds(bounds: MobileTabBounds): Promise<void>
+    // Where live web content belongs, in CSS px. Both shells report it; the native
+    // webviews (desktop child webviews, Android WebViews) are positioned from it.
+    setWebContentBounds(bounds: WebContentBounds): Promise<void>
   }
   events: {
     onState(listener: (state: AetherState) => void): () => void
@@ -591,7 +592,7 @@ export interface FindResult {
   total: number
 }
 
-export interface MobileTabBounds {
+export interface WebContentBounds {
   top: number
   left: number
   width: number

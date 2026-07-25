@@ -1,4 +1,13 @@
-import { FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  CSSProperties,
+  FormEvent,
+  RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 import { addPluginListener, invoke, type PluginListener } from '@tauri-apps/api/core'
 import packageManifest from '../../../package.json'
 import {
@@ -42,6 +51,7 @@ import {
 } from '../../shared/aether'
 import { BrowserChrome } from './components/BrowserChrome'
 import { MobileShell } from './components/MobileShell'
+import { WebContentSlot } from './components/WebContentSlot'
 import { MobileTabView } from './components/MobileTabView'
 import { StartPage } from './components/StartPage'
 import { CollectionDialog, CollectionDialogState } from './components/CollectionDialog'
@@ -80,6 +90,24 @@ import {
 // Sentinel URL for a blank tab that shows the ÆTHER start page instead of loading a
 // page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
 const START_PAGE_URL = 'aether://start'
+// AiON panel sizing. Must stay in step with --panel-collapsed-width in foundation.css
+// and PANEL_COLLAPSED_WIDTH in src-tauri/src/lib.rs.
+const PANEL_COLLAPSED_WIDTH = 58
+const PANEL_MIN_WIDTH = 320
+const PANEL_MAX_WIDTH = 720
+const PANEL_DEFAULT_WIDTH = 404
+const PANEL_WIDTH_STORAGE_KEY = 'aether:panel-width'
+
+function clampPanelWidth(value: number): number {
+  return Math.round(Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, value)))
+}
+
+// Panel width is pure window chrome, so it lives in localStorage rather than in the
+// synced settings store.
+function readStoredPanelWidth(): number {
+  const stored = Number(window.localStorage.getItem(PANEL_WIDTH_STORAGE_KEY))
+  return Number.isFinite(stored) && stored > 0 ? clampPanelWidth(stored) : PANEL_DEFAULT_WIDTH
+}
 const APP_VERSION = packageManifest.version
 const DASHBOARD_ADDRESSES = new Set([
   'æther://dashboard',
@@ -414,6 +442,10 @@ function App(): React.JSX.Element {
   })
   const [updateCheck, setUpdateCheck] = useState<UpdateCheckResult | null>(null)
   const [updateChecking, setUpdateChecking] = useState(false)
+  const [panelWidth, setPanelWidth] = useState(readStoredPanelWidth)
+  const [panelResizing, setPanelResizing] = useState(false)
+  // Pointer handlers read the committed width synchronously mid-drag.
+  const panelWidthRef = useRef(panelWidth)
   const [capturingLink, setCapturingLink] = useState(false)
   const [searching, setSearching] = useState(false)
   const [searchResult, setSearchResult] = useState<LibrarySearchResult | null>(null)
@@ -745,6 +777,44 @@ function App(): React.JSX.Element {
   )
 
   const clearSearch = useCallback((): void => setSearchResult(null), [])
+
+  // Pointer-driven panel resize. Width is committed to state on every move so the
+  // grid, the measured content slot, and the native webview stay in step.
+  const startPanelResize = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
+    event.preventDefault()
+    setPanelResizing(true)
+    const startX = event.clientX
+    const startWidth = panelWidthRef.current
+
+    const onMove = (move: PointerEvent): void => {
+      // Dragging left widens the panel, so the delta is inverted.
+      const next = clampPanelWidth(startWidth + (startX - move.clientX))
+      panelWidthRef.current = next
+      setPanelWidth(next)
+    }
+    const onUp = (): void => {
+      setPanelResizing(false)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(panelWidthRef.current))
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [])
+
+  // Keyboard equivalent: a drag-only control is unusable without a pointer.
+  const handlePanelResizeKey = useCallback((event: React.KeyboardEvent<HTMLDivElement>): void => {
+    const step = event.shiftKey ? 40 : 12
+    const delta =
+      event.key === 'ArrowLeft' ? step : event.key === 'ArrowRight' ? -step : 0
+    if (delta === 0) return
+    event.preventDefault()
+    const next = clampPanelWidth(panelWidthRef.current + delta)
+    panelWidthRef.current = next
+    setPanelWidth(next)
+    window.localStorage.setItem(PANEL_WIDTH_STORAGE_KEY, String(next))
+  }, [])
 
   // Thread key mirrors the backend: the selected hub, or the current-page thread when
   // the ask is not scoped to a hub.
@@ -2312,7 +2382,14 @@ function App(): React.JSX.Element {
   }
 
   return (
-    <main className={`aether-shell ${panelCollapsed ? 'panel-collapsed' : ''}`}>
+    <main
+      className={`aether-shell ${panelCollapsed ? 'panel-collapsed' : ''} ${
+        panelResizing ? 'is-resizing' : ''
+      }`}
+      // Drives the shell grid's third column. The measured content slot follows it,
+      // so the native webview tracks the drag.
+      style={{ '--panel-width': `${panelWidth}px` } as CSSProperties}
+    >
       {toast && <StatusToast toast={toast} />}
       {findBarNode}
       <div className="window-titlebar" aria-hidden="true">
@@ -2515,9 +2592,26 @@ function App(): React.JSX.Element {
         ) : !HAS_NATIVE_TAB_WEBVIEWS && activeTab ? (
           <MobileTabView />
         ) : (
-          <div className="webview-underlay" aria-hidden="true" />
+          <WebContentSlot panelWidth={panelCollapsed ? PANEL_COLLAPSED_WIDTH : panelWidth} />
         )}
       </section>
+
+      {/* Drag handle for the AiON panel. Sits between the content slot and the panel
+          so the pointer target is the seam the user is actually grabbing. */}
+      {!panelCollapsed && (
+        <div
+          className="panel-resize-handle"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize AiON panel"
+          aria-valuenow={panelWidth}
+          aria-valuemin={PANEL_MIN_WIDTH}
+          aria-valuemax={PANEL_MAX_WIDTH}
+          tabIndex={0}
+          onPointerDown={startPanelResize}
+          onKeyDown={handlePanelResizeKey}
+        />
+      )}
 
       <IntelligencePanel
         busy={busy}
