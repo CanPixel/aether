@@ -25,6 +25,8 @@ import {
   CaptureSummary,
   CollectionSummary,
   HubShortcutSummary,
+  LibrarySearchHit,
+  LibrarySearchResult,
   SavedIcebergSummary
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
@@ -46,9 +48,42 @@ type CollectionDialogState =
   | { mode: 'delete'; collection: CollectionSummary }
   | null
 
+// A drag carries a capturable link when it is not one of ÆTHER's own internal
+// reorder/move drags. Internal drags are identified by their private MIME types,
+// which is the only thing readable during dragover.
+function isLinkDrag(types: readonly string[]): boolean {
+  if (types.includes('application/x-aether-capture')) return false
+  if (types.includes('application/x-aether-collection')) return false
+  return types.includes('application/x-aether-tab') || types.includes('text/uri-list')
+}
+
+function readDroppedLink(transfer: DataTransfer): string {
+  const tabUrl = transfer.getData('application/x-aether-tab')
+  if (tabUrl) return tabUrl
+  // text/uri-list may hold several lines; the first non-comment line is the link.
+  const uriList = transfer.getData('text/uri-list')
+  if (uriList) {
+    const first = uriList
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line.length > 0 && !line.startsWith('#'))
+    if (first) return first
+  }
+  return transfer.getData('text/plain').trim()
+}
+
 type DashboardProps = {
   busy: string | null
+  searchResult: LibrarySearchResult | null
+  searching: boolean
+  searchLibrary: (query: string, collectionId?: string) => Promise<void>
+  clearSearch: () => void
+  openSearchHit: (hit: LibrarySearchHit) => Promise<void>
   capturesByCollection: Record<string, CaptureSummary[]>
+  capturingLink: boolean
+  captureLink: (url: string, collectionId: string) => Promise<void>
+  captureOpenTabs: (collectionId: string) => Promise<void>
+  openTabCount: number
   collections: CollectionSummary[]
   deleteCapture: (captureId: string) => Promise<void>
   deleteSavedIceberg: (id: string) => Promise<void>
@@ -70,7 +105,16 @@ type DashboardProps = {
 
 export function Dashboard({
   busy,
+  searchResult,
+  searching,
+  searchLibrary,
+  clearSearch,
+  openSearchHit,
   capturesByCollection,
+  capturingLink,
+  captureLink,
+  captureOpenTabs,
+  openTabCount,
   collections,
   deleteCapture,
   deleteSavedIceberg,
@@ -102,6 +146,10 @@ export function Dashboard({
   // a synchronously-correct value mid-drag, the way the cross-hub move reads dataTransfer.
   const captureDragRef = useRef<{ id: string; from: string } | null>(null)
   const [dragOverCollectionId, setDragOverCollectionId] = useState('')
+  const [linkDraft, setLinkDraft] = useState('')
+  const [linkTargetId, setLinkTargetId] = useState(selectedCollectionId)
+  const [searchDraft, setSearchDraft] = useState('')
+  const [searchScopeId, setSearchScopeId] = useState('')
   const aetherMarkSrc = new URL('aether-mark.svg', window.location.href).toString()
   const wavyLinesSrc = new URL('wavy-lines.svg', window.location.href).toString()
 
@@ -394,9 +442,154 @@ export function Dashboard({
             onClick={() => openCollectionDialog({ mode: 'create' })}
             type="button"
           >
-            New Collection
+            Add
           </button>
         </div>
+
+        {collections.length > 0 && (
+          <form
+            className="library-search"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const query = searchDraft.trim()
+              if (!query) return
+              void searchLibrary(query, searchScopeId || undefined)
+            }}
+            role="search"
+          >
+            <input
+              aria-label="Search captured sources"
+              disabled={Boolean(busy)}
+              onChange={(event) => {
+                setSearchDraft(event.target.value)
+                if (!event.target.value.trim()) clearSearch()
+              }}
+              placeholder="Search your captured sources…"
+              type="search"
+              value={searchDraft}
+            />
+            <select
+              aria-label="Search scope"
+              disabled={Boolean(busy)}
+              onChange={(event) => setSearchScopeId(event.target.value)}
+              value={searchScopeId}
+            >
+              <option value="">All hubs</option>
+              {collections.map((collection) => (
+                <option key={collection.id} value={collection.id}>
+                  {collection.name}
+                </option>
+              ))}
+            </select>
+            <button disabled={Boolean(busy) || searching || !searchDraft.trim()} type="submit">
+              {searching ? 'Searching…' : 'Search'}
+            </button>
+            {searchResult && (
+              <button
+                className="library-search-clear"
+                onClick={() => {
+                  setSearchDraft('')
+                  clearSearch()
+                }}
+                type="button"
+              >
+                Clear
+              </button>
+            )}
+
+            {searchResult && (
+              <div className="library-search-results">
+                <p className="library-search-summary">
+                  {searchResult.hits.length === 0
+                    ? `No sources match "${searchResult.query}".`
+                    : `${searchResult.hits.length} source${
+                        searchResult.hits.length !== 1 ? 's' : ''
+                      } for "${searchResult.query}"`}
+                  {/* Say when ranking was literal, so a weak result set is not
+                      mistaken for an empty library. */}
+                  {searchResult.mode === 'literal' && (
+                    <span className="library-search-mode">
+                      name matching only — install an embedding model for meaning-based
+                      search
+                    </span>
+                  )}
+                </p>
+                <ul>
+                  {searchResult.hits.map((hit) => (
+                    <li key={hit.captureId}>
+                      <button
+                        onClick={() => {
+                          void openSearchHit(hit)
+                        }}
+                        type="button"
+                      >
+                        <span className="library-search-hit-head">
+                          <strong>{cleanTitle(hit.title)}</strong>
+                          <span className="library-search-score">{Math.round(hit.score)}%</span>
+                        </span>
+                        <span className="library-search-hit-meta">
+                          {hit.host} · {hit.collectionName} · {formatDate(hit.capturedAt)}
+                          {hit.chunkMatches > 1 ? ` · ${hit.chunkMatches} passages` : ''}
+                        </span>
+                        <span className="library-search-excerpt">{hit.excerpt}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </form>
+        )}
+
+        {collections.length > 0 && (
+          <form
+            className="hub-link-capture"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const url = linkDraft.trim()
+              const target = linkTargetId || collections[0].id
+              if (!url) return
+              void captureLink(url, target).then(() => setLinkDraft(''))
+            }}
+          >
+            <input
+              aria-label="Link to capture"
+              disabled={capturingLink || Boolean(busy)}
+              onChange={(event) => setLinkDraft(event.target.value)}
+              placeholder="Paste a link to capture without opening it…"
+              type="text"
+              value={linkDraft}
+            />
+            <select
+              aria-label="Capture into hub"
+              disabled={capturingLink || Boolean(busy)}
+              onChange={(event) => setLinkTargetId(event.target.value)}
+              value={linkTargetId || collections[0].id}
+            >
+              {collections.map((collection) => (
+                <option key={collection.id} value={collection.id}>
+                  {collection.name}
+                </option>
+              ))}
+            </select>
+            <button disabled={capturingLink || Boolean(busy) || !linkDraft.trim()} type="submit">
+              {capturingLink ? 'Capturing…' : 'Capture Link'}
+            </button>
+            {openTabCount > 0 && (
+              <button
+                className="hub-link-capture-tabs"
+                disabled={capturingLink || Boolean(busy)}
+                onClick={() => {
+                  void captureOpenTabs(linkTargetId || collections[0].id)
+                }}
+                type="button"
+              >
+                Capture {openTabCount} open tab{openTabCount !== 1 ? 's' : ''}
+              </button>
+            )}
+            <small>Or drag a tab or link onto a hub below.</small>
+          </form>
+        )}
 
         {collections.length === 0 ? (
           <div className="empty-state">
@@ -428,14 +621,16 @@ export function Dashboard({
                   }`}
                   draggable
                   onDragEnter={(event) => {
-                    if (!canDropCapture && !canDropCollection) return
+                    const canDropLink = isLinkDrag(event.dataTransfer.types)
+                    if (!canDropCapture && !canDropCollection && !canDropLink) return
                     event.preventDefault()
                     setDragOverCollectionId(collection.id)
                   }}
                   onDragOver={(event) => {
-                    if (!canDropCapture && !canDropCollection) return
+                    const canDropLink = isLinkDrag(event.dataTransfer.types)
+                    if (!canDropCapture && !canDropCollection && !canDropLink) return
                     event.preventDefault()
-                    event.dataTransfer.dropEffect = 'move'
+                    event.dataTransfer.dropEffect = canDropLink ? 'copy' : 'move'
                   }}
                   onDragLeave={(event) => {
                     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
@@ -456,6 +651,19 @@ export function Dashboard({
                   onDrop={async (event) => {
                     event.preventDefault()
                     setDragOverCollectionId('')
+
+                    // A dragged tab chip or an external link becomes a new capture.
+                    // Checked before the internal branches so a link drop is never
+                    // mistaken for a reorder.
+                    if (isLinkDrag(event.dataTransfer.types)) {
+                      const url = readDroppedLink(event.dataTransfer)
+                      if (url) {
+                        setOpenCollectionId(collection.id)
+                        await captureLink(url, collection.id)
+                      }
+                      return
+                    }
+
                     const collectionId = event.dataTransfer.getData(
                       'application/x-aether-collection'
                     )

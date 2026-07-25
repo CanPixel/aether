@@ -23,6 +23,9 @@ import {
   HubShortcutSummary,
   IcebergItem,
   IcebergResult,
+  LibraryExportResult,
+  LibrarySearchHit,
+  LibrarySearchResult,
   ModelDownloadChoice,
   ModelDownloadProgress,
   SearchEngineId,
@@ -60,6 +63,7 @@ import { HAS_NATIVE_TAB_WEBVIEWS, IS_ANDROID } from './utils/platform'
 import {
   ChevronDown,
   ChevronUp,
+  HardDriveDownload,
   SearchIcon,
   Snowflake,
   Waves,
@@ -409,6 +413,11 @@ function App(): React.JSX.Element {
   })
   const [updateCheck, setUpdateCheck] = useState<UpdateCheckResult | null>(null)
   const [updateChecking, setUpdateChecking] = useState(false)
+  const [capturingLink, setCapturingLink] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [searchResult, setSearchResult] = useState<LibrarySearchResult | null>(null)
+  const [exportingLibrary, setExportingLibrary] = useState(false)
+  const [libraryExport, setLibraryExport] = useState<LibraryExportResult | null>(null)
   const [dashboardOpen, setDashboardOpen] = useState(true)
   const [workspaceMode, setWorkspaceMode] = useState<'dashboard' | 'crystallizer' | 'flow' | 'air'>(
     'dashboard'
@@ -712,6 +721,89 @@ function App(): React.JSX.Element {
       if (!options?.quiet) setNotice(getErrorMessage(error))
     } finally {
       if (!options?.quiet) setUpdateChecking(false)
+    }
+  }, [])
+
+  const searchLibrary = useCallback(
+    async (query: string, collectionId?: string): Promise<void> => {
+      setSearching(true)
+      setNotice(null)
+      try {
+        setSearchResult(await window.aether.search.library({ query, collectionId }))
+      } catch (error) {
+        setNotice(getErrorMessage(error))
+      } finally {
+        setSearching(false)
+      }
+    },
+    []
+  )
+
+  const clearSearch = useCallback((): void => setSearchResult(null), [])
+
+  const captureLink = useCallback(
+    async (url: string, collectionId: string): Promise<void> => {
+      setCapturingLink(true)
+      setNotice(null)
+      try {
+        const result = await window.aether.capture.url({ collectionId, url })
+        await refreshCollections(collectionId)
+        setNotice(`Captured "${result.title}" into ${result.collectionName}.`)
+      } catch (error) {
+        setNotice(getErrorMessage(error))
+      } finally {
+        setCapturingLink(false)
+      }
+    },
+    [refreshCollections]
+  )
+
+  const captureOpenTabs = useCallback(
+    async (collectionId: string): Promise<void> => {
+      // Start-page tabs have no web URL to fetch, so they are not offered.
+      const urls = tabs
+        .map((tab) => tab.url)
+        .filter((url) => url && url !== START_PAGE_URL && !url.startsWith('aether://'))
+      if (urls.length === 0) {
+        setNotice('No open tabs point at a web page yet.')
+        return
+      }
+
+      setCapturingLink(true)
+      setNotice(null)
+      try {
+        const result = await window.aether.capture.urls({ collectionId, urls })
+        await refreshCollections(collectionId)
+        const saved = `Captured ${result.captured.length} of ${urls.length} tabs into ${result.collectionName}.`
+        setNotice(
+          result.failures.length > 0
+            ? `${saved} Skipped: ${result.failures.map((item) => item.reason).join(' ')}`
+            : saved
+        )
+      } catch (error) {
+        setNotice(getErrorMessage(error))
+      } finally {
+        setCapturingLink(false)
+      }
+    },
+    [refreshCollections, tabs]
+  )
+
+  const exportLibrary = useCallback(async (): Promise<void> => {
+    setExportingLibrary(true)
+    setNotice(null)
+    try {
+      const result = await window.aether.system.exportLibrary()
+      setLibraryExport(result)
+      setNotice(
+        `Exported ${result.captureCount} sources (${formatExportSize(result.byteSize)}) to ${
+          result.path
+        }`
+      )
+    } catch (error) {
+      setNotice(getErrorMessage(error))
+    } finally {
+      setExportingLibrary(false)
     }
   }, [])
 
@@ -1465,6 +1557,11 @@ function App(): React.JSX.Element {
     setDashboardOpen(false)
   }
 
+  async function openSearchHit(hit: LibrarySearchHit): Promise<void> {
+    await createTab({ url: hit.url })
+    setDashboardOpen(false)
+  }
+
   async function openFlowSource(node: FlowGraphNode): Promise<void> {
     if (!node.url) return
     await createTab({ url: node.url })
@@ -1985,7 +2082,18 @@ function App(): React.JSX.Element {
   const dashboardNode = (
     <Dashboard
       busy={busy}
+      searchResult={searchResult}
+      searching={searching}
+      searchLibrary={searchLibrary}
+      clearSearch={clearSearch}
+      openSearchHit={openSearchHit}
       capturesByCollection={capturesByCollection}
+      capturingLink={capturingLink}
+      captureLink={captureLink}
+      captureOpenTabs={captureOpenTabs}
+      openTabCount={
+        tabs.filter((tab) => tab.url && !tab.url.startsWith('aether://')).length
+      }
       collections={collections}
       deleteCapture={deleteCapture}
       deleteSavedIceberg={deleteSavedIceberg}
@@ -2049,12 +2157,15 @@ function App(): React.JSX.Element {
       {settingsOpen && (
         <SettingsModal
           busy={busy}
+          exportingLibrary={exportingLibrary}
+          libraryExport={libraryExport}
           settings={settings}
           updateCheck={updateCheck}
           updateChecking={updateChecking}
           onClose={closeSettings}
           onDefaultSearchEngineChange={updateDefaultSearchEngine}
           onDeveloperModeChange={updateDeveloperMode}
+          onExportLibrary={exportLibrary}
           onCheckForUpdates={() => checkForUpdates()}
           onOpenUpdateRelease={openUpdateRelease}
           onUpdateAutoCheck={updateAutoCheck}
@@ -2520,6 +2631,13 @@ function FindBar({
   )
 }
 
+function formatExportSize(bytes: number): string {
+  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
+  if (bytes >= 1_000) return `${Math.round(bytes / 1_000)} KB`
+  return `${bytes} B`
+}
+
 function formatSettingsDate(value?: string): string {
   if (!value) return 'Never'
   const date = new Date(value)
@@ -2541,6 +2659,8 @@ function updateStatusLabel(updateCheck: UpdateCheckResult | null): string {
 
 function SettingsModal({
   busy,
+  exportingLibrary,
+  libraryExport,
   settings,
   updateCheck,
   updateChecking,
@@ -2548,11 +2668,14 @@ function SettingsModal({
   onCheckForUpdates,
   onDefaultSearchEngineChange,
   onDeveloperModeChange,
+  onExportLibrary,
   onOpenUpdateRelease,
   onUpdateAutoCheck,
   onOpenModelSetup
 }: {
   busy: string | null
+  exportingLibrary: boolean
+  libraryExport: LibraryExportResult | null
   settings: AppSettings
   updateCheck: UpdateCheckResult | null
   updateChecking: boolean
@@ -2560,6 +2683,7 @@ function SettingsModal({
   onCheckForUpdates: () => Promise<void>
   onDefaultSearchEngineChange: (value: SearchEngineId) => Promise<void>
   onDeveloperModeChange: (value: boolean) => Promise<void>
+  onExportLibrary: () => Promise<void>
   onOpenUpdateRelease: () => Promise<void>
   onUpdateAutoCheck: (value: boolean) => Promise<void>
   onOpenModelSetup: () => Promise<void>
@@ -2686,6 +2810,32 @@ function SettingsModal({
               type="button"
             >
               Open Model Setup
+            </button>
+          </div>
+
+          <div className="settings-field settings-model-setup-field">
+            <div className="settings-model-setup-copy">
+              <HardDriveDownload size={28} style={{ color: 'var(--accent-strong)' }} />
+              <span>
+                <strong>Library backup</strong>
+                <small>
+                  {libraryExport
+                    ? `Last export: ${libraryExport.captureCount} sources, ${formatExportSize(
+                        libraryExport.byteSize
+                      )} — ${libraryExport.path}`
+                    : 'ÆTHER keeps no cloud copy. Save a snapshot of your hubs, sources, and maps.'}
+                </small>
+              </span>
+            </div>
+            <button
+              className="model-setup-button"
+              disabled={Boolean(busy) || exportingLibrary}
+              onClick={() => {
+                void onExportLibrary()
+              }}
+              type="button"
+            >
+              {exportingLibrary ? 'Exporting…' : 'Export Library'}
             </button>
           </div>
 

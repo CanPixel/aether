@@ -71,6 +71,8 @@ jobs:
 
       - run: bun install --frozen-lockfile
       - run: bun run typecheck:web
+      # Unit tests are platform-independent, so one runner is enough.
+      - run: bun run test
       - run: bun run tauri build --bundles deb,appimage
       - run: scripts/normalize-deb-package.sh src-tauri/target/release/bundle/deb/*.deb
 

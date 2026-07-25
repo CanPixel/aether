@@ -36,6 +36,11 @@ use tokio::task;
 use url::Url;
 
 const CHUNKS_TABLE: &str = "chunks";
+// Every on-disk store is written temp-then-rename, keeping the previous good copy
+// beside it. See write_bytes_atomically / read_json_or_default.
+const BACKUP_SUFFIX: &str = ".bak";
+const TEMP_WRITE_SUFFIX: &str = ".tmp";
+const LIBRARY_EXPORT_DIR: &str = "aether-backups";
 #[cfg(desktop)]
 const SIDEBAR_WIDTH: f64 = 76.0;
 #[cfg(desktop)]
@@ -286,6 +291,8 @@ struct DataPaths {
     air_exports_path: PathBuf,
     chunks_path: PathBuf,
     models_path: PathBuf,
+    // User-owned library snapshots (see aether_system_export_library).
+    exports_path: PathBuf,
 }
 
 #[derive(Clone)]
@@ -934,6 +941,73 @@ struct CaptureCurrentPageInput {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SearchLibraryInput {
+    query: String,
+    // None searches every hub.
+    #[serde(default)]
+    collection_id: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibrarySearchHit {
+    capture_id: String,
+    collection_id: String,
+    collection_name: String,
+    title: String,
+    url: String,
+    host: String,
+    captured_at: String,
+    excerpt: String,
+    // 0-100 display score, not raw cosine distance.
+    score: f64,
+    chunk_matches: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibrarySearchResult {
+    query: String,
+    hits: Vec<LibrarySearchHit>,
+    // "semantic" when an embedding model ranked the results, "literal" when it fell
+    // back to substring matching so the UI can say which happened.
+    mode: String,
+    searched_chunks: usize,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CaptureUrlInput {
+    collection_id: String,
+    url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CaptureUrlsInput {
+    collection_id: String,
+    urls: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BulkCaptureFailure {
+    url: String,
+    reason: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BulkCaptureResult {
+    captured: Vec<CaptureSummary>,
+    collection_name: String,
+    failures: Vec<BulkCaptureFailure>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct MoveCaptureInput {
     capture_id: String,
     collection_id: String,
@@ -1004,6 +1078,17 @@ struct PartialBrowserSettings {
 #[serde(rename_all = "camelCase")]
 struct PartialUpdateSettings {
     auto_check: Option<bool>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryExportResult {
+    path: String,
+    exported_at: String,
+    files: Vec<String>,
+    capture_count: usize,
+    chunk_count: usize,
+    byte_size: u64,
 }
 
 #[derive(Serialize)]
@@ -1175,6 +1260,91 @@ impl Default for IcebergData {
 #[serde(rename_all = "camelCase")]
 struct ChunkRecord {
     id: String,
+    // Vectors live in the binary sidecar, not in this JSON. Serializing 1024 f32s as
+    // decimal text cost ~12 KB per chunk and forced a full rewrite of every vector on
+    // every capture; `vector_slot` is the fixed-stride index into `chunks.vec`.
+    #[serde(skip)]
+    vector: Vec<f32>,
+    #[serde(default)]
+    vector_slot: u64,
+    text: String,
+    collection_id: String,
+    capture_id: String,
+    title: String,
+    url: String,
+    app_id: String,
+    captured_at: String,
+    chunk_index: usize,
+}
+
+const VECTOR_STORE_VERSION: u8 = 2;
+// Reclaim dead slots only once they dominate the file, so routine deletes stay O(1)
+// instead of triggering a full rewrite each time.
+const VECTOR_COMPACTION_MIN_SLOTS: u64 = 512;
+const VECTOR_COMPACTION_DEAD_RATIO: f64 = 0.5;
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VectorStoreData {
+    version: u8,
+    // Embedding width, learned from the first vector stored. Fixes the sidecar stride.
+    #[serde(default)]
+    dim: usize,
+    // Monotonic slot allocator. Counts every slot ever handed out, including slots
+    // whose chunk was later deleted, so appends always land past live data.
+    #[serde(default)]
+    next_slot: u64,
+    chunks: Vec<ChunkRecord>,
+}
+
+impl Default for VectorStoreData {
+    fn default() -> Self {
+        Self {
+            version: VECTOR_STORE_VERSION,
+            dim: 0,
+            next_slot: 0,
+            chunks: Vec::new(),
+        }
+    }
+}
+
+impl VectorStoreData {
+    // Single place that hands out vector slots, so no caller can append a chunk whose
+    // slot does not match its position in the sidecar.
+    fn push_chunks(&mut self, records: impl IntoIterator<Item = ChunkRecord>) {
+        for mut record in records {
+            if record.vector.is_empty() {
+                continue;
+            }
+            if self.dim == 0 {
+                self.dim = record.vector.len();
+            }
+            if record.vector.len() != self.dim {
+                eprintln!(
+                    "aether: skipping chunk {} with {} dims (store is {})",
+                    record.id,
+                    record.vector.len(),
+                    self.dim
+                );
+                continue;
+            }
+            record.vector_slot = self.next_slot;
+            self.next_slot += 1;
+            self.chunks.push(record);
+        }
+    }
+}
+
+// Vectors sit next to the metadata as `chunks.vec`.
+fn vector_data_path(json_path: &Path) -> PathBuf {
+    json_path.with_extension("vec")
+}
+
+// v1 stored vectors inline as JSON numbers. Kept only to migrate existing installs.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyChunkRecord {
+    id: String,
     vector: Vec<f32>,
     text: String,
     collection_id: String,
@@ -1186,19 +1356,10 @@ struct ChunkRecord {
     chunk_index: usize,
 }
 
-#[derive(Serialize, Deserialize)]
-struct VectorStoreData {
-    version: u8,
-    chunks: Vec<ChunkRecord>,
-}
-
-impl Default for VectorStoreData {
-    fn default() -> Self {
-        Self {
-            version: 1,
-            chunks: Vec::new(),
-        }
-    }
+#[derive(Deserialize)]
+struct LegacyVectorStoreData {
+    #[serde(default)]
+    chunks: Vec<LegacyChunkRecord>,
 }
 
 struct CapturedPage {
@@ -1229,6 +1390,7 @@ impl Backend {
                 settings_path: app_data_dir.join("aether-settings").join("settings.json"),
                 icebergs_path: app_data_dir.join("aether-icebergs").join("icebergs.json"),
                 air_exports_path: app_data_dir.join("aether-air"),
+                exports_path: app_data_dir.join(LIBRARY_EXPORT_DIR),
                 models_path,
             },
             tabs: Mutex::new(TabState::new()),
@@ -2767,10 +2929,13 @@ pub fn run() {
             aether_collections_delete,
             aether_collections_captures,
             aether_capture_current_page,
+            aether_capture_url,
+            aether_capture_urls,
             aether_capture_move,
             aether_capture_delete,
             aether_capture_suggest_hub,
             aether_search_collection,
+            aether_search_library,
             aether_semantic_trail_generate,
             aether_flow_graph,
             aether_air_prepare,
@@ -2792,6 +2957,7 @@ pub fn run() {
             aether_system_update_models,
             aether_system_check_for_update,
             aether_system_download_models,
+            aether_system_export_library,
             aether_system_open_external_url,
             aether_layout_set_panel_collapsed,
             aether_layout_set_modal_overlay_open,
@@ -3453,20 +3619,38 @@ async fn aether_collections_captures(
     Ok(captures)
 }
 
+// Strict counterpart to normalize_url: capture must never silently turn a typo into
+// a search-engine URL and then index the results page. Bare hosts are still
+// accepted, since that is how people paste links.
+fn capture_target_url(raw: &str) -> Cmd<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("Enter a web address to capture.".to_string());
+    }
+    let lowered = trimmed.to_ascii_lowercase();
+    let candidate = if lowered.starts_with("http://") || lowered.starts_with("https://") {
+        trimmed.to_string()
+    } else if lowered.contains("://") {
+        return Err("Only http and https pages can be captured.".to_string());
+    } else if !trimmed.contains(char::is_whitespace) && trimmed.contains('.') {
+        format!("https://{trimmed}")
+    } else {
+        return Err(format!("\"{trimmed}\" is not a web address."));
+    };
+    let parsed =
+        Url::parse(&candidate).map_err(|_| format!("\"{trimmed}\" is not a web address."))?;
+    if parsed.host_str().unwrap_or_default().is_empty() {
+        return Err(format!("\"{trimmed}\" is not a web address."));
+    }
+    Ok(parsed.to_string())
+}
+
 #[tauri::command]
 async fn aether_capture_current_page(
     app: AppHandle,
     state: State<'_, Backend>,
     input: CaptureCurrentPageInput,
 ) -> Cmd<CaptureResult> {
-    let settings = load_settings(&state.paths.settings_path).await?;
-    let mut library = load_library(&state.paths.library_path).await?;
-    let collection = library
-        .collections
-        .iter()
-        .find(|collection| collection.id == input.collection_id)
-        .cloned()
-        .ok_or_else(|| "Collection not found.".to_string())?;
     emit_capture_progress(&app, "Reading current page", None, None);
     let active_tab = {
         let tabs = lock_tabs(&state)?;
@@ -3477,8 +3661,94 @@ async fn aether_capture_current_page(
             .cloned()
             .ok_or_else(|| "No active browser tab.".to_string())?
     };
+    let app_id = active_tab.app_id.clone();
     let captured = extract_readable_active_page(&state, &active_tab).await?;
-    emit_capture_progress(&app, "Chunking readable text", None, None);
+    capture_page_into_collection(&app, &state, &input.collection_id, captured, &app_id).await
+}
+
+// Captures a page ÆTHER never had to load. This is what lets sources arrive from a
+// pasted link, a dropped link, or a batch of open tabs instead of only from the
+// active tab, so the library can grow without the app being the default browser.
+#[tauri::command]
+async fn aether_capture_url(
+    app: AppHandle,
+    state: State<'_, Backend>,
+    input: CaptureUrlInput,
+) -> Cmd<CaptureResult> {
+    let target = capture_target_url(&input.url)?;
+    emit_capture_progress(&app, "Fetching page", None, None);
+    let captured = extract_readable_page(&state.client, &target).await?;
+    capture_page_into_collection(&app, &state, &input.collection_id, captured, "browser").await
+}
+
+// Bulk sibling of aether_capture_url. One bad link in a batch must not discard the
+// pages that did work, so failures are reported per URL instead of aborting.
+#[tauri::command]
+async fn aether_capture_urls(
+    app: AppHandle,
+    state: State<'_, Backend>,
+    input: CaptureUrlsInput,
+) -> Cmd<BulkCaptureResult> {
+    if input.urls.is_empty() {
+        return Err("No links to capture.".to_string());
+    }
+    let collection = get_collection(&state.paths.library_path, &input.collection_id).await?;
+
+    let total = input.urls.len();
+    let mut captured = Vec::new();
+    let mut failures = Vec::new();
+
+    for (index, raw_url) in input.urls.iter().enumerate() {
+        emit_capture_progress(
+            &app,
+            &format!("Capturing link {} of {total}", index + 1),
+            Some(index),
+            Some(total),
+        );
+        let outcome = async {
+            let target = capture_target_url(raw_url)?;
+            let page = extract_readable_page(&state.client, &target).await?;
+            capture_page_into_collection(&app, &state, &input.collection_id, page, "browser").await
+        }
+        .await;
+
+        match outcome {
+            Ok(result) => captured.push(result.capture),
+            Err(reason) => failures.push(BulkCaptureFailure {
+                url: raw_url.clone(),
+                reason,
+            }),
+        }
+    }
+
+    emit_capture_progress(&app, "Finished capturing links", Some(total), Some(total));
+
+    Ok(BulkCaptureResult {
+        captured,
+        collection_name: collection.name,
+        failures,
+    })
+}
+
+// Shared tail of every capture path: chunk, embed, store vectors, update the
+// library manifest. Kept in one place so the fetch-based captures cannot drift
+// from the active-tab capture.
+async fn capture_page_into_collection(
+    app: &AppHandle,
+    state: &State<'_, Backend>,
+    collection_id: &str,
+    captured: CapturedPage,
+    app_id: &str,
+) -> Cmd<CaptureResult> {
+    let settings = load_settings(&state.paths.settings_path).await?;
+    let mut library = load_library(&state.paths.library_path).await?;
+    let collection = library
+        .collections
+        .iter()
+        .find(|collection| collection.id == collection_id)
+        .cloned()
+        .ok_or_else(|| "Collection not found.".to_string())?;
+    emit_capture_progress(app, "Chunking readable text", None, None);
     let captured_key = normalize_capture_url_key(&captured.url);
     if library.captures.iter().any(|capture| {
         capture.collection_id == collection.id
@@ -3490,16 +3760,16 @@ async fn aether_capture_current_page(
     let (chunk_size, chunk_overlap) = capture_chunk_settings(&state.paths, &settings);
     let chunks = split_text(&captured.text, chunk_size, chunk_overlap);
     if chunks.is_empty() {
-        return Err("No readable text found on the current page.".to_string());
+        return Err("No readable text found on that page.".to_string());
     }
     emit_capture_progress(
-        &app,
+        app,
         &format!("Embedding {} chunks", chunks.len()),
         Some(0),
         Some(chunks.len()),
     );
     let embeddings = local_embed_with_progress(
-        &state,
+        state,
         &settings,
         chunks.clone(),
         Some(EmbeddingProgress {
@@ -3514,7 +3784,7 @@ async fn aether_capture_current_page(
         );
     }
     emit_capture_progress(
-        &app,
+        app,
         "Saving capture",
         Some(chunks.len()),
         Some(chunks.len()),
@@ -3533,13 +3803,13 @@ async fn aether_capture_current_page(
             capture_id: capture_id.clone(),
             title: captured.title.clone(),
             url: captured.url.clone(),
-            app_id: active_tab.app_id.clone(),
+            app_id: app_id.to_string(),
             captured_at: captured_at.clone(),
             chunk_index: index,
         })
         .collect::<Vec<_>>();
 
-    with_vectors_mut(&state, |vectors| {
+    with_vectors_mut(state, |vectors| {
         vectors.chunks.extend(records.iter().cloned());
     })
     .await?;
@@ -3549,7 +3819,7 @@ async fn aether_capture_current_page(
         collection_id: collection.id.clone(),
         title: captured.title,
         url: captured.url,
-        app_id: active_tab.app_id,
+        app_id: app_id.to_string(),
         captured_at,
         chunk_count: records.len(),
         metadata: None,
@@ -4111,6 +4381,87 @@ async fn aether_system_download_models(
     system_status(&state).await
 }
 
+// ÆTHER keeps no cloud copy, so a user-owned export is the only real backup. This
+// snapshots every store into one timestamped folder the user can copy anywhere.
+#[tauri::command]
+async fn aether_system_export_library(
+    app: AppHandle,
+    state: State<'_, Backend>,
+) -> Cmd<LibraryExportResult> {
+    let paths = &state.paths;
+    let exported_at = now();
+    let folder_name = format!("aether-export-{}", exported_at.replace(':', "-"));
+    let target_dir = paths.exports_path.join(&folder_name);
+    tokio::fs::create_dir_all(&target_dir)
+        .await
+        .map_err(|error| error.to_string())?;
+
+    let sources = [
+        (&paths.library_path, "library.json"),
+        (&paths.chunks_path, "chunks.json"),
+        (&paths.settings_path, "settings.json"),
+        (&paths.icebergs_path, "icebergs.json"),
+    ];
+
+    let mut files = Vec::new();
+    let mut byte_size = 0_u64;
+    for (source, name) in sources {
+        if !tokio::fs::try_exists(source).await.unwrap_or(false) {
+            continue;
+        }
+        let copied = tokio::fs::copy(source, target_dir.join(name))
+            .await
+            .map_err(|error| format!("Could not export {name}: {error}"))?;
+        byte_size += copied;
+        files.push(name.to_string());
+    }
+
+    if files.is_empty() {
+        // Leaving an empty folder behind would look like a successful export.
+        let _ = tokio::fs::remove_dir(&target_dir).await;
+        return Err("There is nothing to export yet.".to_string());
+    }
+
+    let library = load_library(&paths.library_path).await.unwrap_or_default();
+    let capture_count = library.captures.len();
+    let chunk_count = library
+        .collections
+        .iter()
+        .map(|collection| collection.chunk_count)
+        .sum::<usize>();
+
+    let manifest = serde_json::json!({
+        "app": "aether",
+        "appVersion": app.package_info().version.to_string(),
+        "exportedAt": exported_at,
+        "files": files,
+        "captureCount": capture_count,
+        "chunkCount": chunk_count,
+        "collectionCount": library.collections.len(),
+    });
+    let manifest_raw =
+        serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;
+    tokio::fs::write(target_dir.join("manifest.json"), format!("{manifest_raw}\n"))
+        .await
+        .map_err(|error| error.to_string())?;
+    files.push("manifest.json".to_string());
+
+    // Opening the folder is the expected payoff of an explicit export click, but a
+    // desktop without a file manager should not fail the export.
+    if let Err(error) = app.opener().reveal_item_in_dir(&target_dir) {
+        eprintln!("aether: exported but could not reveal folder: {error}");
+    }
+
+    Ok(LibraryExportResult {
+        path: target_dir.display().to_string(),
+        exported_at,
+        files,
+        capture_count,
+        chunk_count,
+        byte_size,
+    })
+}
+
 #[tauri::command(rename_all = "camelCase")]
 fn aether_system_open_external_url(app: AppHandle, url: String) -> Cmd<()> {
     let parsed = Url::parse(url.trim()).map_err(|_| "Invalid release URL.".to_string())?;
@@ -4225,6 +4576,151 @@ async fn search_collection(
             .collect::<Vec<_>>()
     })
     .await
+}
+
+// Library search groups by capture, not by chunk. The chunk-level results that
+// power retrieval are the wrong shape for a person: eight hits from one long page
+// reads as eight sources. One row per source, with its best-matching passage and a
+// count of how many passages matched, is what someone scanning results wants.
+async fn search_library(
+    state: &State<'_, Backend>,
+    input: SearchLibraryInput,
+) -> Cmd<LibrarySearchResult> {
+    let query = input.query.trim().to_string();
+    if query.is_empty() {
+        return Ok(LibrarySearchResult {
+            query,
+            hits: Vec::new(),
+            mode: "semantic".to_string(),
+            searched_chunks: 0,
+        });
+    }
+
+    let library = load_library(&state.paths.library_path).await?;
+    let collection_names = library
+        .collections
+        .iter()
+        .map(|collection| (collection.id.clone(), collection.name.clone()))
+        .collect::<HashMap<_, _>>();
+    if let Some(collection_id) = input.collection_id.as_deref() {
+        get_collection(&state.paths.library_path, collection_id).await?;
+    }
+
+    let settings = load_settings(&state.paths.settings_path).await?;
+    let limit = input.limit.unwrap_or(20).clamp(1, 60);
+
+    // Without an embedding model there is nothing to compare vectors against, so
+    // fall back to literal matching rather than failing. Search staying usable with
+    // no models installed is the difference between a browsable library and a
+    // library you can only guess at.
+    let query_vector = local_embed_query(state, &settings, query.clone()).await.ok();
+    let mode = if query_vector.is_some() {
+        "semantic"
+    } else {
+        "literal"
+    };
+    let needle = query.to_lowercase();
+
+    let (mut hits, searched_chunks) = with_vectors_read(state, |vectors| {
+        let scoped = vectors.chunks.iter().filter(|chunk| {
+            // map_or rather than is_none_or: the latter needs Rust 1.82 and this
+            // crate declares MSRV 1.77.2.
+            input
+                .collection_id
+                .as_deref()
+                .map_or(true, |id| chunk.collection_id == id)
+        });
+
+        let mut best: HashMap<String, LibrarySearchHit> = HashMap::new();
+        let mut examined = 0_usize;
+
+        for chunk in scoped {
+            examined += 1;
+            let score = match query_vector.as_ref() {
+                Some(vector) => semantic_score_from_distance(cosine_distance(vector, &chunk.vector)),
+                None => literal_match_score(&needle, chunk),
+            };
+            if score <= 0.0 {
+                continue;
+            }
+
+            match best.get_mut(&chunk.capture_id) {
+                Some(existing) => {
+                    existing.chunk_matches += 1;
+                    if score > existing.score {
+                        existing.score = score;
+                        existing.excerpt = semantic_trail_excerpt(&chunk.text, 240);
+                    }
+                }
+                None => {
+                    best.insert(
+                        chunk.capture_id.clone(),
+                        LibrarySearchHit {
+                            capture_id: chunk.capture_id.clone(),
+                            collection_id: chunk.collection_id.clone(),
+                            collection_name: collection_names
+                                .get(&chunk.collection_id)
+                                .cloned()
+                                .unwrap_or_else(|| "Unknown hub".to_string()),
+                            title: chunk.title.clone(),
+                            url: chunk.url.clone(),
+                            host: get_tab_host(&chunk.url),
+                            captured_at: chunk.captured_at.clone(),
+                            excerpt: semantic_trail_excerpt(&chunk.text, 240),
+                            score,
+                            chunk_matches: 1,
+                        },
+                    );
+                }
+            }
+        }
+
+        (best.into_values().collect::<Vec<_>>(), examined)
+    })
+    .await?;
+
+    hits.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| right.captured_at.cmp(&left.captured_at))
+    });
+    hits.truncate(limit);
+
+    Ok(LibrarySearchResult {
+        query,
+        hits,
+        mode: mode.to_string(),
+        searched_chunks,
+    })
+}
+
+// Literal scoring for the no-embedding-model path. Title and host matches outrank
+// body matches, because someone typing a remembered name wants that page first.
+fn literal_match_score(needle: &str, chunk: &ChunkRecord) -> f64 {
+    if needle.is_empty() {
+        return 0.0;
+    }
+    let mut score = 0.0_f64;
+    if chunk.title.to_lowercase().contains(needle) {
+        score += 70.0;
+    }
+    if chunk.url.to_lowercase().contains(needle) {
+        score += 20.0;
+    }
+    if chunk.text.to_lowercase().contains(needle) {
+        score += 25.0;
+    }
+    score.min(100.0)
+}
+
+#[tauri::command]
+async fn aether_search_library(
+    state: State<'_, Backend>,
+    input: SearchLibraryInput,
+) -> Cmd<LibrarySearchResult> {
+    search_library(&state, input).await
 }
 
 #[derive(Clone)]
@@ -6006,41 +6502,137 @@ async fn with_vectors_mut<T>(
 // Vector rows are large and machine-managed, so they are persisted as compact
 // JSON instead of the pretty format used for small user-editable stores.
 async fn save_vectors(path: &Path, data: &VectorStoreData) -> Cmd<()> {
+    let raw = serde_json::to_string(data).map_err(|error| error.to_string())?;
+    write_store_durably(path, raw.as_bytes()).await
+}
+
+fn backup_path(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(BACKUP_SUFFIX);
+    path.with_file_name(name)
+}
+
+fn temp_write_path(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(TEMP_WRITE_SUFFIX);
+    path.with_file_name(name)
+}
+
+async fn ensure_parent_dir(path: &Path) -> Cmd<()> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent)
             .await
             .map_err(|error| error.to_string())?;
     }
-    let raw = serde_json::to_string(data).map_err(|error| error.to_string())?;
-    tokio::fs::write(path, raw)
+    Ok(())
+}
+
+// Writes bytes to a sibling temp file, fsyncs it, then renames it over the target.
+// `rotate` additionally renames the previous good file to `<name>.bak` first, so a
+// crash can never leave the store both truncated and without a recoverable copy.
+//
+// Both renames are atomic within a directory, so the target is only ever the old
+// complete file or the new complete file. The gap where the target is momentarily
+// absent is covered by the backup, which `read_json_or_default` falls back to.
+async fn write_bytes_atomically(path: &Path, bytes: &[u8], rotate: bool) -> Cmd<()> {
+    ensure_parent_dir(path).await?;
+    let temp = temp_write_path(path);
+
+    // Scope the handle so it is flushed and closed before the rename.
+    {
+        let mut file = tokio::fs::File::create(&temp)
+            .await
+            .map_err(|error| error.to_string())?;
+        file.write_all(bytes)
+            .await
+            .map_err(|error| error.to_string())?;
+        // Without this the rename can land before the data does, which is exactly
+        // the truncated-store case this function exists to prevent.
+        file.sync_all().await.map_err(|error| error.to_string())?;
+    }
+
+    if rotate && tokio::fs::try_exists(path).await.unwrap_or(false) {
+        let backup = backup_path(path);
+        if let Err(error) = tokio::fs::rename(path, &backup).await {
+            // A missing backup is recoverable; failing the whole save is not.
+            eprintln!(
+                "aether: could not rotate backup for {}: {error}",
+                path.display()
+            );
+        }
+    }
+
+    tokio::fs::rename(&temp, path)
         .await
         .map_err(|error| error.to_string())
 }
 
+async fn write_store_durably(path: &Path, bytes: &[u8]) -> Cmd<()> {
+    write_bytes_atomically(path, bytes, true).await
+}
+
+// Quarantines an unparseable store instead of overwriting it. Losing a store to a
+// bug is bad; silently replacing it with a default and destroying the evidence is
+// worse, so the bad bytes are kept for manual recovery.
+async fn quarantine_unreadable_store(path: &Path) {
+    if !tokio::fs::try_exists(path).await.unwrap_or(false) {
+        return;
+    }
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".corrupt-{}", now().replace(':', "-")));
+    let target = path.with_file_name(name);
+    match tokio::fs::rename(path, &target).await {
+        Ok(()) => eprintln!(
+            "aether: kept unreadable store at {} for recovery",
+            target.display()
+        ),
+        Err(error) => eprintln!(
+            "aether: could not quarantine {}: {error}",
+            path.display()
+        ),
+    }
+}
+
+// Load order: primary store, then `.bak`, then a fresh default. A parse failure on
+// the primary is treated as corruption rather than as an error, so one bad file
+// cannot make the app permanently unopenable.
 async fn read_json_or_default<T>(path: &Path) -> Cmd<T>
 where
     T: DeserializeOwned + Default + Serialize,
 {
-    match tokio::fs::read_to_string(path).await {
-        Ok(raw) => serde_json::from_str(&raw).map_err(|error| error.to_string()),
-        Err(_) => {
-            let data = T::default();
-            save_json(path, &data).await?;
-            Ok(data)
+    if let Ok(raw) = tokio::fs::read_to_string(path).await {
+        match serde_json::from_str::<T>(&raw) {
+            Ok(value) => return Ok(value),
+            Err(error) => eprintln!(
+                "aether: {} is unreadable ({error}); trying backup",
+                path.display()
+            ),
         }
     }
+
+    let backup = backup_path(path);
+    if let Ok(raw) = tokio::fs::read_to_string(&backup).await {
+        if let Ok(value) = serde_json::from_str::<T>(&raw) {
+            eprintln!("aether: recovered {} from backup", path.display());
+            quarantine_unreadable_store(path).await;
+            // Restore without rotating: the backup we just read is the only good
+            // copy left, and rotating here would overwrite it with the bad file.
+            write_bytes_atomically(path, raw.as_bytes(), false).await?;
+            return Ok(value);
+        }
+        eprintln!("aether: backup {} is also unreadable", backup.display());
+    }
+
+    quarantine_unreadable_store(path).await;
+    let data = T::default();
+    let raw = serde_json::to_string_pretty(&data).map_err(|error| error.to_string())?;
+    write_bytes_atomically(path, format!("{raw}\n").as_bytes(), false).await?;
+    Ok(data)
 }
 
 async fn save_json<T: Serialize>(path: &Path, data: &T) -> Cmd<()> {
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|error| error.to_string())?;
-    }
     let raw = serde_json::to_string_pretty(data).map_err(|error| error.to_string())?;
-    tokio::fs::write(path, format!("{raw}\n"))
-        .await
-        .map_err(|error| error.to_string())
+    write_store_durably(path, format!("{raw}\n").as_bytes()).await
 }
 
 async fn get_collection(path: &Path, collection_id: &str) -> Cmd<CollectionSummary> {
@@ -8702,6 +9294,218 @@ fn now() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn block_on<F: std::future::Future>(future: F) -> F::Output {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime")
+            .block_on(future)
+    }
+
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            let path = env::temp_dir().join(format!("aether-store-test-{}", uuid()));
+            fs::create_dir_all(&path).expect("temp dir");
+            Self(path)
+        }
+
+        fn path(&self, name: &str) -> PathBuf {
+            self.0.join(name)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn library_marked(marker: &str) -> LibraryData {
+        let mut data = LibraryData::default();
+        data.migrated_realm_tables.push(marker.to_string());
+        data
+    }
+
+    fn marker_of(data: &LibraryData) -> Option<&str> {
+        data.migrated_realm_tables.first().map(String::as_str)
+    }
+
+    fn corrupt_count(dir: &Path) -> usize {
+        fs::read_dir(dir)
+            .expect("read temp dir")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"))
+            .count()
+    }
+
+    #[test]
+    fn store_save_rotates_previous_version_into_backup() {
+        let dir = TempDir::new();
+        let path = dir.path("library.json");
+
+        block_on(save_json(&path, &library_marked("first"))).expect("first save");
+        block_on(save_json(&path, &library_marked("second"))).expect("second save");
+
+        let primary = block_on(read_json_or_default::<LibraryData>(&path)).expect("read primary");
+        assert_eq!(marker_of(&primary), Some("second"));
+
+        let backup_raw = fs::read_to_string(backup_path(&path)).expect("backup exists");
+        let backup: LibraryData = serde_json::from_str(&backup_raw).expect("backup parses");
+        assert_eq!(marker_of(&backup), Some("first"));
+    }
+
+    #[test]
+    fn store_save_leaves_no_temp_file_behind() {
+        let dir = TempDir::new();
+        let path = dir.path("library.json");
+
+        block_on(save_json(&path, &library_marked("only"))).expect("save");
+
+        assert!(
+            !temp_write_path(&path).exists(),
+            "temp file should be renamed over the target, not left behind"
+        );
+    }
+
+    // The failure this guards against: a crash mid-save truncates the store and the
+    // user loses every capture. Recovery must be automatic and must not destroy the
+    // damaged file, so it stays available for manual inspection.
+    #[test]
+    fn store_read_recovers_from_backup_when_primary_is_truncated() {
+        let dir = TempDir::new();
+        let path = dir.path("library.json");
+
+        block_on(save_json(&path, &library_marked("good"))).expect("first save");
+        block_on(save_json(&path, &library_marked("newer"))).expect("second save");
+        // Simulate a save that was interrupted partway through.
+        fs::write(&path, "{\"version\":1,\"collec").expect("truncate primary");
+
+        let recovered = block_on(read_json_or_default::<LibraryData>(&path)).expect("recover");
+
+        assert_eq!(marker_of(&recovered), Some("good"));
+        assert_eq!(corrupt_count(&dir.0), 1, "damaged primary must be preserved");
+        // The restored primary must itself be readable on the next launch.
+        let reread = block_on(read_json_or_default::<LibraryData>(&path)).expect("reread");
+        assert_eq!(marker_of(&reread), Some("good"));
+    }
+
+    #[test]
+    fn store_read_falls_back_to_default_without_destroying_unreadable_files() {
+        let dir = TempDir::new();
+        let path = dir.path("library.json");
+
+        block_on(save_json(&path, &library_marked("good"))).expect("save");
+        block_on(save_json(&path, &library_marked("newer"))).expect("rotate");
+        fs::write(&path, "not json").expect("corrupt primary");
+        fs::write(backup_path(&path), "also not json").expect("corrupt backup");
+
+        let fresh = block_on(read_json_or_default::<LibraryData>(&path)).expect("default");
+
+        assert_eq!(marker_of(&fresh), None);
+        assert_eq!(corrupt_count(&dir.0), 1, "unreadable primary must be kept");
+    }
+
+    #[test]
+    fn store_read_seeds_a_default_when_nothing_exists_yet() {
+        let dir = TempDir::new();
+        let path = dir.path("nested").join("library.json");
+
+        let seeded = block_on(read_json_or_default::<LibraryData>(&path)).expect("seed");
+
+        assert_eq!(marker_of(&seeded), None);
+        assert!(path.exists(), "first read should create the store");
+        assert_eq!(corrupt_count(&dir.0), 0);
+    }
+
+    fn chunk_for_search(capture_id: &str, title: &str, url: &str, text: &str) -> ChunkRecord {
+        ChunkRecord {
+            id: uuid(),
+            vector: vec![0.0; 4],
+            text: text.to_string(),
+            collection_id: "hub-1".to_string(),
+            capture_id: capture_id.to_string(),
+            title: title.to_string(),
+            url: url.to_string(),
+            app_id: "browser".to_string(),
+            captured_at: "2026-07-01T00:00:00Z".to_string(),
+            chunk_index: 0,
+        }
+    }
+
+    // A remembered page name should outrank an incidental body mention, otherwise
+    // the page the user is picturing gets buried under passing references to it.
+    #[test]
+    fn literal_search_ranks_title_matches_above_body_matches() {
+        let titled = chunk_for_search("a", "Quantum mechanics", "https://example.com/a", "unrelated");
+        let mentioned =
+            chunk_for_search("b", "Cooking basics", "https://example.com/b", "quantum mechanics");
+
+        let titled_score = literal_match_score("quantum mechanics", &titled);
+        let mentioned_score = literal_match_score("quantum mechanics", &mentioned);
+
+        assert!(titled_score > mentioned_score);
+        assert!(mentioned_score > 0.0, "body matches should still be findable");
+    }
+
+    #[test]
+    fn literal_search_matches_hosts_and_ignores_misses() {
+        let chunk = chunk_for_search("a", "Augustus", "https://en.wikipedia.org/wiki/x", "body");
+
+        assert!(literal_match_score("wikipedia", &chunk) > 0.0);
+        assert_eq!(literal_match_score("nonexistent-term", &chunk), 0.0);
+        assert_eq!(literal_match_score("", &chunk), 0.0);
+    }
+
+    #[test]
+    fn literal_search_is_case_insensitive_and_capped() {
+        let chunk = chunk_for_search("a", "Augustus", "https://augustus.example", "augustus");
+
+        // Title + url + body all match; the score must stay a valid percentage.
+        assert_eq!(literal_match_score("augustus", &chunk), 100.0);
+    }
+
+    // The dangerous failure mode is silently capturing a search-results page for a
+    // typo, which would poison a hub with content the user never chose.
+    #[test]
+    fn capture_target_rejects_search_text_instead_of_guessing_a_url() {
+        assert!(capture_target_url("how do vaccines work").is_err());
+        assert!(capture_target_url("   ").is_err());
+        assert!(capture_target_url("notaurl").is_err());
+    }
+
+    #[test]
+    fn capture_target_accepts_bare_hosts_and_full_urls() {
+        assert_eq!(
+            capture_target_url("example.com/article"),
+            Ok("https://example.com/article".to_string())
+        );
+        assert_eq!(
+            capture_target_url("  https://en.wikipedia.org/wiki/Augustus  "),
+            Ok("https://en.wikipedia.org/wiki/Augustus".to_string())
+        );
+        assert_eq!(
+            capture_target_url("http://example.com"),
+            Ok("http://example.com/".to_string())
+        );
+    }
+
+    #[test]
+    fn capture_target_rejects_non_web_schemes() {
+        for raw in [
+            "file:///etc/passwd",
+            "aether://dashboard",
+            "javascript:alert(1)",
+            "ftp://example.com/x",
+        ] {
+            assert!(
+                capture_target_url(raw).is_err(),
+                "{raw} should not be capturable"
+            );
+        }
+    }
 
     #[test]
     fn answer_citation_normalizer_removes_out_of_range_markers() {

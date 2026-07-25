@@ -30,6 +30,11 @@ tokio = { version = "1", features = ["fs", "io-util", "sync", "time"] }
 url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 
+[dev-dependencies]
+# The store-durability tests drive async fs helpers, which needs a runtime. Dev
+# features are not unified into non-test builds, so this does not affect the app.
+tokio = { version = "1", features = ["fs", "io-util", "macros", "rt"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # Cargo unions features across target tables, so on macOS llama.cpp gets metal + sampler.
 llama-cpp-2 = { version = "0.1.146", default-features = false, features = ["metal"] }

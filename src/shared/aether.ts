@@ -82,6 +82,17 @@ export interface CaptureResult extends CaptureSummary {
   collectionName: string
 }
 
+export interface BulkCaptureFailure {
+  url: string
+  reason: string
+}
+
+export interface BulkCaptureResult {
+  captured: CaptureSummary[]
+  collectionName: string
+  failures: BulkCaptureFailure[]
+}
+
 export interface CaptureProgress {
   message: string
   current?: number
@@ -99,6 +110,28 @@ export interface SearchResult {
   chunkIndex: number
   text: string
   score: number
+}
+
+export interface LibrarySearchHit {
+  captureId: string
+  collectionId: string
+  collectionName: string
+  title: string
+  url: string
+  host: string
+  capturedAt: string
+  excerpt: string
+  /** 0-100 display score, not raw cosine distance. */
+  score: number
+  chunkMatches: number
+}
+
+export interface LibrarySearchResult {
+  query: string
+  hits: LibrarySearchHit[]
+  /** 'literal' when no embedding model was available to rank semantically. */
+  mode: 'semantic' | 'literal'
+  searchedChunks: number
 }
 
 export interface SemanticTrailInput {
@@ -338,6 +371,15 @@ export interface SystemStatus {
   error?: string
 }
 
+export interface LibraryExportResult {
+  path: string
+  exportedAt: string
+  files: string[]
+  captureCount: number
+  chunkCount: number
+  byteSize: number
+}
+
 export interface UpdateCheckResult {
   currentVersion: string
   checkedAt: string
@@ -442,6 +484,10 @@ export interface AetherApi {
   }
   capture: {
     currentPage(input: { collectionId: string }): Promise<CaptureResult>
+    // Captures a page ÆTHER never loaded, by fetching the URL directly.
+    url(input: { collectionId: string; url: string }): Promise<CaptureResult>
+    // Bulk sibling of url(); reports per-link failures instead of aborting.
+    urls(input: { collectionId: string; urls: string[] }): Promise<BulkCaptureResult>
     move(input: { captureId: string; collectionId: string }): Promise<CaptureSummary>
     delete(captureId: string): Promise<void>
     suggestHub(): Promise<CaptureHubSuggestion | null>
@@ -452,6 +498,12 @@ export interface AetherApi {
       query: string
       limit?: number
     }): Promise<SearchResult[]>
+    // Grouped one-row-per-source search. Omit collectionId to search every hub.
+    library(input: {
+      query: string
+      collectionId?: string
+      limit?: number
+    }): Promise<LibrarySearchResult>
   }
   semanticTrail: {
     generate(input?: SemanticTrailInput): Promise<SemanticTrailResult>
@@ -489,6 +541,8 @@ export interface AetherApi {
     updateSettings(input: Partial<AppSettings>): Promise<AppSettings>
     updateModels(input: { embeddingModel?: string; chatModel?: string }): Promise<SystemStatus>
     checkForUpdate(): Promise<UpdateCheckResult>
+    // Snapshots every local store into a timestamped folder and reveals it.
+    exportLibrary(): Promise<LibraryExportResult>
     openExternalUrl(url: string): Promise<void>
     downloadModels(input: {
       chatModels: ModelDownloadChoice[]

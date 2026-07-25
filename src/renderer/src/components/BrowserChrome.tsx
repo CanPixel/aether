@@ -212,6 +212,17 @@ export function BrowserChrome({
               tab.isActive && !dashboardOpen ? 'active' : ''
             }`}
             key={tab.id}
+            // Dragging a tab onto a Knowledge Hub on the dashboard captures it.
+            // The private MIME type is what lets the drop target tell this apart
+            // from ÆTHER's internal reorder drags.
+            draggable={Boolean(tab.url)}
+            onDragStart={(event) => {
+              if (!tab.url) return
+              event.dataTransfer.effectAllowed = 'copy'
+              event.dataTransfer.setData('application/x-aether-tab', tab.url)
+              event.dataTransfer.setData('text/uri-list', tab.url)
+              event.dataTransfer.setData('text/plain', tab.url)
+            }}
             onClick={() => onSelectTab(tab.id)}
             onContextMenu={(event) => openTabMenu(event, tab.id)}
             style={getTabStyle(tab)}

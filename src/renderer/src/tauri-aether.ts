@@ -11,6 +11,7 @@ import {
   AppSettings,
   AppSummary,
   BrowserTabSummary,
+  BulkCaptureResult,
   CaptureHubSuggestion,
   CaptureProgress,
   CaptureResult,
@@ -22,6 +23,8 @@ import {
   FlowGraphResult,
   HubShortcutSummary,
   IcebergResult,
+  LibraryExportResult,
+  LibrarySearchResult,
   MOBILE_TAB_SCROLL_EVENT,
   ModelDownloadProgress,
   NativeTabEvent,
@@ -83,12 +86,15 @@ if (isTauri) {
     },
     capture: {
       currentPage: (input) => call<CaptureResult>('aether_capture_current_page', { input }),
+      url: (input) => call<CaptureResult>('aether_capture_url', { input }),
+      urls: (input) => call<BulkCaptureResult>('aether_capture_urls', { input }),
       move: (input) => call<CaptureSummary>('aether_capture_move', { input }),
       delete: (captureId) => call<void>('aether_capture_delete', { captureId }),
       suggestHub: () => call<CaptureHubSuggestion | null>('aether_capture_suggest_hub')
     },
     search: {
-      collection: (input) => call<SearchResult[]>('aether_search_collection', { input })
+      collection: (input) => call<SearchResult[]>('aether_search_collection', { input }),
+      library: (input) => call<LibrarySearchResult>('aether_search_library', { input })
     },
     semanticTrail: {
       generate: (input) => call<SemanticTrailResult>('aether_semantic_trail_generate', { input })
@@ -123,6 +129,7 @@ if (isTauri) {
       updateSettings: (input) => call<AppSettings>('aether_system_update_settings', { input }),
       updateModels: (input) => call<SystemStatus>('aether_system_update_models', { input }),
       checkForUpdate: () => call<UpdateCheckResult>('aether_system_check_for_update'),
+      exportLibrary: () => call<LibraryExportResult>('aether_system_export_library'),
       openExternalUrl: (url) => call<void>('aether_system_open_external_url', { url }),
       downloadModels: (input) => call<SystemStatus>('aether_system_download_models', { input })
     },

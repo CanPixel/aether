@@ -295,6 +295,253 @@
   line-height: 1.25;
 }
 
+/* Library search. First thing under the section title, because finding a source you
+   already captured is the most common reason to open the dashboard. */
+.library-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.library-search input[type='search'],
+.library-search select,
+.library-search button {
+  height: 38px;
+  box-sizing: border-box;
+  line-height: 1.2;
+  font: inherit;
+  font-size: 13px;
+}
+
+.library-search input[type='search'] {
+  flex: 1 1 280px;
+  min-width: 0;
+  padding: 8px 14px;
+  border: 1px solid rgba(75, 163, 206, 0.32);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text-strong, #12304a);
+}
+
+.library-search input[type='search']::placeholder {
+  color: rgba(58, 105, 138, 0.6);
+}
+
+.library-search select {
+  flex: 0 0 auto;
+  max-width: 170px;
+  padding: 8px 10px;
+  border: 1px solid rgba(75, 163, 206, 0.3);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.library-search button {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  border: 1px solid rgba(75, 163, 206, 0.44);
+  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(238, 250, 255, 0.98), rgba(197, 232, 250, 0.94));
+  font-weight: 660;
+  color: #0e4767;
+  cursor: pointer;
+}
+
+.library-search button:hover:not(:disabled) {
+  border-color: rgba(75, 163, 206, 0.66);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(184, 227, 249, 0.98));
+}
+
+.library-search button:disabled,
+.library-search input:disabled,
+.library-search select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.library-search-results {
+  flex: 1 0 100%;
+  margin-top: 2px;
+}
+
+.library-search-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 680;
+  color: rgba(30, 79, 112, 0.9);
+}
+
+.library-search-mode {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(246, 224, 174, 0.44);
+  font-size: 10.5px;
+  font-weight: 660;
+  color: #6d4c15;
+}
+
+.library-search-results ul {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* Long result sets scroll inside the block instead of pushing the hubs off-screen. */
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.library-search-results button {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  height: auto;
+  padding: 10px 12px;
+  border: 1px solid rgba(75, 163, 206, 0.24);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(236, 247, 253, 0.8));
+  text-align: left;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.library-search-results button:hover {
+  border-color: rgba(75, 163, 206, 0.5);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(223, 243, 253, 0.94));
+}
+
+.library-search-hit-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.library-search-hit-head strong {
+  font-size: 13px;
+  color: #12304a;
+}
+
+.library-search-score {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(30, 110, 158, 0.92);
+}
+
+.library-search-hit-meta {
+  font-size: 11px;
+  font-weight: 620;
+  color: rgba(58, 105, 138, 0.78);
+}
+
+.library-search-excerpt {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: rgba(40, 74, 100, 0.82);
+}
+
+/* Capture-by-link row. Sits directly under the section title so adding a source is
+   reachable without opening a page first (paste, or drop a tab / external link on a
+   hub below). */
+.hub-link-capture {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(75, 163, 206, 0.26);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(233, 246, 253, 0.72));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* Input, select and button each compute a different intrinsic height from their
+   own font metrics, which left the row visibly ragged. Pin one height so the three
+   read as a single control group. */
+.hub-link-capture input[type='text'],
+.hub-link-capture select,
+.hub-link-capture button {
+  height: 38px;
+  box-sizing: border-box;
+  line-height: 1.2;
+}
+
+.hub-link-capture input[type='text'] {
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(75, 163, 206, 0.3);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-strong, #12304a);
+}
+
+.hub-link-capture input[type='text']::placeholder {
+  color: rgba(58, 105, 138, 0.62);
+}
+
+.hub-link-capture select {
+  flex: 0 0 auto;
+  max-width: 180px;
+  padding: 8px 10px;
+  border: 1px solid rgba(75, 163, 206, 0.3);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  font: inherit;
+  font-size: 13px;
+}
+
+.hub-link-capture button {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border: 1px solid rgba(75, 163, 206, 0.4);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(238, 250, 255, 0.98), rgba(203, 235, 250, 0.92));
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  color: #10496b;
+  cursor: pointer;
+}
+
+.hub-link-capture button:hover:not(:disabled) {
+  border-color: rgba(75, 163, 206, 0.62);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(190, 230, 249, 0.96));
+}
+
+.hub-link-capture button:disabled,
+.hub-link-capture input:disabled,
+.hub-link-capture select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hub-link-capture small {
+  flex: 1 0 100%;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(58, 105, 138, 0.72);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-link-capture button {
+    transition: none;
+  }
+}
+
 /* A single comfortably-capped column. Collapsed and expanded hubs share the same
    width, so opening one grows it in place instead of hopping to a full-width row. */
 .knowledge-band .collection-list {
