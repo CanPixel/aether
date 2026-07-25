@@ -8,8 +8,9 @@
    mean 50 tokens for one colour; one channel plus the call site's own alpha
    covers every one of them and flips the whole app with a single override.
 
-   Every light-mode channel below is the exact value it replaced, so the light
-   theme is unchanged by construction — see the `theme-tokens` test.
+   Most light-mode channels preserve the values they replaced. Text channels
+   called out below are intentionally adjusted where the rendered foreground and
+   frosted surface did not clear WCAG AA.
 
    Dark values are set in the `prefers-color-scheme` block further down, and
    `:root[data-theme]` beats both so an explicit choice always wins.
@@ -47,7 +48,8 @@
   /* --- Ink ----------------------------------------------------------------- */
   --ink-rgb: 23 36 58;
   --soft-ink-rgb: 52 71 102;
-  --muted-rgb: 113 129 154;
+  /* Secondary copy still clears WCAG AA against the palest frosted surfaces. */
+  --muted-rgb: 92 108 135;
   --faint-rgb: 157 170 190;
   --night-rgb: 16 32 51;
   --ink-deep-rgb: 8 47 73;
@@ -63,7 +65,7 @@
   --slate-light-rgb: 148 163 184;
   --slate-deep-rgb: 71 85 105;
   --slate-darkest-rgb: 51 65 85;
-  --slate-blue-rgb: 94 125 148;
+  --slate-blue-rgb: 86 117 141;
   --slate-steel-rgb: 65 97 119;
   --slate-ocean-rgb: 79 113 140;
   --slate-cool-rgb: 123 139 166;
@@ -84,7 +86,7 @@
      The identity. Most survive a dark background as-is; the few that go muddy or
      glaring are overridden in the dark block. */
   --accent-rgb: 78 184 223;
-  --accent-strong-rgb: 36 127 167;
+  --accent-strong-rgb: 30 116 156;
   --accent-deep-rgb: 15 140 194;
   --accent-vivid-rgb: 14 165 233;
   --accent-mid-rgb: 75 163 206;
@@ -149,17 +151,18 @@
      changes nothing here. */
   --text-ocean-rgb: 51 103 137;
   --text-steel-rgb: 94 132 185;
-  --text-accent-rgb: 15 140 194;
+  --text-accent-rgb: 30 116 156;
 
   /* The ink end of the ÆTHER wordmark gradients. A letterform's dark end is text,
      not a shadow, so it has to invert — left on a shadow channel it renders the
      first three letters invisible against the dark page. */
   --wordmark-ink-rgb: 0 0 0;
   --wordmark-ink-soft-rgb: 16 40 70;
+  --hero-text-rgb: 0 0 0;
 
   /* Success text on a mint badge. Two near-identical greens meaning the same
      thing were merged here, so the state reads consistently. */
-  --text-success-rgb: 43 125 100;
+  --text-success-rgb: 41 122 97;
 
   --shadow: 0 18px 55px rgb(var(--shadow-rgb) / 0.16);
   --soft-shadow: 0 10px 30px rgb(var(--shadow-soft-rgb) / 0.11);
@@ -186,18 +189,20 @@
      --surface-sky (a themed surface, which correctly inverts to navy in dark mode)
      with --accent-light/--azure (unthemed, which stay pale). The result in dark mode
      was a gradient running from near-black to pale blue with unreadable label text.
-     Light values below are byte-identical to the literals they replaced. */
+     The light endpoint is lifted enough for dark label ink to clear WCAG AA. */
   --primary-from-rgb: 224 242 254;
   --primary-from-hover-rgb: 229 248 255;
   --primary-mid-rgb: 106 193 229;
-  --primary-to-rgb: 54 122 178;
+  --primary-to-rgb: 88 180 220;
   --primary-edge-rgb: 54 122 178;
+  /* The pale light-theme gradient needs dark ink; dark mode flips this to the
+     existing frosted label colour without changing either gradient. */
+  --primary-label-rgb: 18 63 92;
   /* The dark end of the iCE Crystallize button. It previously used --ink-abyss,
      which is an *ink* channel and therefore inverts to near-white in dark mode —
      under light label text that made the button unreadable. This stays dark in
      both themes because the button is dark by design, not by theme. */
   --crystal-deep-rgb: 15 23 42;
-
 }
 
 /* ---------------------------------------------------------------------------
@@ -281,14 +286,16 @@
 
     --wordmark-ink-rgb: 214 233 250;
     --wordmark-ink-soft-rgb: 150 196 226;
-  /* Deep enough that --highlight (198 220 246) clears 4.5:1 on every stop:
+    --hero-text-rgb: 228 237 249;
+    /* Deep enough that --highlight (198 220 246) clears 4.5:1 on every stop:
      from 8.40:1, mid 4.96:1, to 7.07:1. */
-  --primary-from-rgb: 16 58 92;
-  --primary-from-hover-rgb: 22 72 112;
-  --primary-mid-rgb: 28 94 138;
-  --primary-to-rgb: 18 70 108;
-  --primary-edge-rgb: 96 168 208;
-  --crystal-deep-rgb: 10 17 30;
+    --primary-from-rgb: 16 58 92;
+    --primary-from-hover-rgb: 22 72 112;
+    --primary-mid-rgb: 28 94 138;
+    --primary-to-rgb: 18 70 108;
+    --primary-edge-rgb: 96 168 208;
+    --primary-label-rgb: 198 220 246;
+    --crystal-deep-rgb: 10 17 30;
     --text-success-rgb: 118 214 178;
     --success-rgb: 96 200 162;
     --aurora-deep-rgb: 92 198 166;
@@ -378,6 +385,7 @@
 
   --wordmark-ink-rgb: 214 233 250;
   --wordmark-ink-soft-rgb: 150 196 226;
+  --hero-text-rgb: 228 237 249;
   /* Deep enough that --highlight (198 220 246) clears 4.5:1 on every stop:
      from 8.40:1, mid 4.96:1, to 7.07:1. */
   --primary-from-rgb: 16 58 92;
@@ -385,6 +393,7 @@
   --primary-mid-rgb: 28 94 138;
   --primary-to-rgb: 18 70 108;
   --primary-edge-rgb: 96 168 208;
+  --primary-label-rgb: 198 220 246;
   --crystal-deep-rgb: 10 17 30;
   --text-success-rgb: 118 214 178;
   --success-rgb: 96 200 162;
@@ -1096,7 +1105,7 @@ button {
       rgb(var(--primary-mid-rgb)) 52%,
       rgb(var(--primary-to-rgb))
     );
-  color: rgb(var(--highlight-rgb));
+  color: rgb(var(--primary-label-rgb));
   box-shadow:
     inset 0 1px 0 rgb(var(--highlight-rgb) / 0.5),
     inset 0 -1px 0 rgb(var(--ocean-deep-rgb) / 0.18),

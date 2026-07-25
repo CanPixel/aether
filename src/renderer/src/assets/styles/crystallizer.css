@@ -92,7 +92,12 @@
   width: 1px;
   height: 30px;
   margin-left: 3px;
-  background: linear-gradient(to bottom, transparent, rgb(var(--accent-vivid-rgb) / 0.45), transparent);
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgb(var(--accent-vivid-rgb) / 0.45),
+    transparent
+  );
 }
 
 .brand-copy {
@@ -158,7 +163,7 @@
 }
 
 .crystallizer-brand-subtitle {
-  color: rgb(var(--text-accent-rgb));
+  color: rgb(var(--text-ocean-rgb));
   font-size: 9px;
   font-weight: 900;
   line-height: 1;
@@ -242,7 +247,12 @@
   white-space: nowrap;
 
   color: rgb(var(--highlight-rgb));
-  background: linear-gradient(135deg, rgb(var(--crystal-deep-rgb)), rgb(var(--marine-rgb)) 58%, rgb(var(--teal-deep-rgb)));
+  background: linear-gradient(
+    135deg,
+    rgb(var(--crystal-deep-rgb)),
+    rgb(var(--marine-rgb)) 58%,
+    rgb(var(--teal-deep-rgb))
+  );
   box-shadow:
     0 16px 34px rgb(var(--depth-rgb) / 0.24),
     0 1px 0 rgb(var(--highlight-rgb) / 0.28) inset;
@@ -257,7 +267,12 @@
 }
 
 .crystallizer-search button:hover {
-  background: linear-gradient(135deg, rgb(var(--crystal-deep-rgb)), rgb(var(--marine-rgb)) 42%, rgb(var(--teal-deep-rgb)));
+  background: linear-gradient(
+    135deg,
+    rgb(var(--crystal-deep-rgb)),
+    rgb(var(--marine-rgb)) 42%,
+    rgb(var(--teal-deep-rgb))
+  );
   box-shadow:
     0 20px 42px rgb(var(--depth-rgb) / 0.28),
     0 1px 0 rgb(var(--highlight-rgb) / 0.38) inset;
@@ -279,7 +294,11 @@
 .crystallizer-search .crystallizer-save-button:hover {
   border-color: rgb(var(--accent-deep-rgb) / 0.46);
   background:
-    linear-gradient(180deg, rgb(var(--surface-rgb) / 0.86), rgb(var(--surface-tint-cool-rgb) / 0.68)),
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-rgb) / 0.86),
+      rgb(var(--surface-tint-cool-rgb) / 0.68)
+    ),
     rgb(var(--surface-rgb) / 0.82);
   box-shadow:
     0 16px 34px rgb(var(--depth-rgb) / 0.12),
@@ -608,7 +627,11 @@
   padding: 9px 10px 9px 8px;
   background:
     radial-gradient(circle at 18% 10%, rgb(var(--surface-rgb) / 0.96), transparent 32%),
-    linear-gradient(180deg, rgb(var(--surface-rgb) / 0.9), rgb(var(--surface-tint-warm-rgb) / 0.72)),
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-rgb) / 0.9),
+      rgb(var(--surface-tint-warm-rgb) / 0.72)
+    ),
     color-mix(in srgb, var(--layer-accent) 5%, white);
   color: rgb(var(--night-rgb));
   text-align: left;
@@ -632,7 +655,11 @@
   border-left-color: var(--layer-accent);
   background:
     radial-gradient(circle at 18% 10%, rgb(var(--surface-rgb) / 1), transparent 34%),
-    linear-gradient(180deg, rgb(var(--surface-rgb) / 0.98), rgb(var(--surface-tint-warm-rgb) / 0.82)),
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-rgb) / 0.98),
+      rgb(var(--surface-tint-warm-rgb) / 0.82)
+    ),
     color-mix(in srgb, var(--layer-accent) 9%, white);
   box-shadow:
     0 18px 36px rgb(var(--depth-rgb) / 0.16),
@@ -700,7 +727,11 @@
   padding: 11px 13px 13px 10px;
   background:
     radial-gradient(circle at 18% 10%, rgb(var(--surface-rgb) / 1), transparent 34%),
-    linear-gradient(180deg, rgb(var(--surface-rgb) / 0.99), rgb(var(--surface-tint-warm-rgb) / 0.86)),
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-rgb) / 0.99),
+      rgb(var(--surface-tint-warm-rgb) / 0.86)
+    ),
     color-mix(in srgb, var(--layer-accent) 10%, white);
   color: rgb(var(--night-rgb));
   text-align: left;
@@ -797,7 +828,11 @@
   content: '';
   background:
     radial-gradient(circle at 50% 40%, rgb(var(--surface-rgb) / 0.34), transparent 34%),
-    linear-gradient(180deg, rgb(var(--surface-tint-rgb) / 0.08), rgb(var(--surface-tint-cool-rgb) / 0.18));
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-tint-rgb) / 0.08),
+      rgb(var(--surface-tint-cool-rgb) / 0.18)
+    );
   backdrop-filter: blur(10px) saturate(1.12);
   -webkit-backdrop-filter: blur(10px) saturate(1.12);
   mask-image: radial-gradient(
@@ -882,7 +917,11 @@
   background:
     radial-gradient(circle at 50% 26%, rgb(var(--surface-rgb) / 0.98), transparent 36%),
     radial-gradient(circle at 32% 78%, rgb(var(--sky-rgb) / 0.22), transparent 42%),
-    linear-gradient(145deg, rgb(var(--surface-rgb) / 0.76), rgb(var(--surface-tint-cool-rgb) / 0.48));
+    linear-gradient(
+      145deg,
+      rgb(var(--surface-rgb) / 0.76),
+      rgb(var(--surface-tint-cool-rgb) / 0.48)
+    );
   box-shadow:
     inset 0 1px 0 rgb(var(--highlight-rgb) / 0.92),
     0 32px 82px rgb(var(--depth-rgb) / 0.2),
@@ -998,7 +1037,11 @@
       rgb(var(--sky-pale-rgb) / 0.44) 48%,
       rgb(var(--accent-vivid-rgb) / 0.1) 72%
     ),
-    linear-gradient(180deg, rgb(var(--surface-rgb) / 0.74), rgb(var(--surface-tint-cool-rgb) / 0.42));
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-rgb) / 0.74),
+      rgb(var(--surface-tint-cool-rgb) / 0.42)
+    );
   box-shadow:
     inset 0 1px 0 rgb(var(--highlight-rgb) / 0.92),
     0 0 26px rgb(var(--sky-vivid-rgb) / 0.38),
@@ -1138,7 +1181,11 @@
 .layer-strip.compact button.active {
   border-color: color-mix(in srgb, var(--layer-accent, rgb(var(--accent-deep-rgb))) 46%, white);
   background: color-mix(in srgb, var(--layer-accent, rgb(var(--accent-deep-rgb))) 10%, white);
-  color: color-mix(in srgb, var(--layer-accent, rgb(var(--text-accent-rgb))) 84%, rgb(var(--night-rgb)));
+  color: color-mix(
+    in srgb,
+    var(--layer-accent, rgb(var(--text-accent-rgb))) 84%,
+    rgb(var(--night-rgb))
+  );
 }
 
 .layer-strip.compact button:hover {
@@ -1171,7 +1218,11 @@
   width: 19px;
   height: 19px;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--layer-accent, rgb(var(--accent-deep-rgb))) 82%, rgb(var(--surface-rgb)));
+  background: color-mix(
+    in srgb,
+    var(--layer-accent, rgb(var(--accent-deep-rgb))) 82%,
+    rgb(var(--surface-rgb))
+  );
   color: rgb(var(--highlight-rgb));
 }
 
@@ -1249,7 +1300,11 @@
 
 .canvas-layer-hud.layer-strip.compact button:hover {
   background:
-    linear-gradient(135deg, rgb(var(--surface-rgb) / 0.9), rgb(var(--surface-tint-cool-rgb) / 0.72)),
+    linear-gradient(
+      135deg,
+      rgb(var(--surface-rgb) / 0.9),
+      rgb(var(--surface-tint-cool-rgb) / 0.72)
+    ),
     color-mix(in srgb, var(--layer-accent, rgb(var(--accent-deep-rgb))) 7%, white);
   box-shadow:
     0 8px 18px rgb(var(--depth-rgb) / 0.1),
@@ -1258,7 +1313,11 @@
 
 .canvas-layer-hud.layer-strip.compact button.active {
   background:
-    linear-gradient(135deg, rgb(var(--surface-rgb) / 0.86), rgb(var(--surface-tint-cool-rgb) / 0.68)),
+    linear-gradient(
+      135deg,
+      rgb(var(--surface-rgb) / 0.86),
+      rgb(var(--surface-tint-cool-rgb) / 0.68)
+    ),
     color-mix(in srgb, var(--layer-accent, rgb(var(--accent-deep-rgb))) 12%, white);
 }
 
@@ -1404,7 +1463,13 @@
   border-color: rgb(var(--accent-vivid-rgb) / 0.58);
   background:
     radial-gradient(circle at 80% 12%, rgb(var(--surface-rgb) / 0.98), transparent 24%),
-    linear-gradient(135deg, rgb(var(--surface-tint-rgb)) 0%, rgb(var(--sky-pale-rgb)) 18%, rgb(var(--surface-sky-rgb)) 36%, rgb(var(--surface-rgb)) 100%);
+    linear-gradient(
+      135deg,
+      rgb(var(--surface-tint-rgb)) 0%,
+      rgb(var(--sky-pale-rgb)) 18%,
+      rgb(var(--surface-sky-rgb)) 36%,
+      rgb(var(--surface-rgb)) 100%
+    );
   color: rgb(var(--ink-deep-rgb));
   box-shadow:
     0 0 0 4px rgb(var(--sky-rgb) / 0.16),
@@ -1423,7 +1488,13 @@
   border-color: rgb(var(--accent-vivid-rgb) / 0.58);
   background:
     radial-gradient(circle at 80% 12%, rgb(var(--surface-rgb) / 0.98), transparent 24%),
-    linear-gradient(135deg, rgb(var(--surface-tint-rgb)) 0%, rgb(var(--sky-pale-rgb)) 18%, rgb(var(--surface-sky-rgb)) 36%, rgb(var(--surface-rgb)) 100%);
+    linear-gradient(
+      135deg,
+      rgb(var(--surface-tint-rgb)) 0%,
+      rgb(var(--sky-pale-rgb)) 18%,
+      rgb(var(--surface-sky-rgb)) 36%,
+      rgb(var(--surface-rgb)) 100%
+    );
   color: rgb(var(--ink-deep-rgb));
   box-shadow:
     0 0 0 4px rgb(var(--sky-rgb) / 0.16),
@@ -1451,7 +1522,11 @@
   border-color: rgb(var(--sky-rgb) / 0.34);
   background:
     radial-gradient(circle at 18% 18%, rgb(var(--surface-rgb) / 0.92), transparent 28%),
-    linear-gradient(135deg, rgb(var(--surface-rgb) / 0.78), rgb(var(--surface-tint-cool-rgb) / 0.56));
+    linear-gradient(
+      135deg,
+      rgb(var(--surface-rgb) / 0.78),
+      rgb(var(--surface-tint-cool-rgb) / 0.56)
+    );
   color: rgb(var(--marine-rgb));
   isolation: isolate;
   transition:
@@ -1477,7 +1552,13 @@
       rgb(var(--surface-rgb) / 0.9) 58%,
       transparent 72%
     ),
-    linear-gradient(135deg, rgb(var(--surface-tint-rgb)) 0%, rgb(var(--sky-pale-rgb)) 42%, rgb(var(--surface-sky-rgb)) 68%, rgb(var(--surface-rgb)) 100%);
+    linear-gradient(
+      135deg,
+      rgb(var(--surface-tint-rgb)) 0%,
+      rgb(var(--sky-pale-rgb)) 42%,
+      rgb(var(--surface-sky-rgb)) 68%,
+      rgb(var(--surface-rgb)) 100%
+    );
   opacity: 0;
   transform: translateX(-72%) skewX(-12deg);
   transition:
@@ -1489,7 +1570,13 @@
   border-color: rgb(var(--accent-vivid-rgb) / 0.58);
   background:
     radial-gradient(circle at 80% 12%, rgb(var(--surface-rgb) / 0.98), transparent 24%),
-    linear-gradient(135deg, rgb(var(--surface-tint-rgb)) 0%, rgb(var(--sky-pale-rgb)) 38%, rgb(var(--surface-sky-rgb)) 66%, rgb(var(--surface-rgb)) 100%);
+    linear-gradient(
+      135deg,
+      rgb(var(--surface-tint-rgb)) 0%,
+      rgb(var(--sky-pale-rgb)) 38%,
+      rgb(var(--surface-sky-rgb)) 66%,
+      rgb(var(--surface-rgb)) 100%
+    );
   color: rgb(var(--ink-deep-rgb));
   box-shadow:
     0 0 0 4px rgb(var(--sky-rgb) / 0.16),
@@ -1584,11 +1671,16 @@
   width: 22px;
   height: 22px;
   border-radius: 6px;
-  background: color-mix(in srgb, var(--layer-accent, rgb(var(--accent-deep-rgb))) 88%, rgb(var(--surface-rgb)));
+  background: color-mix(
+    in srgb,
+    var(--layer-accent, rgb(var(--accent-deep-rgb))) 88%,
+    rgb(var(--surface-rgb))
+  );
   color: rgb(var(--highlight-rgb));
   font-size: 11px;
   font-weight: 900;
-  box-shadow: 0 7px 16px color-mix(in srgb, var(--layer-accent, rgb(var(--accent-deep-rgb))) 18%, transparent);
+  box-shadow: 0 7px 16px
+    color-mix(in srgb, var(--layer-accent, rgb(var(--accent-deep-rgb))) 18%, transparent);
 }
 
 .crystallizer-list strong {
@@ -1658,7 +1750,7 @@
   background:
     radial-gradient(circle at 35% 20%, rgb(var(--surface-rgb) / 0.9), transparent 44%),
     rgb(var(--accent-deep-rgb) / 0.12);
-  color: rgb(var(--text-accent-rgb));
+  color: rgb(var(--ink-navy-rgb));
   font-size: 10px;
   font-weight: bold;
 }
@@ -1677,7 +1769,7 @@
   max-height: 0;
   margin: 0;
   overflow: hidden;
-  color: rgb(var(--slate-light-rgb));
+  color: var(--muted);
   font-size: 11px;
   font-weight: 760;
   opacity: 0;

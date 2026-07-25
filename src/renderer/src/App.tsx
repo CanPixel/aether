@@ -83,6 +83,7 @@ import { useDismissableOverlay } from './utils/dismissable-overlay'
 import {
   ChevronDown,
   ChevronUp,
+  ExternalLink,
   HardDriveDownload,
   RefreshCw,
   FileText,
@@ -3001,6 +3002,32 @@ function updateStatusLabel(updateCheck: UpdateCheckResult | null): string {
   return 'ÆTHER is up to date'
 }
 
+function parseReleaseNotes(releaseNotes?: string): {
+  changelogLabel: string | null
+  changelogUrl: string | null
+  summary: string | null
+} {
+  if (!releaseNotes) {
+    return { changelogLabel: null, changelogUrl: null, summary: null }
+  }
+
+  const changelogPattern =
+    /(?:^|\n)\s*\*\*Full Changelog\*\*:\s*(https?:\/\/\S+)\s*(?=\n|$)/i
+  const changelogMatch = releaseNotes.match(changelogPattern)
+  const changelogUrl = changelogMatch?.[1] ?? null
+  const summary = releaseNotes.replace(changelogPattern, '\n').trim() || null
+  let changelogLabel: string | null = null
+
+  if (changelogUrl) {
+    const comparison = changelogUrl.match(/\/compare\/([^/?#]+)\.\.\.([^/?#]+)/i)
+    changelogLabel = comparison
+      ? `${decodeURIComponent(comparison[1])} → ${decodeURIComponent(comparison[2])}`
+      : 'Compare release changes'
+  }
+
+  return { changelogLabel, changelogUrl, summary }
+}
+
 function SettingsModal({
   busy,
   exportingLibrary,
@@ -3066,6 +3093,7 @@ function SettingsModal({
     !exportingLibrary && !reindexing && !updateInstalling
   )
   const installedVersion = updateCheck?.currentVersion ?? APP_VERSION
+  const releaseNotes = parseReleaseNotes(updateCheck?.releaseNotes)
   const searchEngines: Array<{ id: SearchEngineId; name: string; description: string }> = [
     { id: 'google', name: 'Google', description: 'Broad default web search.' },
     { id: 'bing', name: 'Bing', description: 'Microsoft web search.' },
@@ -3347,8 +3375,25 @@ function SettingsModal({
               )}
             </div>
 
-            {updateCheck?.releaseNotes && (
-              <p className="settings-update-notes">{updateCheck.releaseNotes}</p>
+            {releaseNotes.summary && (
+              <p className="settings-update-notes">{releaseNotes.summary}</p>
+            )}
+
+            {releaseNotes.changelogUrl && (
+              <a
+                className="settings-changelog-link"
+                href={releaseNotes.changelogUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <span className="settings-changelog-icon" aria-hidden="true">
+                  <ExternalLink />
+                </span>
+                <span>
+                  <strong>Full Changelog</strong>
+                  <small>{releaseNotes.changelogLabel}</small>
+                </span>
+              </a>
             )}
 
             {updateInstalling && (

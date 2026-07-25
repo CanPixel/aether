@@ -40,14 +40,18 @@
   inset: 0;
   pointer-events: none;
   content: '';
-  background-image: radial-gradient(circle, rgb(var(--surface-rgb) / 0.96) 0 1.2px, transparent 1.5px);
+  background-image: radial-gradient(
+    circle,
+    rgb(var(--surface-rgb) / 0.96) 0 1.2px,
+    transparent 1.5px
+  );
   background-size: 64px 64px;
   mask-image: linear-gradient(to bottom, rgb(var(--mask-rgb)), transparent 86%);
 }
 
 .dashboard-hero p,
 .panel-header p {
-  color: black;
+  color: rgb(var(--hero-text-rgb));
   font-size: 22px;
   font-family: var(--font-display);
   letter-spacing: 0;
@@ -170,7 +174,8 @@
   animation: discoverTextFlow 24s cubic-bezier(0.45, 0, 0.2, 1) infinite;
 
   filter: drop-shadow(0 1px 0 rgb(var(--highlight-rgb) / 0.7))
-    drop-shadow(0 8px 16px rgb(var(--ink-abyss-rgb) / 0.16)) drop-shadow(0 0 14px rgb(var(--glow-rgb) / 0.16));
+    drop-shadow(0 8px 16px rgb(var(--ink-abyss-rgb) / 0.16))
+    drop-shadow(0 0 14px rgb(var(--glow-rgb) / 0.16));
 }
 
 @keyframes discoverTextFlow {
@@ -468,7 +473,12 @@
   width: 7px;
   height: 7px;
   border-radius: 999px;
-  background: radial-gradient(circle, rgb(var(--surface-rgb)) 0 24%, rgb(var(--sky-rgb) / 0.8) 38%, transparent 72%);
+  background: radial-gradient(
+    circle,
+    rgb(var(--surface-rgb)) 0 24%,
+    rgb(var(--sky-rgb) / 0.8) 38%,
+    transparent 72%
+  );
   filter: drop-shadow(0 0 10px rgb(var(--sky-rgb) / 0.9));
   animation: startOrbSpark 4.8s ease-in-out infinite;
 }

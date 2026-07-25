@@ -155,7 +155,6 @@ export function ModelSetupModal({
           aria-modal="true"
           aria-labelledby="model-setup-title"
         >
-          <div className="model-setup-glass" aria-hidden="true" />
           <div className="model-setup-hero">
             <div className="model-setup-copy">
               <span className="model-setup-kicker">Local wisdom</span>

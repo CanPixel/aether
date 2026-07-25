@@ -60,13 +60,21 @@
   background:
     radial-gradient(circle at 50% 18%, rgb(var(--surface-rgb) / 0.86), transparent 20%),
     radial-gradient(circle at 28% 46%, rgb(var(--glow-pale-rgb) / 0.42), transparent 32%),
-    linear-gradient(180deg, rgb(var(--surface-rgb) / 0.16), rgb(var(--surface-tint-cool-rgb) / 0.18));
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-rgb) / 0.16),
+      rgb(var(--surface-tint-cool-rgb) / 0.18)
+    );
   filter: blur(10px);
   transform: translateX(20px) scaleX(0.9);
 }
 
 .intelligence-panel::after {
-  background-image: radial-gradient(circle, rgb(var(--surface-rgb) / 0.85) 0 1px, transparent 1.5px);
+  background-image: radial-gradient(
+    circle,
+    rgb(var(--surface-rgb) / 0.85) 0 1px,
+    transparent 1.5px
+  );
   background-size: 42px 42px;
   mask-image: linear-gradient(to bottom, transparent 0%, rgb(var(--mask-rgb)) 18%, transparent 94%);
   transform: translateY(18px);
@@ -135,7 +143,7 @@
 
 .status-pill.online {
   background: rgb(var(--success-rgb) / 0.1);
-  color: var(--success);
+  color: rgb(var(--text-success-rgb));
 }
 
 .status-pill.offline {
@@ -230,7 +238,11 @@
   padding: 6px 8px 6px 10px;
   background:
     radial-gradient(circle at 18% 0%, rgb(var(--surface-rgb) / 0.98), transparent 42%),
-    linear-gradient(135deg, rgb(var(--surface-rgb) / 0.98), rgb(var(--surface-tint-cool-rgb) / 0.96)),
+    linear-gradient(
+      135deg,
+      rgb(var(--surface-rgb) / 0.98),
+      rgb(var(--surface-tint-cool-rgb) / 0.96)
+    ),
     rgb(var(--surface-rgb) / 0.96);
   box-shadow:
     0 0 0 4px rgba(67, 158, 221, 0.12),
@@ -553,7 +565,7 @@
 }
 
 .ask-current-radio.is-on {
-  border: 4px solid purple;
+  border: 4px solid var(--prism);
 }
 
 .ask-current-radio.is-on::after {
@@ -561,7 +573,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: purple;
+  background: var(--prism);
 }
 
 .ask-current-button.active,
@@ -632,7 +644,7 @@
   background:
     radial-gradient(circle at 16% 20%, rgb(var(--surface-rgb) / 0.95), transparent 36%),
     rgb(var(--surface-tint-rgb) / 0.78);
-  color: purple !important;
+  color: var(--ink) !important;
 }
 .ask-hub-picker button:hover {
   border-color: rgb(var(--accent-muted-rgb) / 0.3);
@@ -1003,8 +1015,20 @@
   background-size: 100% 96px;
   filter: blur(1.4px);
   opacity: 0.7;
-  -webkit-mask-image: linear-gradient(180deg, transparent, rgb(var(--mask-rgb)) 12%, rgb(var(--mask-rgb)) 88%, transparent);
-  mask-image: linear-gradient(180deg, transparent, rgb(var(--mask-rgb)) 12%, rgb(var(--mask-rgb)) 88%, transparent);
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    transparent,
+    rgb(var(--mask-rgb)) 12%,
+    rgb(var(--mask-rgb)) 88%,
+    transparent
+  );
+  mask-image: linear-gradient(
+    180deg,
+    transparent,
+    rgb(var(--mask-rgb)) 12%,
+    rgb(var(--mask-rgb)) 88%,
+    transparent
+  );
   animation: flowStream 3.6s linear infinite;
 }
 
@@ -1202,7 +1226,11 @@
   border-radius: 14px;
   background:
     radial-gradient(circle at 50% 28%, rgb(var(--surface-rgb) / 0.94), transparent 26%),
-    linear-gradient(145deg, rgb(var(--surface-tint-warm-rgb) / 0.9), rgb(var(--surface-tint-cool-rgb) / 0.76));
+    linear-gradient(
+      145deg,
+      rgb(var(--surface-tint-warm-rgb) / 0.9),
+      rgb(var(--surface-tint-cool-rgb) / 0.76)
+    );
   box-shadow:
     inset 0 1px 0 rgb(var(--highlight-rgb) / 0.82),
     0 16px 42px rgba(84, 160, 199, 0.12);
@@ -1626,7 +1654,11 @@
   border: 1px solid rgb(var(--accent-soft-rgb) / 0.35);
   border-radius: 999px;
   padding: 0 12px;
-  background: linear-gradient(145deg, rgb(var(--surface-tint-cool-rgb) / 0.95), rgb(var(--surface-rgb) / 0.7));
+  background: linear-gradient(
+    145deg,
+    rgb(var(--surface-tint-cool-rgb) / 0.95),
+    rgb(var(--surface-rgb) / 0.7)
+  );
   color: rgb(var(--ocean-rgb));
   font-size: 11px;
   font-weight: 860;
@@ -1663,7 +1695,11 @@
   margin-top: 4px;
   border: 1px solid rgb(var(--accent-soft-rgb) / 0.35);
   border-radius: 10px;
-  background: linear-gradient(145deg, rgb(var(--surface-tint-cool-rgb) / 0.9), rgb(var(--surface-rgb) / 0.68));
+  background: linear-gradient(
+    145deg,
+    rgb(var(--surface-tint-cool-rgb) / 0.9),
+    rgb(var(--surface-rgb) / 0.68)
+  );
   color: rgb(var(--ocean-rgb));
   font-size: 11px;
   font-weight: 800;

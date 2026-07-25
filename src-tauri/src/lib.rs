@@ -1276,6 +1276,91 @@ mod tests {
         );
     }
 
+    #[test]
+    fn foreground_channels_clear_wcag_aa_on_their_surfaces() {
+        let foundation =
+            std::fs::read_to_string("../src/renderer/src/assets/styles/foundation.css")
+                .expect("foundation.css");
+        let root_end = foundation.find("\n}").expect("closing brace for :root");
+        let (light, rest) = foundation.split_at(root_end);
+        let dark_start = rest
+            .find(":root[data-theme='dark']")
+            .expect("explicit dark block");
+        let dark = &rest[dark_start..];
+
+        fn channel(block: &str, name: &str) -> [f64; 3] {
+            let prefix = format!("--{name}:");
+            let value = block
+                .lines()
+                .map(str::trim)
+                .find_map(|line| line.strip_prefix(&prefix))
+                .unwrap_or_else(|| panic!("missing channel {name}"));
+            let values: Vec<f64> = value
+                .trim()
+                .trim_end_matches(';')
+                .split_whitespace()
+                .map(|part| {
+                    part.parse::<f64>()
+                        .unwrap_or_else(|_| panic!("invalid channel {name}: {value}"))
+                })
+                .collect();
+            assert_eq!(values.len(), 3, "channel {name} must contain three values");
+            [values[0], values[1], values[2]]
+        }
+
+        fn luminance(rgb: [f64; 3]) -> f64 {
+            let linear = |value: f64| {
+                let value = value / 255.0;
+                if value <= 0.04045 {
+                    value / 12.92
+                } else {
+                    ((value + 0.055) / 1.055).powf(2.4)
+                }
+            };
+            0.2126 * linear(rgb[0]) + 0.7152 * linear(rgb[1]) + 0.0722 * linear(rgb[2])
+        }
+
+        fn contrast(foreground: [f64; 3], background: [f64; 3]) -> f64 {
+            let foreground = luminance(foreground);
+            let background = luminance(background);
+            (foreground.max(background) + 0.05) / (foreground.min(background) + 0.05)
+        }
+
+        fn composite(foreground: [f64; 3], alpha: f64, background: [f64; 3]) -> [f64; 3] {
+            [
+                foreground[0] * alpha + background[0] * (1.0 - alpha),
+                foreground[1] * alpha + background[1] * (1.0 - alpha),
+                foreground[2] * alpha + background[2] * (1.0 - alpha),
+            ]
+        }
+
+        for (theme, block) in [("light", light), ("dark", dark)] {
+            let surface = channel(block, "surface-rgb");
+            let surface_sky = channel(block, "surface-sky-rgb");
+            let surface_tint = channel(block, "surface-tint-rgb");
+            let success = channel(block, "success-rgb");
+            let success_badge = composite(success, 0.1, surface);
+            let checks = [
+                ("muted-rgb", surface_sky),
+                ("accent-strong-rgb", surface_sky),
+                ("text-accent-rgb", surface_sky),
+                ("slate-blue-rgb", surface_tint),
+                ("text-success-rgb", success_badge),
+                ("primary-label-rgb", channel(block, "primary-from-rgb")),
+                ("primary-label-rgb", channel(block, "primary-mid-rgb")),
+                ("primary-label-rgb", channel(block, "primary-to-rgb")),
+            ];
+
+            for (foreground, background) in checks {
+                let ratio = contrast(channel(block, foreground), background);
+                assert!(
+                    ratio >= 4.5,
+                    "{theme} {foreground} has only {ratio:.2}:1 contrast"
+                );
+            }
+        }
+    }
+
     // The shipped config carries an empty pubkey placeholder, and that has to read
     // as "not configured" rather than as a key — otherwise the app offers an
     // Install button that downloads a hundred megabytes and then fails signature
