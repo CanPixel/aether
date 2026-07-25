@@ -2,21 +2,26 @@ import { FormEvent, useEffect, useRef, useState, type RefObject, type WheelEvent
 import {
   ChatResult,
   CollectionSummary,
+  ConversationTurn,
   SearchResult,
   SemanticTrailItem,
   SemanticTrailResult,
   SystemStatus
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
-import { formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aether-ui'
+import { countLabel, formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aether-ui'
 import { claimTextForCitation, renderAnswerMarkdown } from './answer-markdown'
 import { CrystallizingOrb } from './CrystallizingOrb'
 import { AetherSigilIcon, ChevronRightIcon, GearIcon } from './icons'
-import { Droplet, Waves, Newspaper } from 'lucide-react'
+import { Droplet, HardDriveDownload, Waves, Newspaper } from 'lucide-react'
 
 type IntelligencePanelProps = {
   busy: string | null
   chatBlocked: boolean
+  // True when only the embedding model is installed: Ask returns passages, not prose.
+  chatIsExtractive: boolean
+  // Persisted turns for the active thread, oldest first.
+  chatThread: ConversationTurn[]
   chatPrompt: string
   askCollectionId: string
   askCurrentPageOnly: boolean
@@ -49,8 +54,10 @@ type IntelligencePanelProps = {
   onAskCurrentPageOnlyChange: (value: boolean) => void
   onAskIncludeCurrentPageChange: (value: boolean) => void
   onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>
+  onClearHistory: () => void
   onOpenSemanticTrailItem: (item: SemanticTrailItem) => Promise<void>
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
+  onOpenModelSetup: () => Promise<void>
 }
 
 function modelOptionsWithSelected(models: string[], selected?: string | null): string[] {
@@ -61,6 +68,8 @@ function modelOptionsWithSelected(models: string[], selected?: string | null): s
 export function IntelligencePanel({
   busy,
   chatBlocked,
+  chatIsExtractive,
+  chatThread,
   chatPrompt,
   askCollectionId,
   askCurrentPageOnly,
@@ -93,8 +102,10 @@ export function IntelligencePanel({
   onAskCurrentPageOnlyChange,
   onAskIncludeCurrentPageChange,
   onOpenCitation,
+  onClearHistory,
   onOpenSemanticTrailItem,
-  onUpdateModels
+  onUpdateModels,
+  onOpenModelSetup
 }: IntelligencePanelProps): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [trailPanelOpen, setTrailPanelOpen] = useState(false)
@@ -122,6 +133,13 @@ export function IntelligencePanel({
       ? !semanticTrailResult.root.url && semanticTrailResult.query.trim() === normalizedTrailQuery
       : Boolean(semanticTrailResult.root.url))
   )
+  // The newest stored turn and chatResult are the same exchange; drop it here so the
+  // live answer card is not duplicated above itself.
+  const priorTurns =
+    chatResult && chatThread.length > 0 &&
+    chatThread[chatThread.length - 1].answer === chatResult.answer
+      ? chatThread.slice(0, -1)
+      : chatThread
   const footerStatus = busy ?? notice
   /*   const trailBlockReason = dashboardOpen || !canUseCurrentPage
     ? 'Open a web page first'
@@ -321,17 +339,52 @@ export function IntelligencePanel({
                   event.preventDefault()
                   event.currentTarget.form?.requestSubmit()
                 }}
-                placeholder="Ask this collection and current page"
+                placeholder="Ask this hub and current page"
               />
               <button
                 type="submit"
                 disabled={Boolean(busy) || !chatPrompt.trim() || !hasAskContext || chatBlocked}
               >
-                Ask AiON
+                {chatIsExtractive ? 'Find Passages' : 'Ask AiON'}
               </button>
+              {/* Say up front that nothing will be written, so a passage list is not
+                  read as a failed answer. */}
+              {chatIsExtractive && (
+                <p className="chat-extractive-note">
+                  No chat model installed — AiON will return the best matching passages
+                  from your sources instead of a written answer.
+                </p>
+              )}
             </form>
           </div>
         </section>
+
+        {/* Earlier turns in this thread. Rendered above the live answer so the panel
+            reads top-to-bottom as a conversation. */}
+        {priorTurns.length > 0 && (
+          <section className="panel-section mode-section thread-section">
+            <div className="section-heading">
+              <h2>Earlier</h2>
+              <button className="thread-clear-button" onClick={onClearHistory} type="button">
+                Clear
+              </button>
+            </div>
+            {priorTurns.map((turn) => (
+              <article className="thread-turn" key={turn.id}>
+                <p className="thread-turn-prompt">{turn.prompt}</p>
+                <AnswerCard
+                  result={{
+                    answer: turn.answer,
+                    model: turn.model,
+                    citations: turn.citations,
+                    metrics: turn.metrics
+                  }}
+                  onOpenCitation={onOpenCitation}
+                />
+              </article>
+            ))}
+          </section>
+        )}
 
         {busy === 'Asking ÆTHER' &&
           (streamingAnswer ? (
@@ -468,34 +521,64 @@ export function IntelligencePanel({
               data-tooltip={showTooltips ? 'Model Settings' : undefined}
               data-tooltip-side={showTooltips ? 'left' : undefined}
               onClick={() => setSettingsOpen((current) => !current)}
-              title="Model settings"
+              title="Model Settings"
               type="button"
             >
               <GearIcon />
               <span>
                 {status?.chatModel
                   ? formatVisibleModelName(status.chatModel, { developerMode, role: 'chat' })
-                  : 'Model settings'}
+                  : 'Model Settings'}
               </span>
             </button>
+          ) : chatModelOptions.length === 0 ? (
+            // With nothing installed the select is a dead control, so the slot carries
+            // the action that resolves it instead. This is the only route to setup from
+            // the panel where a missing model actually shows up.
+            <button
+              className="inline-model-setup-button"
+              disabled={Boolean(busy)}
+              onClick={() => {
+                void onOpenModelSetup()
+              }}
+              type="button"
+            >
+              <HardDriveDownload size={14} aria-hidden="true" />
+              <span>Install Models</span>
+            </button>
           ) : (
-            <label className="inline-model-selector">
-              <span>Model:</span>
-              <select
-                disabled={Boolean(busy) || !status || chatModelOptions.length === 0}
-                value={status?.chatModel ?? ''}
-                onChange={(event) => onUpdateModels({ chatModel: event.target.value })}
-              >
-                <option value="" disabled>
-                  No model
-                </option>
-                {chatModelOptions.map((model) => (
-                  <option key={model} value={model}>
-                    {formatVisibleModelName(model, { developerMode, role: 'chat' }) ?? model}
+            <div className="inline-model-controls">
+              <label className="inline-model-selector">
+                <span>Model:</span>
+                <select
+                  disabled={Boolean(busy) || !status}
+                  value={status?.chatModel ?? ''}
+                  onChange={(event) => onUpdateModels({ chatModel: event.target.value })}
+                >
+                  <option value="" disabled>
+                    No model
                   </option>
-                ))}
-              </select>
-            </label>
+                  {chatModelOptions.map((model) => (
+                    <option key={model} value={model}>
+                      {formatVisibleModelName(model, { developerMode, role: 'chat' }) ?? model}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {/* Outside the label: nested in it, a click would also drive the select. */}
+              <button
+                aria-label="Manage Models"
+                className="inline-model-manage-button"
+                disabled={Boolean(busy)}
+                onClick={() => {
+                  void onOpenModelSetup()
+                }}
+                title="Manage Models"
+                type="button"
+              >
+                <HardDriveDownload size={14} aria-hidden="true" />
+              </button>
+            </div>
           )}
         </footer>
         {developerMode && settingsOpen && (
@@ -505,6 +588,7 @@ export function IntelligencePanel({
             settingsRef={modelSettingsRef}
             status={status}
             onUpdateModels={onUpdateModels}
+            onOpenModelSetup={onOpenModelSetup}
           />
         )}
       </div>
@@ -767,13 +851,15 @@ function LocalModelSettings({
   developerMode,
   settingsRef,
   status,
-  onUpdateModels
+  onUpdateModels,
+  onOpenModelSetup
 }: {
   busy: string | null
   developerMode: boolean
   settingsRef: RefObject<HTMLElement | null>
   status: SystemStatus | null
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
+  onOpenModelSetup: () => Promise<void>
 }): React.JSX.Element {
   const models = status?.availableModels ?? []
   const chatModels = modelOptionsWithSelected(status?.chatModels ?? [], status?.chatModel)
@@ -817,7 +903,7 @@ function LocalModelSettings({
       <div className="model-heading">
         <div>
           <h2>Built-in Models</h2>
-          <p>{status?.runtimeReady ? `${models.length} local models` : 'No local model'}</p>
+          <p>{status?.runtimeReady ? countLabel(models.length, 'local model') : 'No local model'}</p>
         </div>
         <span>{modelLabel}</span>
       </div>
@@ -855,6 +941,17 @@ function LocalModelSettings({
           ))}
         </select>
       </label>
+      <button
+        className="model-island-setup-button"
+        disabled={Boolean(busy)}
+        onClick={() => {
+          void onOpenModelSetup()
+        }}
+        type="button"
+      >
+        <HardDriveDownload size={14} aria-hidden="true" />
+        <span>{models.length === 0 ? 'Install Models' : 'Manage Models'}</span>
+      </button>
     </section>
   )
 }
@@ -928,7 +1025,7 @@ function AnswerCard({
         })}
       </div>
       <footer>
-        <span>{result.citations.length} local citations</span>
+        <span>{countLabel(result.citations.length, 'local citation')}</span>
         <button className="answer-copy-button responsive-button" onClick={copyAnswer} type="button">
           {copied ? 'Copied' : 'Copy'}
         </button>

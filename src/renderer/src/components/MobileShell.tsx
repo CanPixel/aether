@@ -15,7 +15,7 @@ import {
   SearchResult
 } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
-import { formatVisibleModelName, getTabTint } from '../utils/aether-ui'
+import { countLabel, formatVisibleModelName, getTabTint } from '../utils/aether-ui'
 import { renderAnswerMarkdown } from './answer-markdown'
 import {
   AetherSigilIcon,
@@ -371,7 +371,7 @@ export function MobileShell({
             }}
             type="button"
           >
-            Install local models
+            Install Local Models
           </button>
         </div>
       ) : (
@@ -541,7 +541,7 @@ export function MobileShell({
           </div>
           <button
             className="mobile-tab-grid-button"
-            aria-label={`Tab overview (${tabs.length} tabs)`}
+            aria-label={`Tab overview (${countLabel(tabs.length, 'tab')})`}
             onClick={() => setGridOpen(true)}
             type="button"
           >
@@ -696,7 +696,7 @@ export function MobileShell({
               <div className="mobile-capture-row">
                 <select
                   id="mobile-capture-collection"
-                  aria-label="Capture collection"
+                  aria-label="Capture hub"
                   value={selectedCollectionId}
                   onChange={(event) => {
                     if (event.target.value === CREATE_COLLECTION_VALUE) {
@@ -751,7 +751,7 @@ export function MobileShell({
                 }}
                 type="button"
               >
-                <Search /> Find on page
+                <Search /> Find on Page
               </button>
               <button
                 disabled={!isWebPage || !activeTab}
@@ -761,7 +761,7 @@ export function MobileShell({
                 }}
                 type="button"
               >
-                <RefreshCw /> Reload page
+                <RefreshCw /> Reload Page
               </button>
               <button
                 disabled={dashboardOpen || !activeTab?.canGoForward}

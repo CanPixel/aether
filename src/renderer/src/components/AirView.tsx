@@ -23,7 +23,7 @@ import {
   WandSparkles,
   Wind
 } from 'lucide-react'
-import { formatDate, formatVisibleModelName } from '../utils/aether-ui'
+import { countLabel, formatDate, formatVisibleModelName } from '../utils/aether-ui'
 
 type AirViewProps = {
   busy: string | null
@@ -221,7 +221,7 @@ export function AirView({
 
           <div className="air-lens-meta">
             <span>{selectedQuickLens}</span>
-            <span>{collections.length} hubs indexed</span>
+            <span>{countLabel(collections.length, 'hub')} indexed</span>
             <span>
               {status?.chatModel
                 ? formatVisibleModelName(status.chatModel)
@@ -235,7 +235,7 @@ export function AirView({
             <h2>Render</h2>
             <p>
               {prepared
-                ? `${prepared.sources.length} sources prepared`
+                ? `${countLabel(prepared.sources.length, 'source')} prepared`
                 : 'Preview context before writing a file.'}
             </p>
           </div>
@@ -269,7 +269,7 @@ export function AirView({
               <h2>Context Preview</h2>
               <p>
                 {prepared
-                  ? `${prepared.sources.length} citations · ${formatVisibleModelName(prepared.model ?? 'deterministic-scaffold')}`
+                  ? `${countLabel(prepared.sources.length, 'citation')} · ${formatVisibleModelName(prepared.model ?? 'deterministic-scaffold')}`
                   : 'Sources, citations, coverage, and Markdown will appear here.'}
               </p>
             </div>
@@ -310,7 +310,7 @@ export function AirView({
           <div className="air-section-heading">
             <div>
               <h2>Recent Renders</h2>
-              <p>{recent.length} local dossiers</p>
+              <p>{countLabel(recent.length, 'local dossier')}</p>
             </div>
             <History aria-hidden="true" />
           </div>
@@ -324,7 +324,7 @@ export function AirView({
                     <strong>{file.title}</strong>
                     <span>{file.lens || 'AiR lens'}</span>
                     <small>
-                      {formatDate(file.renderedAt)} · {file.sourceCount} sources
+                      {formatDate(file.renderedAt)} · {countLabel(file.sourceCount, 'source')}
                     </small>
                   </div>
                   <div>

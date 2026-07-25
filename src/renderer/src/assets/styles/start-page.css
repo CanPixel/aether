@@ -48,14 +48,14 @@
   flex: 1 1 auto;
   min-width: 0;
   height: 48px;
-  border: 1px solid rgba(145, 166, 195, 0.28);
+  border: 1px solid rgb(var(--slate-rgb) / 0.28);
   border-radius: 14px;
   padding: 0 18px;
-  background: rgba(255, 255, 255, 0.78);
+  background: rgb(var(--surface-rgb) / 0.78);
   color: var(--ink);
   font-size: 14px;
   font-weight: 600;
-  box-shadow: 0 12px 30px rgba(94, 132, 185, 0.1);
+  box-shadow: 0 12px 30px rgb(var(--steel-mid-rgb) / 0.1);
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
@@ -63,9 +63,9 @@
 }
 
 .start-search input:focus {
-  border-color: rgba(86, 139, 218, 0.5);
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 14px 34px rgba(74, 145, 194, 0.16);
+  border-color: rgb(var(--steel-rgb) / 0.5);
+  background: rgb(var(--surface-rgb) / 0.94);
+  box-shadow: 0 14px 34px rgb(var(--sky-deep-rgb) / 0.16);
   outline: none;
 }
 
@@ -96,7 +96,7 @@
   max-height: clamp(112px, 22vh, 190px);
   overflow: auto;
   padding: 2px 4px 10px;
-  scrollbar-color: rgba(82, 178, 219, 0.34) transparent;
+  scrollbar-color: rgb(var(--accent-bright-rgb) / 0.34) transparent;
   scrollbar-width: thin;
 }
 
@@ -111,8 +111,8 @@
 .start-portals::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(255, 255, 255, 0.22)),
-    rgba(82, 178, 219, 0.34);
+    linear-gradient(180deg, rgb(var(--surface-rgb) / 0.74), rgb(var(--surface-rgb) / 0.22)),
+    rgb(var(--accent-bright-rgb) / 0.34);
 }
 
 @media (max-height: 760px) {
@@ -152,17 +152,17 @@
   border-radius: 16px;
   padding: 13px 10px 10px;
   border: 1px solid
-    color-mix(in srgb, var(--portal-tint, var(--accent)) 28%, rgba(104, 140, 190, 0.22));
+    color-mix(in srgb, var(--portal-tint, var(--accent)) 28%, rgb(var(--steel-mid-rgb) / 0.22));
   background:
-    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.96), transparent 48%),
+    radial-gradient(circle at 50% 0%, rgb(var(--surface-rgb) / 0.96), transparent 48%),
     radial-gradient(
       circle at 88% 90%,
       color-mix(in srgb, var(--portal-tint, var(--accent)) 18%, transparent),
       transparent 42%
     ),
-    rgba(255, 255, 255, 0.58);
+    rgb(var(--surface-rgb) / 0.58);
   color: var(--ink);
-  box-shadow: 0 12px 28px rgba(94, 132, 185, 0.08);
+  box-shadow: 0 12px 28px rgb(var(--steel-mid-rgb) / 0.08);
   transition:
     transform 160ms ease,
     border-color 160ms ease,
@@ -174,10 +174,10 @@
   border-color: color-mix(
     in srgb,
     var(--portal-tint, var(--accent)) 46%,
-    rgba(255, 255, 255, 0.46)
+    rgb(var(--edge-rgb) / 0.46)
   );
   box-shadow: 0 6px 14px
-    color-mix(in srgb, var(--portal-tint, var(--accent)) 18%, rgba(62, 132, 163, 0.12));
+    color-mix(in srgb, var(--portal-tint, var(--accent)) 18%, rgb(var(--shadow-soft-rgb) / 0.12));
   transform: translateY(-2px);
 }
 
@@ -188,8 +188,8 @@
   height: 40px;
   border-radius: 12px;
   background:
-    radial-gradient(circle at 35% 22%, #ffffff, transparent 44%),
-    linear-gradient(145deg, #dff9ff, #ffffff);
+    radial-gradient(circle at 35% 22%, rgb(var(--surface-rgb)), transparent 44%),
+    linear-gradient(145deg, rgb(var(--surface-tint-cool-rgb)), rgb(var(--surface-rgb)));
   color: var(--accent-strong);
   font-family: var(--font-old);
   font-size: 18px;
@@ -232,9 +232,14 @@
 }
 
 .hub-shortcut.drop-target .hub-launch {
-  border-color: color-mix(in srgb, var(--portal-tint, var(--accent)) 54%, rgba(255, 255, 255, 0.5));
+  border-color: color-mix(
+    in srgb,
+    var(--portal-tint, var(--accent)) 54%,
+    rgb(var(--edge-rgb) / 0.5)
+  );
   box-shadow:
-    0 18px 36px color-mix(in srgb, var(--portal-tint, var(--accent)) 22%, rgba(62, 132, 163, 0.12)),
+    0 18px 36px
+      color-mix(in srgb, var(--portal-tint, var(--accent)) 22%, rgb(var(--shadow-soft-rgb) / 0.12)),
     0 0 0 4px color-mix(in srgb, var(--portal-tint, var(--accent)) 18%, transparent);
   transform: translateY(-2px) scale(1.018);
 }
@@ -251,22 +256,15 @@
   row-gap: 2px;
   border-radius: 8px;
   padding: 8px 9px;
-  border-color: color-mix(
-    in srgb,
-    var(--portal-tint, var(--accent)) 28%,
-    rgba(104, 140, 190, 0.22)
-  );
+  border-color: rgb(var(--line-strong-rgb) / 0.32);
   background:
-    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.96), transparent 48%),
-    radial-gradient(
-      circle at 88% 90%,
-      color-mix(in srgb, var(--portal-tint, var(--accent)) 18%, transparent),
-      transparent 42%
-    ),
-    rgba(255, 255, 255, 0.58);
+    radial-gradient(circle at 18% 0%, rgb(var(--highlight-rgb) / 0.22), transparent 46%),
+    linear-gradient(145deg, rgb(var(--surface-sky-rgb) / 0.84), rgb(var(--surface-tint-rgb) / 0.7));
   color: var(--ink);
   text-align: left;
-  box-shadow: 0 10px 22px rgba(94, 132, 185, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.18),
+    0 10px 22px rgb(var(--shadow-soft-rgb) / 0.14);
   transition:
     transform 160ms ease,
     border-color 160ms ease,
@@ -275,21 +273,17 @@
 }
 
 .hub-launch:hover {
-  border-color: color-mix(
-    in srgb,
-    var(--portal-tint, var(--accent)) 46%,
-    rgba(255, 255, 255, 0.46)
-  );
+  border-color: rgb(var(--line-strong-rgb) / 0.58);
   background:
-    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.98), transparent 48%),
-    radial-gradient(
-      circle at 88% 90%,
-      color-mix(in srgb, var(--portal-tint, var(--accent)) 24%, transparent),
-      transparent 42%
-    ),
-    rgba(255, 255, 255, 0.86);
-  box-shadow: 0 6px 14px
-    color-mix(in srgb, var(--portal-tint, var(--accent)) 18%, rgba(62, 132, 163, 0.12));
+    radial-gradient(circle at 18% 0%, rgb(var(--highlight-rgb) / 0.28), transparent 46%),
+    linear-gradient(
+      145deg,
+      rgb(var(--surface-sky-rgb) / 0.96),
+      rgb(var(--surface-tint-cool-rgb) / 0.82)
+    );
+  box-shadow:
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.24),
+    0 8px 18px rgb(var(--accent-ocean-rgb) / 0.18);
   transform: translateY(-1px);
 }
 
@@ -301,9 +295,9 @@
   height: 28px;
   border-radius: 8px;
   background:
-    radial-gradient(circle at 35% 22%, #ffffff, transparent 44%),
-    linear-gradient(145deg, #dff9ff, #ffffff);
-  color: var(--accent-strong);
+    radial-gradient(circle at 35% 22%, rgb(var(--highlight-rgb) / 0.3), transparent 44%),
+    linear-gradient(145deg, rgb(var(--surface-tint-cool-rgb)), rgb(var(--surface-sky-rgb)));
+  color: rgb(var(--text-accent-rgb));
   font-family: var(--font-old);
   font-size: 14px;
   font-weight: 700;
@@ -346,7 +340,7 @@
   border-radius: 8px;
   padding: 0;
   opacity: 0;
-  background: rgba(255, 255, 255, 0.78);
+  background: rgb(var(--surface-rgb) / 0.78);
   color: var(--muted);
   box-shadow: none;
   transition:

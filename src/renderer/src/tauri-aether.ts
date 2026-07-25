@@ -11,6 +11,7 @@ import {
   AppSettings,
   AppSummary,
   BrowserTabSummary,
+  BulkCaptureResult,
   CaptureHubSuggestion,
   CaptureProgress,
   CaptureResult,
@@ -18,10 +19,16 @@ import {
   ChatResult,
   ChatStreamEvent,
   CollectionSummary,
+  ConversationTurn,
+  DownloadProgress,
   FindResult,
   FlowGraphResult,
   HubShortcutSummary,
   IcebergResult,
+  LibraryExportResult,
+  LibraryIndexStatus,
+  LibraryReindexResult,
+  LibrarySearchResult,
   MOBILE_TAB_SCROLL_EVENT,
   ModelDownloadProgress,
   NativeTabEvent,
@@ -32,7 +39,11 @@ import {
   SemanticTrailResult,
   StatusToastInput,
   SystemStatus,
-  UpdateCheckResult
+  DiagnosticEntry,
+  DiagnosticsExportResult,
+  UpdateCheckResult,
+  UpdateInstallProgress,
+  UpdateInstallResult
 } from '../../shared/aether'
 import { IS_ANDROID } from './utils/platform'
 
@@ -56,6 +67,7 @@ if (isTauri) {
       create: (input) => call<BrowserTabSummary>('aether_tabs_create', { input }),
       activate: (tabId) => call<void>('aether_tabs_activate', { tabId }),
       close: (tabId) => call<void>('aether_tabs_close', { tabId }),
+      reorder: (ids) => call<BrowserTabSummary[]>('aether_tabs_reorder', { ids }),
       navigate: (tabId, url) => call<void>('aether_tabs_navigate', { tabId, url }),
       scrollToText: (tabId, text) => call<void>('aether_tabs_scroll_to_text', { tabId, text }),
       find: (tabId, query, action) => call<void>('aether_tabs_find', { tabId, query, action }),
@@ -83,12 +95,15 @@ if (isTauri) {
     },
     capture: {
       currentPage: (input) => call<CaptureResult>('aether_capture_current_page', { input }),
+      url: (input) => call<CaptureResult>('aether_capture_url', { input }),
+      urls: (input) => call<BulkCaptureResult>('aether_capture_urls', { input }),
       move: (input) => call<CaptureSummary>('aether_capture_move', { input }),
       delete: (captureId) => call<void>('aether_capture_delete', { captureId }),
       suggestHub: () => call<CaptureHubSuggestion | null>('aether_capture_suggest_hub')
     },
     search: {
-      collection: (input) => call<SearchResult[]>('aether_search_collection', { input })
+      collection: (input) => call<SearchResult[]>('aether_search_collection', { input }),
+      library: (input) => call<LibrarySearchResult>('aether_search_library', { input })
     },
     semanticTrail: {
       generate: (input) => call<SemanticTrailResult>('aether_semantic_trail_generate', { input })
@@ -106,7 +121,10 @@ if (isTauri) {
     },
     chat: {
       ask: (input) => call<ChatResult>('aether_chat_ask', { input }),
-      cancel: () => call<void>('aether_chat_cancel')
+      cancel: () => call<void>('aether_chat_cancel'),
+      history: (collectionId) =>
+        call<ConversationTurn[]>('aether_chat_history', { collectionId }),
+      clearHistory: (collectionId) => call<void>('aether_chat_clear_history', { collectionId })
     },
     crystallizer: {
       generate: (input) => call<IcebergResult>('aether_crystallizer_generate', { input }),
@@ -123,6 +141,14 @@ if (isTauri) {
       updateSettings: (input) => call<AppSettings>('aether_system_update_settings', { input }),
       updateModels: (input) => call<SystemStatus>('aether_system_update_models', { input }),
       checkForUpdate: () => call<UpdateCheckResult>('aether_system_check_for_update'),
+      installUpdate: () => call<UpdateInstallResult>('aether_system_install_update'),
+      relaunch: () => call<void>('aether_system_relaunch'),
+      exportLibrary: () => call<LibraryExportResult>('aether_system_export_library'),
+      diagnostics: () => call<DiagnosticEntry[]>('aether_system_diagnostics'),
+      exportDiagnostics: () =>
+        call<DiagnosticsExportResult>('aether_system_export_diagnostics'),
+      indexStatus: () => call<LibraryIndexStatus>('aether_library_index_status'),
+      reindexLibrary: () => call<LibraryReindexResult>('aether_library_reindex'),
       openExternalUrl: (url) => call<void>('aether_system_open_external_url', { url }),
       downloadModels: (input) => call<SystemStatus>('aether_system_download_models', { input })
     },
@@ -136,8 +162,8 @@ if (isTauri) {
         call<{ top: number; bottom: number; left: number; right: number }>(
           'aether_layout_window_insets'
         ),
-      setMobileTabBounds: (bounds) =>
-        call<void>('aether_layout_set_mobile_tab_bounds', { ...bounds })
+      setWebContentBounds: (bounds) =>
+        call<void>('aether_layout_set_web_content_bounds', { ...bounds })
     },
     events: {
       onState: (listener: (state: AetherState) => void) => {
@@ -168,8 +194,26 @@ if (isTauri) {
           void unlisten.then((dispose) => dispose())
         }
       },
+      onUpdateProgress: (listener: (progress: UpdateInstallProgress) => void) => {
+        const unlisten = listen<UpdateInstallProgress>('aether:update-progress', (event) =>
+          listener(event.payload)
+        )
+
+        return () => {
+          void unlisten.then((dispose) => dispose())
+        }
+      },
       onChatStream: (listener: (event: ChatStreamEvent) => void) => {
         const unlisten = listen<ChatStreamEvent>('aether:chat-stream', (event) =>
+          listener(event.payload)
+        )
+
+        return () => {
+          void unlisten.then((dispose) => dispose())
+        }
+      },
+      onDownload: (listener: (progress: DownloadProgress) => void) => {
+        const unlisten = listen<DownloadProgress>('aether:download', (event) =>
           listener(event.payload)
         )
 

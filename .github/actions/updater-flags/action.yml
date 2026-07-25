@@ -1,0 +1,35 @@
+name: Resolve updater signing
+description: >-
+  Decides whether this build should produce signed in-app updater artifacts.
+  `bundle.createUpdaterArtifacts` is a hard error when TAURI_SIGNING_PRIVATE_KEY
+  is missing, so it lives in tauri.updater.conf.json and is only merged in when
+  the secret actually exists. Without it, builds are byte-identical to before and
+  the app reports the `unconfigured` update status instead of offering a download
+  it could never verify.
+
+outputs:
+  config:
+    description: >-
+      Either the `--config <path>` flag to append to `tauri build`, or empty.
+    value: ${{ steps.resolve.outputs.config }}
+  signed:
+    description: '"true" when updater artifacts will be produced.'
+    value: ${{ steps.resolve.outputs.signed }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+          echo 'config=--config src-tauri/tauri.updater.conf.json' >> "$GITHUB_OUTPUT"
+          echo 'signed=true' >> "$GITHUB_OUTPUT"
+          echo "Updater artifacts enabled for this build."
+        else
+          echo 'config=' >> "$GITHUB_OUTPUT"
+          echo 'signed=false' >> "$GITHUB_OUTPUT"
+          echo "::notice title=No updater signing key::TAURI_SIGNING_PRIVATE_KEY is not set, so this build ships without in-app update artifacts. Generate a keypair per docs/SIGNING.md to enable them."
+        fi

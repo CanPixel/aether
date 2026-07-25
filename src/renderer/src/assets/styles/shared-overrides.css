@@ -1,17 +1,49 @@
+/* The only call to action on an otherwise empty surface, so it gets the primary
+   treatment. It was previously 30px with the shadow stripped, which left the app's
+   most important first-run action looking like disabled text. */
 .empty-state button {
-  height: 30px;
-  box-shadow: none;
+  height: 36px;
+  padding: 0 18px;
+  border-color: rgb(var(--primary-edge-rgb) / 0.34);
+  background:
+    linear-gradient(180deg, rgb(var(--surface-rgb) / 0.24), transparent 44%),
+    linear-gradient(
+      145deg,
+      rgb(var(--primary-from-rgb)),
+      rgb(var(--primary-mid-rgb)) 52%,
+      rgb(var(--primary-to-rgb))
+    );
+  color: rgb(var(--highlight-rgb));
+  box-shadow:
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.5),
+    0 9px 18px rgb(var(--primary-edge-rgb) / 0.14);
+  font-family: var(--font-ice);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.empty-state button:hover {
+  border-color: rgb(var(--primary-edge-rgb) / 0.5);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.58),
+    0 11px 22px rgb(var(--primary-edge-rgb) / 0.2);
+}
+
+.empty-state button:active {
+  box-shadow:
+    inset 0 1px 3px rgb(var(--depth-rgb) / 0.28),
+    0 3px 8px rgb(var(--primary-edge-rgb) / 0.16);
 }
 
 .empty-state {
   min-height: 172px;
-  border: 1px dashed rgba(115, 148, 194, 0.28);
+  border: 1px dashed rgb(var(--steel-soft-rgb) / 0.28);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.34);
+  background: rgb(var(--surface-rgb) / 0.34);
 }
 
 .empty-row {
-  border: 1px dashed rgba(115, 148, 194, 0.22);
+  border: 1px dashed rgb(var(--steel-soft-rgb) / 0.22);
   border-radius: 12px;
   padding: 16px;
   color: var(--muted);
@@ -37,11 +69,11 @@
   padding: 0;
   opacity: 0;
   pointer-events: none;
-  color: #5e87c3;
+  color: rgb(var(--text-steel-rgb));
   background:
-    radial-gradient(circle at 34% 20%, rgba(255, 255, 255, 0.98), transparent 38%),
-    radial-gradient(circle at 70% 82%, rgba(168, 237, 255, 0.36), transparent 46%),
-    rgba(255, 255, 255, 0.72);
+    radial-gradient(circle at 34% 20%, rgb(var(--surface-rgb) / 0.98), transparent 38%),
+    radial-gradient(circle at 70% 82%, rgb(var(--sky-pale-rgb) / 0.36), transparent 46%),
+    rgb(var(--surface-rgb) / 0.72);
   transform: translateX(-50%);
   transition:
     opacity 320ms ease 160ms,
@@ -63,9 +95,9 @@
 }
 
 .panel-icon-toggle:hover {
-  background: rgba(255, 255, 255, 0.94);
+  background: rgb(var(--surface-rgb) / 0.94);
   color: var(--accent-strong);
-  box-shadow: 0 12px 24px rgba(84, 130, 199, 0.16);
+  box-shadow: 0 12px 24px rgb(var(--steel-vivid-rgb) / 0.16);
   transform: translate(-50%, -1px);
 }
 
@@ -73,14 +105,14 @@
   0%,
   100% {
     box-shadow:
-      0 14px 30px rgba(84, 130, 199, 0.13),
-      0 0 0 0 rgba(172, 236, 255, 0.32);
+      0 14px 30px rgb(var(--steel-vivid-rgb) / 0.13),
+      0 0 0 0 rgb(var(--glow-pale-rgb) / 0.32);
   }
 
   50% {
     box-shadow:
       0 18px 40px rgba(84, 160, 199, 0.22),
-      0 0 0 8px rgba(172, 236, 255, 0);
+      0 0 0 8px rgb(var(--glow-pale-rgb) / 0);
   }
 }
 
@@ -124,13 +156,13 @@
   left: 14px;
   z-index: 6;
   gap: 10px;
-  border: 1px solid rgba(133, 158, 193, 0.18);
+  border: 1px solid rgb(var(--slate-soft-rgb) / 0.18);
   border-radius: 14px;
   padding: 12px;
   background:
-    radial-gradient(circle at 14% 0%, rgba(255, 255, 255, 0.92), transparent 40%),
-    rgba(250, 253, 255, 0.94);
-  box-shadow: 0 18px 44px rgba(75, 114, 170, 0.18);
+    radial-gradient(circle at 14% 0%, rgb(var(--surface-rgb) / 0.92), transparent 40%),
+    rgb(var(--surface-tint-warm-rgb) / 0.94);
+  box-shadow: 0 18px 44px rgb(var(--steel-deep-rgb) / 0.18);
 }
 
 .model-island.compact-model-island {
@@ -139,20 +171,20 @@
   left: auto;
   width: min(248px, calc(100% - 28px));
   gap: 0;
-  border-color: rgba(105, 188, 224, 0.24);
+  border-color: rgb(var(--accent-soft-rgb) / 0.24);
   border-radius: 999px;
   padding: 9px 10px 10px;
   background:
-    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.98), transparent 42%),
-    linear-gradient(145deg, rgba(240, 252, 255, 0.96), rgba(255, 255, 255, 0.78));
+    radial-gradient(circle at 18% 12%, rgb(var(--surface-rgb) / 0.98), transparent 42%),
+    linear-gradient(145deg, rgb(var(--surface-tint-rgb) / 0.96), rgb(var(--surface-rgb) / 0.78));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.86),
-    0 14px 34px rgba(72, 151, 190, 0.16);
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.86),
+    0 14px 34px rgb(var(--sky-deep-rgb) / 0.16);
 }
 
 .model-island.compact-model-island label {
   gap: 4px;
-  color: #2a7a9f;
+  color: rgb(var(--accent-strong-rgb));
   font-size: 10px;
   font-weight: 860;
   letter-spacing: 0.04em;
@@ -161,17 +193,17 @@
 
 .model-island.compact-model-island select {
   height: 30px;
-  border-color: rgba(99, 174, 214, 0.22);
+  border-color: rgb(var(--accent-sky-rgb) / 0.22);
   border-radius: 999px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(234, 249, 255, 0.78)),
-    rgba(255, 255, 255, 0.84);
+    linear-gradient(180deg, rgb(var(--surface-rgb) / 0.94), rgb(var(--surface-tint-rgb) / 0.78)),
+    rgb(var(--surface-rgb) / 0.84);
   color: var(--ink);
   font-size: 12px;
   font-weight: 820;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 8px 18px rgba(74, 145, 194, 0.1);
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.9),
+    0 8px 18px rgb(var(--sky-deep-rgb) / 0.1);
 }
 
 .model-heading {
@@ -198,10 +230,10 @@
 .model-heading span {
   max-width: 156px;
   overflow: hidden;
-  border: 1px solid rgba(105, 139, 190, 0.16);
+  border: 1px solid rgb(var(--steel-mid-rgb) / 0.16);
   border-radius: 999px;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.62);
+  background: rgb(var(--surface-rgb) / 0.62);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -219,11 +251,17 @@
 }
 
 .frozen-tab {
-  border-color: rgba(125, 211, 252, 0.34);
+  border-color: rgb(var(--sky-rgb) / 0.34);
   background:
-    radial-gradient(circle at 80% 12%, rgba(255, 255, 255, 0.98), transparent 24%),
-    linear-gradient(135deg, #ecfeff 0%, #bae6fd 38%, #e0f2fe 66%, #ffffff 100%) !important;
-  color: #075985;
+    radial-gradient(circle at 80% 12%, rgb(var(--surface-rgb) / 0.98), transparent 24%),
+    linear-gradient(
+      135deg,
+      rgb(var(--surface-tint-rgb)) 0%,
+      rgb(var(--sky-pale-rgb)) 38%,
+      rgb(var(--surface-sky-rgb)) 66%,
+      rgb(var(--surface-rgb)) 100%
+    ) !important;
+  color: rgb(var(--marine-rgb));
   isolation: isolate;
   transition:
     transform 90ms ease,
@@ -234,8 +272,8 @@
 }
 
 .frozen-tab:hover {
-  border-color: rgba(14, 165, 233, 0.58);
-  color: #082f49;
+  border-color: rgb(var(--accent-vivid-rgb) / 0.58);
+  color: rgb(var(--ink-deep-rgb));
   transform: translateY(-1px);
 }
 
@@ -258,11 +296,11 @@
   max-width: min(100%, 260px);
   height: 26px;
   overflow: hidden;
-  border: 1px solid rgba(145, 166, 195, 0.18);
+  border: 1px solid rgb(var(--slate-rgb) / 0.18);
   border-radius: 999px;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.58);
-  color: #566b86;
+  background: rgb(var(--surface-rgb) / 0.58);
+  color: rgb(var(--slate-ocean-rgb));
   font-size: 11px;
   font-weight: 700;
   box-shadow: none;
@@ -271,8 +309,8 @@
 }
 
 .citation-list button:hover {
-  border-color: rgba(79, 174, 202, 0.34);
-  background: rgba(255, 255, 255, 0.9);
+  border-color: rgb(var(--accent-muted-rgb) / 0.34);
+  background: rgb(var(--surface-rgb) / 0.9);
   color: var(--accent-strong);
 }
 
@@ -282,19 +320,19 @@
   z-index: 30;
   display: grid;
   place-items: center;
-  background: rgba(219, 232, 249, 0.36);
+  background: rgb(var(--surface-sky-rgb) / 0.36);
   backdrop-filter: blur(18px);
 }
 
 .collection-dialog {
   width: min(460px, calc(100vw - 40px));
-  border: 1px solid rgba(118, 146, 187, 0.24);
+  border: 1px solid rgb(var(--line-rgb) / 0.24);
   border-radius: 18px;
   padding: 18px;
   background:
-    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.96), transparent 36%),
-    rgba(250, 253, 255, 0.92);
-  box-shadow: 0 24px 70px rgba(75, 114, 170, 0.22);
+    radial-gradient(circle at 18% 0%, rgb(var(--surface-rgb) / 0.96), transparent 36%),
+    rgb(var(--surface-tint-warm-rgb) / 0.92);
+  box-shadow: 0 24px 70px rgb(var(--steel-deep-rgb) / 0.22);
 }
 
 .collection-dialog header,
@@ -373,19 +411,19 @@
   min-width: 0;
   place-items: center;
   gap: 4px;
-  border-color: rgba(122, 154, 196, 0.18);
+  border-color: rgb(var(--line-rgb) / 0.18);
   border-radius: 12px;
   padding: 6px;
-  background: rgba(255, 255, 255, 0.54);
+  background: rgb(var(--surface-rgb) / 0.54);
   box-shadow: none;
 }
 
 .icon-picker button.active,
 .icon-picker button:hover {
-  border-color: rgba(79, 174, 202, 0.38);
+  border-color: rgb(var(--accent-muted-rgb) / 0.38);
   background:
-    radial-gradient(circle at 30% 16%, rgba(255, 255, 255, 0.96), transparent 42%),
-    linear-gradient(145deg, rgba(232, 251, 255, 0.9), rgba(255, 255, 255, 0.72));
+    radial-gradient(circle at 30% 16%, rgb(var(--surface-rgb) / 0.96), transparent 42%),
+    linear-gradient(145deg, rgb(var(--surface-tint-cool-rgb) / 0.9), rgb(var(--surface-rgb) / 0.72));
   color: var(--accent-strong);
 }
 
@@ -405,7 +443,7 @@
 
 .delete-copy {
   margin: 20px 0;
-  color: #33455f;
+  color: rgb(var(--soft-ink-rgb));
   font-size: 14px;
   line-height: 1.5;
 }
@@ -415,36 +453,40 @@
   font-weight: 820;
 }
 
+/* Same gradient family as the primary buttons in foundation.css, and it carried the
+   same defect: a themed surface stop mixed with unthemed accents, which in dark mode
+   ran from navy to pale blue under light label text. */
 .primary-button,
 .danger-primary {
-  border-color: rgba(76, 151, 190, 0.4);
+  border-color: rgb(var(--primary-edge-rgb) / 0.4);
   background:
-    radial-gradient(circle at 28% 16%, rgba(255, 255, 255, 0.95), transparent 36%),
+    radial-gradient(circle at 28% 16%, rgb(var(--highlight-rgb) / 0.18), transparent 36%),
     linear-gradient(
       145deg,
-      rgba(229, 252, 255, 0.96),
-      rgba(118, 196, 229, 0.94) 48%,
-      rgba(54, 129, 188, 0.92)
+      rgb(var(--primary-from-rgb) / 0.96),
+      rgb(var(--primary-mid-rgb) / 0.94) 48%,
+      rgb(var(--primary-to-rgb) / 0.92)
     );
-  color: #ffffff;
+  color: rgb(var(--primary-label-rgb));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.62),
-    0 12px 26px rgba(52, 139, 184, 0.16);
-  text-shadow: 0 1px 8px rgba(26, 80, 121, 0.25);
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.62),
+    0 12px 26px rgb(var(--accent-ocean-rgb) / 0.16);
+  text-shadow: 0 1px 8px rgb(var(--ink-navy-rgb) / 0.25);
 }
 
 .danger-primary {
-  border-color: rgba(184, 91, 89, 0.25);
-  background: linear-gradient(180deg, #d87a78, #b85b59);
+  border-color: rgb(var(--danger-rgb) / 0.25);
+  background: linear-gradient(180deg, #d87a78, rgb(var(--danger-rgb)));
+  color: rgb(var(--highlight-rgb));
 }
 
 button:disabled,
 button:disabled:hover {
-  border-color: rgba(121, 144, 176, 0.18);
+  border-color: rgb(var(--slate-cool-rgb) / 0.18);
   background:
-    radial-gradient(circle at 32% 18%, rgba(255, 255, 255, 0.7), transparent 42%),
-    linear-gradient(145deg, rgba(233, 239, 246, 0.72), rgba(218, 228, 238, 0.62));
-  color: rgba(77, 95, 120, 0.58);
+    radial-gradient(circle at 32% 18%, rgb(var(--surface-rgb) / 0.7), transparent 42%),
+    linear-gradient(145deg, rgb(var(--surface-sky-rgb) / 0.72), rgb(var(--surface-tint-rgb) / 0.62));
+  color: rgb(var(--slate-steel-rgb) / 0.58);
   box-shadow: none;
   cursor: not-allowed;
   opacity: 0.5;
@@ -453,16 +495,21 @@ button:disabled:hover {
 
 .history-controls button:disabled,
 .history-controls button:disabled:hover {
-  color: rgba(92, 111, 138, 0.48);
+  color: rgb(var(--slate-mid-rgb) / 0.48);
 }
 
 @media (max-width: 1120px) {
+  .crystallizer {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
   .saved-shelves {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .saved-shelves .iceberg-band {
-    border-top: 1px solid rgba(143, 165, 196, 0.18);
+    border-top: 1px solid rgb(var(--slate-rgb) / 0.18);
     border-left: 0;
   }
 
@@ -481,12 +528,15 @@ button:disabled:hover {
   }
 
   .crystallizer-body {
+    flex: 0 0 auto;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) 260px;
+    grid-template-rows: minmax(420px, 56vh) minmax(280px, auto);
   }
 
   .crystallizer-dock {
-    border-top: 1px solid rgba(125, 211, 252, 0.26);
+    height: auto;
+    min-height: 280px;
+    border-top: 1px solid rgb(var(--sky-rgb) / 0.26);
     border-left: 0;
   }
 

@@ -20,6 +20,7 @@
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck:tauri": "cargo check --manifest-path src-tauri/Cargo.toml",
     "typecheck": "bun run typecheck:web && bun run typecheck:tauri",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml --lib",
     "version:bump": "bun scripts/bump-version.ts",
     "version:check": "bun scripts/bump-version.ts --check",
     "release": "bun scripts/release.ts",
@@ -43,29 +44,35 @@
     "build:desktop-local": "bun run build && bun run linux:arm64:build && bun run linux:x64:build",
     "tauri": "tauri"
   },
+  "overrides": {
+    "brace-expansion": "^5.0.7",
+    "@babel/core": "^7.29.1"
+  },
   "dependencies": {
     "ldrs": "^1.1.9",
-    "lucide-react": "^1.17.0"
+    "lucide-react": "^1.26.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "@tauri-apps/api": "^2.11.0",
-    "@tauri-apps/cli": "^2.11.2",
+    "@babel/core": "^8.0.1",
+    "brace-expansion": "^5.0.8",
+    "@eslint/js": "^9.39.5",
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/bun": "^1.3.14",
-    "@types/node": "^25.9.1",
-    "@types/react": "^19.2.15",
+    "@types/node": "^25.9.5",
+    "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.2",
+    "@vitejs/plugin-react": "^6.0.4",
     "appdmg": "^0.6.6",
-    "eslint": "^10.4.0",
+    "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "prettier": "^3.8.3",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "prettier": "^3.9.6",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.14"
+    "typescript-eslint": "^8.65.0",
+    "vite": "^8.1.5"
   }
 }

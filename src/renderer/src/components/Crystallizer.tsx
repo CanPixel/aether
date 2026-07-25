@@ -4,6 +4,7 @@ import {
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent,
   type CSSProperties,
+  useEffect,
   useMemo,
   useRef,
   useState
@@ -29,7 +30,7 @@ import {
   SavedIceberg,
   SavedIcebergSummary
 } from '../../../shared/aether'
-import { formatVisibleModelName, inferIcebergIcon } from '../utils/aether-ui'
+import { countLabel, formatVisibleModelName, inferIcebergIcon } from '../utils/aether-ui'
 import { ChevronRightIcon } from './icons'
 import { CrystallizingOrb } from './CrystallizingOrb'
 import { Quantum } from 'ldrs/react'
@@ -39,7 +40,6 @@ type LayerDefinition = {
   name: string
   shortName: string
   caption: string
-  depth: string
   accent: string
 }
 
@@ -76,6 +76,18 @@ type CrystallizerProps = {
   onSave: (input: SaveIcebergInput) => Promise<SavedIceberg>
 }
 
+// Coverage is looked up per topic on selection rather than for all 12-45 up front:
+// each lookup is an embedding plus a vector scan, and the user only ever reads the
+// one they have selected.
+type TopicCoverage =
+  | { status: 'loading' }
+  | { status: 'error' }
+  | { status: 'ready'; hits: number; capped: boolean; mode: 'semantic' | 'literal' }
+
+// Enough to be a useful count without scanning the whole store for a number the
+// user only glances at. A result at exactly this size is reported as "25+".
+const COVERAGE_LOOKUP_LIMIT = 25
+
 const CANVAS_WIDTH = 2200
 const CANVAS_HEIGHT = 1800
 const NODE_WIDTH = 286
@@ -86,6 +98,7 @@ const RAISED_CARD_MIN_WIDTH = 250
 const MIN_ZOOM = 0.74
 const MAX_ZOOM = 2.25
 const FITTED_ZOOM = 0.74
+const FOCUSED_ZOOM = 1.9
 const NODE_FIELD = {
   minX: 600,
   maxX: CANVAS_WIDTH - 430,
@@ -105,7 +118,6 @@ const LAYERS: LayerDefinition[] = [
     name: 'Surface',
     shortName: 'Surface',
     caption: 'Common language',
-    depth: '0-20%',
     accent: '#0f8cc2'
   },
   {
@@ -113,7 +125,6 @@ const LAYERS: LayerDefinition[] = [
     name: 'Formation',
     shortName: 'Formation',
     caption: 'Adjacent concepts',
-    depth: '20-40%',
     accent: '#0f8f80'
   },
   {
@@ -121,7 +132,6 @@ const LAYERS: LayerDefinition[] = [
     name: 'Cold Current',
     shortName: 'Current',
     caption: 'Methods and mechanisms',
-    depth: '40-60%',
     accent: '#64748b'
   },
   {
@@ -129,7 +139,6 @@ const LAYERS: LayerDefinition[] = [
     name: 'Black Ice',
     shortName: 'Black Ice',
     caption: 'Specialist patterns',
-    depth: '60-80%',
     accent: '#7560b1'
   },
   {
@@ -137,7 +146,6 @@ const LAYERS: LayerDefinition[] = [
     name: 'Abyssal Lattice',
     shortName: 'Abyssal',
     caption: 'Hidden edge knowledge',
-    depth: '80-100%',
     accent: '#b76e2d'
   }
 ]
@@ -156,10 +164,23 @@ function formatDepthScore(item: IcebergItem): string | null {
   return typeof item.depthScore === 'number' ? `Depth ${Math.round(item.depthScore)}` : null
 }
 
-function formatConfidence(item: IcebergItem): string | null {
-  if (typeof item.confidence !== 'number') return null
-  const normalized = item.confidence <= 1 ? item.confidence * 100 : item.confidence
-  return `Confidence ${Math.round(normalized)}%`
+// What replaced the old "Confidence 92%" readout. That number was the model's own
+// self-report, rescaled — presenting it as a measurement was the problem. This is a
+// count of the user's own captured sources that match the topic, which is a real
+// measurement of something worth knowing: whether they can already read about it.
+function formatCoverage(coverage: TopicCoverage | undefined): string | null {
+  if (!coverage) return null
+  if (coverage.status === 'loading') return 'Checking your library'
+  if (coverage.status === 'error') return null
+  if (coverage.hits === 0) return 'Nothing in your library yet'
+  const count = coverage.capped
+    ? `${coverage.hits}+ sources`
+    : countLabel(coverage.hits, 'source')
+  // Naming the mode matters: with no embedding model installed this is a keyword
+  // match, not a semantic one, and the number means something weaker.
+  return coverage.mode === 'literal'
+    ? `${count} in your library (keyword match)`
+    : `${count} in your library`
 }
 
 function getCenteredPan(zoom: number): { x: number; y: number } {
@@ -237,6 +258,8 @@ export function Crystallizer({
   const [selectedItem, setSelectedItem] = useState<IcebergItem | null>(
     openedIceberg?.items[0] ?? null
   )
+  const [coverage, setCoverage] = useState<Record<string, TopicCoverage>>({})
+  const coverageRequested = useRef<Set<string>>(new Set())
   const [activeLayer, setActiveLayer] = useState<number | 'all'>('all')
   const [zoom, setZoom] = useState(FITTED_ZOOM)
   const [pan, setPan] = useState(() => getCenteredPan(FITTED_ZOOM))
@@ -290,6 +313,42 @@ export function Crystallizer({
     selectedItem && visibleItems.some((item) => item.id === selectedItem.id)
       ? selectedItem
       : (visibleItems[0] ?? null)
+  const activeCoverage = activeSelectedItem ? coverage[activeSelectedItem.id] : undefined
+
+  // Looked up once per topic, on selection. The ref (rather than reading `coverage`
+  // in the dependency list) is what stops the effect re-firing on its own writes.
+  useEffect(() => {
+    const item = activeSelectedItem
+    if (!item || coverageRequested.current.has(item.id)) return
+    coverageRequested.current.add(item.id)
+
+    setCoverage((current) => ({ ...current, [item.id]: { status: 'loading' } }))
+    void window.aether.search
+      .library({ query: item.name, limit: COVERAGE_LOOKUP_LIMIT })
+      .then((found) => {
+        setCoverage((current) => ({
+          ...current,
+          [item.id]: {
+            status: 'ready',
+            hits: found.hits.length,
+            capped: found.hits.length >= COVERAGE_LOOKUP_LIMIT,
+            mode: found.mode
+          }
+        }))
+      })
+      .catch(() => {
+        // Silent: coverage is supplementary, and a failed lookup must not put an
+        // error banner over a topic the user just clicked.
+        setCoverage((current) => ({ ...current, [item.id]: { status: 'error' } }))
+      })
+
+    // Deliberately no cleanup that discards a late result. Each entry is keyed by
+    // topic id, so an answer arriving after the selection moved on is still the
+    // right answer for the topic it was asked about. Dropping it would leave that
+    // topic stuck on "Checking your library" forever, because the ref above stops
+    // it ever being requested again.
+  }, [activeSelectedItem])
+
   const hasResults = Boolean(result?.items.length)
   const hasUnsavedResult = Boolean(result && !savedId)
   const hasSavedAtlases = savedIcebergs.length > 0
@@ -350,7 +409,7 @@ export function Crystallizer({
       setResult(nextResult)
       setSelectedItem(nextResult.items[0] ?? null)
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Crystallization failed.')
+      setError(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
     }
@@ -471,7 +530,7 @@ export function Crystallizer({
     const positionedItem = positionedItems.find(({ item: candidate }) => candidate.id === item.id)
     if (!positionedItem) return
 
-    const nextZoom = clamp(Math.max(zoom, 1.72), MIN_ZOOM, MAX_ZOOM)
+    const nextZoom = clamp(Math.max(zoom, FOCUSED_ZOOM), MIN_ZOOM, MAX_ZOOM)
     animateView(nextZoom, {
       x: CANVAS_WIDTH / 2 - positionedItem.displayX * nextZoom,
       y: CANVAS_HEIGHT / 2 - positionedItem.displayY * nextZoom
@@ -726,29 +785,6 @@ export function Crystallizer({
                     y1={(CANVAS_HEIGHT / LAYERS.length) * layer.level}
                     y2={(CANVAS_HEIGHT / LAYERS.length) * layer.level}
                   />
-                  <g
-                    className="crystallizer-layer-label"
-                    transform={`translate(94 ${(CANVAS_HEIGHT / LAYERS.length) * (layer.level - 1) + 24})`}
-                  >
-                    <rect height="58" rx="18" width="324" />
-                    <circle className="layer-label-number-mark" cx="31" cy="29" r="18" />
-                    <text className="layer-label-number" x="31" y="36">
-                      {layer.level}
-                    </text>
-                    <text className="layer-label-name" x="64" y="25">
-                      {layer.name}
-                    </text>
-                    <text className="layer-label-caption" x="64" y="45">
-                      {layer.caption}
-                    </text>
-                  </g>
-                  <text
-                    className="layer-depth-label"
-                    x={CANVAS_WIDTH - 122}
-                    y={(CANVAS_HEIGHT / LAYERS.length) * (layer.level - 0.5)}
-                  >
-                    {layer.depth}
-                  </text>
                 </g>
               ))}
 
@@ -797,7 +833,6 @@ export function Crystallizer({
                       setHoveredItemId(null)
                       setRaisedVisible(false)
                     }}
-                    onKeyDown={(event) => handleNodeKeyDown(event, item)}
                     onMouseEnter={(event) => {
                       setHoveredItemId(item.id)
                       raiseCard(event.currentTarget, item, layer.accent)
@@ -808,6 +843,7 @@ export function Crystallizer({
                       // actually leaves the canvas via handlePointerLeave.
                       setHoveredItemId(null)
                     }}
+                    onKeyDown={(event) => handleNodeKeyDown(event, item)}
                     role="button"
                     style={
                       {
@@ -820,22 +856,65 @@ export function Crystallizer({
                   >
                     <g className="ice-node-scale">
                       <foreignObject
+                        className="ice-node-content"
                         height={NODE_HEIGHT}
                         width={NODE_WIDTH}
                         x={-NODE_WIDTH / 2}
                         y={-NODE_HEIGHT / 2}
                       >
-                        <button className="ice-node" type="button">
+                        <div className="ice-node">
                           <span>{item.level}</span>
                           <strong>{item.name}</strong>
                           <small>{item.description}</small>
-                        </button>
+                        </div>
                       </foreignObject>
                     </g>
+                    <rect
+                      className="ice-node-hit-target"
+                      height={NODE_HEIGHT}
+                      rx="11"
+                      width={NODE_WIDTH}
+                      x={-NODE_WIDTH / 2}
+                      y={-NODE_HEIGHT / 2}
+                    />
                   </g>
                 )
               })}
             </g>
+
+            {/* Axis furniture, not content: these used to live inside the
+                pan/zoom group, so panning slid the layer names off the left edge
+                and the depth ranges off the right. They now track their band
+                vertically (band y through the same transform) while staying
+                pinned horizontally, so they are always readable. */}
+            {LAYERS.map((layer) => {
+              const bandTop = (CANVAS_HEIGHT / LAYERS.length) * (layer.level - 1)
+
+              return (
+                <g
+                  className="crystallizer-layer crystallizer-layer-pinned"
+                  key={`label-${layer.level}`}
+                  style={{ '--layer-accent': layer.accent } as CSSProperties}
+                >
+                  <g
+                    className="crystallizer-layer-label"
+                    transform={`translate(94 ${bandTop * zoom + pan.y + 24})`}
+                  >
+                    <rect height="58" rx="18" width="324" />
+                    <circle className="layer-label-number-mark" cx="31" cy="29" r="18" />
+                    <text className="layer-label-number" x="31" y="36">
+                      {layer.level}
+                    </text>
+                    <text className="layer-label-name" x="64" y="25">
+                      {layer.name}
+                    </text>
+                    <text className="layer-label-caption" x="64" y="45">
+                      {layer.caption}
+                    </text>
+                  </g>
+                </g>
+              )
+            })}
           </svg>
 
           {!result && !loading && !error && (
@@ -897,7 +976,7 @@ export function Crystallizer({
                 <BookOpen size={15} />
                 Ordered Topics
               </span>
-              <h2>{result ? `${visibleItems.length} fragments` : 'Awaiting query'}</h2>
+              <h2>{result ? countLabel(visibleItems.length, 'topic') : 'Awaiting query'}</h2>
             </div>
           </div>
 
@@ -913,13 +992,13 @@ export function Crystallizer({
               </p>
               <h2>{activeSelectedItem.name}</h2>
               <span>{getLayer(activeSelectedItem.level).caption}</span>
-              {(formatDepthScore(activeSelectedItem) || formatConfidence(activeSelectedItem)) && (
+              {(formatDepthScore(activeSelectedItem) || formatCoverage(activeCoverage)) && (
                 <div className="crystallizer-depth-meta">
                   {formatDepthScore(activeSelectedItem) && (
                     <strong>{formatDepthScore(activeSelectedItem)}</strong>
                   )}
-                  {formatConfidence(activeSelectedItem) && (
-                    <span>{formatConfidence(activeSelectedItem)}</span>
+                  {formatCoverage(activeCoverage) && (
+                    <span>{formatCoverage(activeCoverage)}</span>
                   )}
                 </div>
               )}
@@ -927,16 +1006,18 @@ export function Crystallizer({
               {activeSelectedItem.reason && (
                 <em className="crystallizer-depth-reason">{activeSelectedItem.reason}</em>
               )}
-              <button
-                className="explore-web-button"
-                onClick={() => {
-                  if (result) void onOpenTopic(result.keyword, activeSelectedItem)
-                }}
-                type="button"
-              >
-                Explore in Web
-                <ChevronRightIcon />
-              </button>
+              <div className="crystallizer-detail-actions">
+                <button
+                  className="explore-web-button"
+                  onClick={() => {
+                    if (result) void onOpenTopic(result.keyword, activeSelectedItem)
+                  }}
+                  type="button"
+                >
+                  Explore in Web
+                  <ChevronRightIcon />
+                </button>
+              </div>
             </article>
           ) : (
             <div className="crystallizer-placeholder">
@@ -1010,7 +1091,7 @@ export function Crystallizer({
                     >
                       <strong>{iceberg.title}</strong>
                       <small>
-                        {iceberg.itemCount} fragments •{' '}
+                        {countLabel(iceberg.itemCount, 'topic')} •{' '}
                         {formatVisibleModelName(iceberg.model) ?? iceberg.model}
                       </small>
                     </button>

@@ -12,6 +12,7 @@ import 'ldrs/react/LineWobble.css'
 import 'ldrs/react/Quantum.css'
 import 'ldrs/react/Ripples.css'
 import { ModelDownloadChoice, ModelDownloadProgress } from '../../../shared/aether'
+import { useDismissableOverlay } from '../utils/dismissable-overlay'
 
 const MODEL_SETUP_OPTIONS: Array<{
   id: ModelDownloadChoice
@@ -121,6 +122,10 @@ export function ModelSetupModal({
     (max, item) => Math.max(max, item.overallDownloadedBytes),
     0
   )
+  // `busy` is an install in flight: neither a backdrop click nor Escape should abandon
+  // a download. `onClose` already no-ops in that state; this stops the attempt earlier.
+  const backdrop = useDismissableOverlay(onClose, !busy)
+
   const overallPercent = complete ? 100 : progressPercent(progressDownloaded, progressTotal)
   const hasNewChatSelection = selectedModels.some((model) => !installedModels.includes(model))
   const canStart = (hasNewChatSelection || !coreInstalled) && !busy && !complete
@@ -132,10 +137,17 @@ export function ModelSetupModal({
         ? 'Begin Install'
         : coreInstalled
           ? 'All Installed'
-          : 'Install Core'
+          : // Name the size, because 639 MB versus 4 GB is the whole decision.
+            'Install MiST only · 639 MB'
 
   return (
-    <div className="model-setup-overlay" role="presentation">
+    <div
+      className="model-setup-overlay"
+      role="presentation"
+      {...backdrop}
+    >
+      {/* The shell wraps both the card and the actions below it, so anything inside —
+          including the Later/Install buttons — is a descendant and never dismisses. */}
       <div className="model-setup-shell">
         <section
           className="model-setup-modal"
@@ -143,7 +155,6 @@ export function ModelSetupModal({
           aria-modal="true"
           aria-labelledby="model-setup-title"
         >
-          <div className="model-setup-glass" aria-hidden="true" />
           <div className="model-setup-hero">
             <div className="model-setup-copy">
               <span className="model-setup-kicker">Local wisdom</span>
@@ -152,7 +163,8 @@ export function ModelSetupModal({
                 Choose the local model pack for ascending
                 <br></br>
                 <small style={{ fontWeight: '700' }}>
-                  AiON MiST installs with every selection for private semantic search
+                  AiON MiST is all ÆTHER needs — chat models are optional and can be
+                  added any time
                 </small>
               </p>
             </div>
@@ -210,6 +222,11 @@ export function ModelSetupModal({
                     : 'The misty semantic search core · 639 MB'}
                 </code>
                 {!coreInstalled ? <code>Qwen3 Embedding 0.6B Q8_0</code> : <></>}
+                {/* Without this, an empty checkbox list reads as an unfinished setup
+                    rather than a valid, complete install. */}
+                <code className="model-core-scope">
+                  Enough on its own: capture, semantic search, Flow, and cited passages
+                </code>
               </div>
 
               <div className="model-access-card">

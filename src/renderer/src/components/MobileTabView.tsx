@@ -16,7 +16,7 @@ export function MobileTabView(): React.JSX.Element {
     const report = (): void => {
       const rect = host.getBoundingClientRect()
       void window.aether.layout
-        .setMobileTabBounds({
+        .setWebContentBounds({
           top: rect.top,
           left: rect.left,
           width: rect.width,

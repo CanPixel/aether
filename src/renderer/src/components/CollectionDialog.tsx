@@ -52,7 +52,7 @@ export function CollectionDialog({
       <form className="collection-dialog" onSubmit={submit}>
         <header>
           <div>
-            <p>Collection</p>
+            <p>Hub</p>
             <h2>
               {state.mode === 'create'
                 ? 'New knowledge hub'

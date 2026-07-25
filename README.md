@@ -32,6 +32,56 @@
   <img src="docs/images/readme/aether-dashboard.png" alt="ÆTHER dashboard with portals, knowledge hubs, saved iCE atlases, and AiON" />
 </p>
 
+## Install
+
+Download the latest build for your platform from
+**[Releases](https://github.com/CanPixel/aether/releases/latest)**:
+
+| Platform | File |
+|---|---|
+| macOS (Apple Silicon, 11+) | `AETHER_macOS.dmg` |
+| Windows (x86_64) | `AETHER_x64-setup.exe` |
+| Linux (x86_64) | `AETHER_amd64.deb` · `AETHER_amd64.AppImage` |
+| Linux (ARM64) | `AETHER_arm64.deb` |
+
+> [!NOTE]
+> **Intel Macs are not supported.** Releases are built `arm64` only, and Rosetta
+> translates Intel binaries to Apple Silicon — not the other way round — so there is
+> no way to run this DMG on an Intel Mac. Building `universal-apple-darwin` would fix
+> it at the cost of doubling an already slow llama.cpp compile.
+
+> [!IMPORTANT]
+> **Releases are not yet code-signed**, so your OS will block the first launch. This
+> is a signing status, not a warning about the app — but you should only work around
+> it for software you actually trust, and you can verify what ÆTHER does by reading
+> this repository. Signing and notarization are the top roadmap item; the setup guide
+> is in [docs/SIGNING.md](docs/SIGNING.md).
+
+**macOS.** The `.dmg` is unsigned and un-notarized, so macOS quarantines it and
+reports *"ÆTHER is damaged and can't be opened"*. It is not damaged. Drag the app to
+`/Applications`, then clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/ÆTHER.app
+```
+
+Then open it normally. (Right-click → *Open* alone does not work for un-notarized
+apps on current macOS.)
+
+**Windows.** SmartScreen shows *"Windows protected your PC"*. Click **More info**,
+then **Run anyway**.
+
+**Linux.** No workaround needed.
+
+```bash
+sudo dpkg -i AETHER_amd64.deb        # or: chmod +x AETHER_amd64.AppImage
+```
+
+After first launch, ÆTHER asks you to install a local model. Only **AiON MiST**
+(639 MB) is required — capture, search, and cited passage retrieval all work with it
+alone. The chat models are optional and can be added later from the model picker.
+See [Local Wisdom Setup](#local-wisdom-setup).
+
 ## The Æther That Is
 
 > **New here?** Read the plain-language introduction: [What is ÆTHER?](docs/WHAT-IS-AETHER.md)
@@ -87,14 +137,22 @@ Fresh installs use **AiON Launch**, the in-app setup flow for downloading local 
 | Model         | Role                                                          | Official source                       |     Size |
 | ------------- | ------------------------------------------------------------- | ------------------------------------- | -------: |
 | **AiON MiST** | Required embedding model for search, capture, and retrieval   | `Qwen/Qwen3-Embedding-0.6B-GGUF`      | ~0.64 GB |
-| **AiON LiTE** | Smaller, faster chat model for everyday answers and summaries | `google/gemma-4-E2B-it-qat-q4_0-gguf` | ~3.35 GB |
-| **AiON WiSE** | Larger chat model for richer synthesis and iCE maps           | `google/gemma-4-E4B-it-qat-q4_0-gguf` | ~5.15 GB |
+| **AiON LiTE** | Optional chat model for everyday answers and summaries        | `google/gemma-4-E2B-it-qat-q4_0-gguf` | ~3.35 GB |
+| **AiON WiSE** | Optional chat model for richer synthesis and iCE maps         | `google/gemma-4-E4B-it-qat-q4_0-gguf` | ~5.15 GB |
 
 Install choices:
 
-- **MiST + LiTE**: best default for laptops, mobile-class hardware, and quick grounded answers.
-- **MiST + WiSE**: better for deeper synthesis, longer answers, and iCE generation.
+- **MiST alone (~0.64 GB)**: the smallest complete install. Capture, semantic search
+  across hubs, Flow, and Ask all work — Ask returns the best-matching passages from
+  your sources with citations instead of a written answer. Chat models can be added
+  later from Settings without re-indexing anything.
+- **MiST + LiTE**: adds written answers. Best default for laptops and mobile-class
+  hardware.
+- **MiST + WiSE**: deeper synthesis, longer answers, and iCE map generation.
 - **MiST + LiTE + WiSE**: lets the user switch between speed and depth.
+
+Only **iCE map generation** strictly requires a chat model; everything else degrades
+to retrieval rather than failing.
 
 Manual development installs can also place models here:
 
@@ -263,10 +321,20 @@ Current storage paths:
 ```text
 <appData>/aether-library/library.json
 <appData>/aether-realms/chunks.json
+<appData>/aether-realms/chunks.vec
 <appData>/aether-settings/settings.json
 <appData>/aether-icebergs/icebergs.json
+<appData>/aether-conversations/conversations.json
+<appData>/aether-session/session.json
+<appData>/aether-backups/aether-export-<timestamp>/
 ./aether-models/
 ```
+
+Every store is written temp-file-then-rename and keeps the previous good copy as
+`<name>.bak`. On load, an unreadable store falls back to its backup, and the damaged
+file is preserved as `<name>.corrupt-<timestamp>` rather than overwritten. Settings
+also offers **Export Library**, which snapshots every store into a timestamped folder
+under `aether-backups/`.
 
 `library.json` stores:
 
@@ -277,10 +345,11 @@ Current storage paths:
 - Chunk counts.
 - Legacy migration flags.
 
-`chunks.json` stores embedded chunk rows:
+`chunks.json` stores chunk **metadata** (store format v2):
 
 - `id`
-- `vector`
+- `vectorSlot` — index into `chunks.vec`
+- `needsReembed` — set when the chunk's text is kept but its vector is unusable
 - `text`
 - `collectionId`
 - `captureId`
@@ -289,6 +358,40 @@ Current storage paths:
 - `appId`
 - `capturedAt`
 - `chunkIndex`
+
+`chunks.vec` stores the embeddings themselves as raw little-endian `f32`, at a fixed
+stride of `dim * 4` bytes per slot. Keeping vectors out of JSON matters at scale: as
+decimal text a 1024-dim vector costs roughly 12 KB versus 4 KB binary, and — more
+importantly — the sidecar is **append-only**, so capturing a page writes only the new
+vectors instead of re-serializing every vector in the library. Deleting sources leaves
+dead slots behind; once they exceed half the file, the store compacts and renumbers.
+
+A v1 `chunks.json` (vectors inline) is migrated automatically on first load. The
+untouched original is archived as `chunks.v1.json` — a name no ordinary save touches,
+unlike `.bak`, which is one generation deep and would be recycled by the next capture.
+
+### Changing the embedding model
+
+The store holds exactly one embedding width, because the sidecar has a fixed stride.
+A v1 store written across a model change therefore holds vectors that cannot all fit:
+the migration keeps the width the most chunks use and **parks** the rest — their text
+is retained and `needsReembed` is set, so they are simply invisible to semantic search
+rather than deleted.
+
+Vectors from different models cannot be compared at all (cosine distance is undefined
+across widths), so parked chunks — and any chunk embedded by a superseded model — are
+recovered by **Settings → Re-index Library**. Because chunk text lives in the store,
+re-indexing is local compute: no page is fetched again.
+
+`conversations.json` stores the AiON thread per knowledge hub (plus one thread for
+current-page-only asks): prompt, answer, model, citations, and metrics for each turn.
+The most recent turns are replayed into the prompt so follow-up questions work, and
+each thread keeps its last 40 turns.
+
+`session.json` stores the open browser tabs, the active tab, and the window size and
+position, so quitting no longer discards them. It is written after every tab change
+rather than at exit, because the app force-exits on quit (see the llama.cpp Metal note)
+and never reaches a shutdown hook.
 
 `settings.json` stores app preferences such as the default search engine, Developer Mode, and selected local model paths.
 
@@ -395,6 +498,30 @@ Renderer responsibilities:
 - Calls typed `window.aether` APIs instead of direct Tauri, database, or file-system access.
 
 ---
+
+## Tests
+
+```bash
+bun run test
+```
+
+Runs the Rust unit suite (also run in CI on the Linux job). Alongside the usual unit
+tests it includes a **retrieval eval**: fixture documents are pushed through the real
+pipeline — `split_text` → `push_chunks` → the binary vector store → `rank_library_hits`
+— and each question must surface its expected source in the top three, with a stricter
+top-one assertion for distinctive terms.
+
+The eval substitutes a deterministic hashed bag-of-words embedder for the real model,
+because the embedding model is a ~640 MB download that CI cannot fetch. That still
+covers every model-independent way retrieval regresses — chunk boundaries and overlap,
+vector/slot alignment in the sidecar, per-capture grouping, ordering stability, scoping
+and limits — but it does **not** judge model quality.
+
+To check the real model is wired up locally:
+
+```bash
+AETHER_EMBEDDING_MODEL=/path/to/embedding.gguf cargo test --manifest-path src-tauri/Cargo.toml --lib real_model -- --ignored
+```
 
 ## Development Prerequisites
 
@@ -730,18 +857,19 @@ iCE depends on the local chat model returning parseable JSON. Try:
 
 ## Current Limitations
 
-- macOS packages are local unsigned/ad-hoc builds until Developer ID signing and notarization are configured.
+- Tab favicons are fetched directly from each site by the privileged window, so that one request per host is not local. See [docs/SECURITY.md](docs/SECURITY.md).
+- Releases are unsigned on macOS and Windows, so the first launch has to be unblocked manually — see [Install](#install) for the steps and [docs/SIGNING.md](docs/SIGNING.md) for the fix.
 - Capture quality depends on page structure, active webview snapshots, and fallback HTTP extraction quality.
 - App-like authenticated services can still have browser API or popup edge cases.
 - iCE generation depends on local model quality and JSON compliance.
-- Update checks notify about newer app releases, but they do not download or install updates yet.
+- In-app updates are implemented but inert until an updater signing keypair exists; until then the Install button explains that it cannot verify a download. `.deb`/`.rpm` and Linux ARM64 installs never self-update by design. See [docs/SIGNING.md](docs/SIGNING.md#in-app-updates--minisign).
 - Search and Ask currently use one selected hub plus optional current page, not arbitrary multi-hub selection.
 
 ## Roadmap Ideas
 
 Likely next improvements:
 
-- Production signing and notarization flow.
+- Production signing and notarization flow ([setup guide](docs/SIGNING.md)), and generating the updater keypair that switches in-app updates on.
 - Import/export for knowledge hubs.
 - Full capture library view with filtering and bulk actions.
 - Per-hub retrieval/model settings.

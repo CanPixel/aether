@@ -46,10 +46,15 @@ export interface UpdateSettings {
   lastCheckedAt?: string
 }
 
+// 'system' follows prefers-color-scheme; 'light' and 'dark' override it in both
+// directions, so a light theme stays available on a dark desktop.
+export type Appearance = 'system' | 'light' | 'dark'
+
 export interface AppSettings {
   browser: BrowserSettings
   developerMode: boolean
   updates: UpdateSettings
+  appearance: Appearance
 }
 
 export interface CollectionSummary {
@@ -82,6 +87,17 @@ export interface CaptureResult extends CaptureSummary {
   collectionName: string
 }
 
+export interface BulkCaptureFailure {
+  url: string
+  reason: string
+}
+
+export interface BulkCaptureResult {
+  captured: CaptureSummary[]
+  collectionName: string
+  failures: BulkCaptureFailure[]
+}
+
 export interface CaptureProgress {
   message: string
   current?: number
@@ -99,6 +115,28 @@ export interface SearchResult {
   chunkIndex: number
   text: string
   score: number
+}
+
+export interface LibrarySearchHit {
+  captureId: string
+  collectionId: string
+  collectionName: string
+  title: string
+  url: string
+  host: string
+  capturedAt: string
+  excerpt: string
+  /** 0-100 display score, not raw cosine distance. */
+  score: number
+  chunkMatches: number
+}
+
+export interface LibrarySearchResult {
+  query: string
+  hits: LibrarySearchHit[]
+  /** 'literal' when no embedding model was available to rank semantically. */
+  mode: 'semantic' | 'literal'
+  searchedChunks: number
 }
 
 export interface SemanticTrailInput {
@@ -217,6 +255,17 @@ export interface ChatMetrics {
   chunks: number
 }
 
+/** One completed exchange, persisted per hub (or per current-page thread). */
+export interface ConversationTurn {
+  id: string
+  prompt: string
+  answer: string
+  model: string
+  askedAt: string
+  citations: SearchResult[]
+  metrics: ChatMetrics
+}
+
 export type AirLensKind = 'topic' | 'flow' | 'hub' | 'answer' | 'iceberg'
 
 export interface AirDossierInput {
@@ -263,6 +312,14 @@ export interface AirRecentFile extends AirRenderResult {
   lens: string
 }
 
+/** Emitted while a webview download starts, completes, or fails. */
+export interface DownloadProgress {
+  status: 'started' | 'finished' | 'failed'
+  filename: string
+  path?: string
+  url: string
+}
+
 export interface ChatStreamEvent {
   requestId: string
   status?: string
@@ -283,7 +340,6 @@ export interface IcebergItem {
   jargonDensity?: number
   prerequisiteDepth?: number
   obscurity?: number
-  confidence?: number
   reason?: string
 }
 
@@ -338,6 +394,30 @@ export interface SystemStatus {
   error?: string
 }
 
+export interface LibraryExportResult {
+  path: string
+  exportedAt: string
+  files: string[]
+  captureCount: number
+  chunkCount: number
+  byteSize: number
+}
+
+export interface LibraryIndexStatus {
+  /** Embedding width the store is built around. 0 before anything is indexed. */
+  dim: number
+  embedded: number
+  /** Chunks whose text is kept but whose vector is unusable until a re-index. */
+  pendingReembed: number
+}
+
+export interface LibraryReindexResult {
+  embedded: number
+  stillPending: number
+  dim: number
+  reindexedAt: string
+}
+
 export interface UpdateCheckResult {
   currentVersion: string
   checkedAt: string
@@ -348,6 +428,41 @@ export interface UpdateCheckResult {
   releaseNotes?: string
   publishedAt?: string
   error?: string
+}
+
+// `installed` is the only success. The other three are distinct reasons the app
+// cannot update itself, and the UI has to tell them apart: `unconfigured` means
+// this build has no signing key, `unsupported` means the install method is owned
+// by a package manager or an app store, `unavailable` means the signed manifest
+// has nothing newer for this platform even though a release exists.
+export type UpdateInstallStatus = 'installed' | 'unconfigured' | 'unsupported' | 'unavailable'
+
+export interface UpdateInstallResult {
+  status: UpdateInstallStatus
+  version?: string
+  needsRestart: boolean
+  message: string
+}
+
+export interface UpdateInstallProgress {
+  downloadedBytes: number
+  totalBytes?: number
+  done: boolean
+}
+
+export type DiagnosticLevel = 'info' | 'warn' | 'error'
+
+export interface DiagnosticEntry {
+  at: string
+  level: DiagnosticLevel
+  message: string
+}
+
+export interface DiagnosticsExportResult {
+  path: string
+  filename: string
+  byteSize: number
+  exportedAt: string
 }
 
 export type ModelDownloadChoice = 'lite' | 'wise'
@@ -405,6 +520,7 @@ export interface AetherApi {
     create(input?: { url?: string }): Promise<BrowserTabSummary>
     activate(tabId: string): Promise<void>
     close(tabId: string): Promise<void>
+    reorder(ids: string[]): Promise<BrowserTabSummary[]>
     navigate(tabId: string, url: string): Promise<void>
     scrollToText(tabId: string, text: string): Promise<void>
     find(tabId: string, query?: string, action?: FindAction): Promise<void>
@@ -442,6 +558,10 @@ export interface AetherApi {
   }
   capture: {
     currentPage(input: { collectionId: string }): Promise<CaptureResult>
+    // Captures a page ÆTHER never loaded, by fetching the URL directly.
+    url(input: { collectionId: string; url: string }): Promise<CaptureResult>
+    // Bulk sibling of url(); reports per-link failures instead of aborting.
+    urls(input: { collectionId: string; urls: string[] }): Promise<BulkCaptureResult>
     move(input: { captureId: string; collectionId: string }): Promise<CaptureSummary>
     delete(captureId: string): Promise<void>
     suggestHub(): Promise<CaptureHubSuggestion | null>
@@ -452,6 +572,12 @@ export interface AetherApi {
       query: string
       limit?: number
     }): Promise<SearchResult[]>
+    // Grouped one-row-per-source search. Omit collectionId to search every hub.
+    library(input: {
+      query: string
+      collectionId?: string
+      limit?: number
+    }): Promise<LibrarySearchResult>
   }
   semanticTrail: {
     generate(input?: SemanticTrailInput): Promise<SemanticTrailResult>
@@ -474,6 +600,9 @@ export interface AetherApi {
       requestId?: string
     }): Promise<ChatResult>
     cancel(): Promise<void>
+    // Omit collectionId for the current-page thread.
+    history(collectionId?: string): Promise<ConversationTurn[]>
+    clearHistory(collectionId?: string): Promise<void>
   }
   crystallizer: {
     generate(input: { keyword: string }): Promise<IcebergResult>
@@ -489,6 +618,26 @@ export interface AetherApi {
     updateSettings(input: Partial<AppSettings>): Promise<AppSettings>
     updateModels(input: { embeddingModel?: string; chatModel?: string }): Promise<SystemStatus>
     checkForUpdate(): Promise<UpdateCheckResult>
+    // Downloads, signature-verifies, and installs the newest signed release.
+    // Reads the updater manifest, not the GitHub API that checkForUpdate uses, so
+    // the two can legitimately disagree — see UpdateInstallStatus.
+    installUpdate(): Promise<UpdateInstallResult>
+    // Quits and relaunches. Only meaningful after installUpdate reported
+    // needsRestart, and never returns when it succeeds.
+    relaunch(): Promise<void>
+    // Snapshots every local store into a timestamped folder and reveals it.
+    exportLibrary(): Promise<LibraryExportResult>
+    // Recent operational log entries, newest first. Local only — see
+    // src-tauri/src/diagnostics.rs for what is deliberately never recorded.
+    diagnostics(): Promise<DiagnosticEntry[]>
+    // Copies the log somewhere attachable and reveals it. The only way anything
+    // here leaves the machine, and only when the user asks.
+    exportDiagnostics(): Promise<DiagnosticsExportResult>
+    // Loads the vector store, so Settings asks for this on open rather than at startup.
+    indexStatus(): Promise<LibraryIndexStatus>
+    // Re-embeds retained chunk text with the loaded model. The only way to recover
+    // chunks embedded by a previous model, whose widths cannot be compared.
+    reindexLibrary(): Promise<LibraryReindexResult>
     openExternalUrl(url: string): Promise<void>
     downloadModels(input: {
       chatModels: ModelDownloadChoice[]
@@ -501,14 +650,17 @@ export interface AetherApi {
     showStatusToast(input: StatusToastInput): Promise<void>
     // Edge-to-edge system-bar insets in CSS px (Android); zeros on desktop.
     windowInsets(): Promise<{ top: number; bottom: number; left: number; right: number }>
-    // Android only: where the native tab WebView should be placed, in CSS px.
-    setMobileTabBounds(bounds: MobileTabBounds): Promise<void>
+    // Where live web content belongs, in CSS px. Both shells report it; the native
+    // webviews (desktop child webviews, Android WebViews) are positioned from it.
+    setWebContentBounds(bounds: WebContentBounds): Promise<void>
   }
   events: {
     onState(listener: (state: AetherState) => void): () => void
     onCaptureProgress(listener: (progress: CaptureProgress) => void): () => void
     onModelDownloadProgress(listener: (progress: ModelDownloadProgress) => void): () => void
+    onUpdateProgress(listener: (progress: UpdateInstallProgress) => void): () => void
     onChatStream(listener: (event: ChatStreamEvent) => void): () => void
+    onDownload(listener: (progress: DownloadProgress) => void): () => void
     onShortcut(listener: (shortcut: AetherShortcutId) => void): () => void
     onFindRequested(listener: () => void): () => void
     onFindResult(listener: (result: FindResult) => void): () => void
@@ -523,7 +675,7 @@ export interface FindResult {
   total: number
 }
 
-export interface MobileTabBounds {
+export interface WebContentBounds {
   top: number
   left: number
   width: number
