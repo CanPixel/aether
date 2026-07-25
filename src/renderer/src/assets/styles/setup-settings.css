@@ -40,6 +40,9 @@
   position: relative;
   display: grid;
   gap: 14px;
+  /* Without this the 18px padding and 1px border sit outside the shell's width, so the
+     card overhangs its own wrapper and eats into the backdrop gutter on the right. */
+  box-sizing: border-box;
   width: 100%;
   max-height: calc(100vh - 150px);
   overflow-x: hidden;

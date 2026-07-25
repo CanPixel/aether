@@ -72,6 +72,7 @@ import {
   normalizeComparableUrl
 } from './utils/aether-ui'
 import { HAS_NATIVE_TAB_WEBVIEWS, IS_ANDROID } from './utils/platform'
+import { useDismissableOverlay } from './utils/dismissable-overlay'
 import {
   ChevronDown,
   ChevronUp,
@@ -1231,7 +1232,7 @@ function App(): React.JSX.Element {
     await window.aether.layout.setModalOverlayOpen(Boolean(settingsOpen || collectionDialog))
   }
 
-  async function openModelSetupFromSettings(): Promise<void> {
+  async function openModelSetup(): Promise<void> {
     setSettingsOpen(false)
     setModelSetupDismissed(false)
     setModelSetupRequested(true)
@@ -2344,7 +2345,7 @@ function App(): React.JSX.Element {
           onCheckForUpdates={() => checkForUpdates()}
           onOpenUpdateRelease={openUpdateRelease}
           onUpdateAutoCheck={updateAutoCheck}
-          onOpenModelSetup={openModelSetupFromSettings}
+          onOpenModelSetup={openModelSetup}
         />
       )}
     </>
@@ -2391,7 +2392,7 @@ function App(): React.JSX.Element {
             onCancel: cancelAsk,
             onChatPromptChange: setChatPrompt,
             onOpenCitation: openCitation,
-            onOpenModelSetup: openModelSetupFromSettings
+            onOpenModelSetup: openModelSetup
           }}
           backInterceptorRef={mobileBackInterceptorRef}
           openAionRef={mobileOpenAionRef}
@@ -2714,6 +2715,7 @@ function App(): React.JSX.Element {
         onAskCurrentPageOnlyChange={setAskCurrentPageOnly}
         onAskIncludeCurrentPageChange={setAskIncludeCurrentPage}
         onUpdateModels={updateLocalModels}
+        onOpenModelSetup={openModelSetup}
         onOpenCitation={openCitation}
         onOpenSemanticTrailItem={openSemanticTrailItem}
       />
@@ -2896,6 +2898,14 @@ function SettingsModal({
   onUpdateAutoCheck: (value: boolean) => Promise<void>
   onOpenModelSetup: () => Promise<void>
 }): React.JSX.Element {
+  // Suppressed while a library export or re-index is running, so a stray click or
+  // Escape cannot close the panel out from under work the user is watching.
+  const settingsBackdrop = useDismissableOverlay(
+    () => {
+      void onClose()
+    },
+    !exportingLibrary && !reindexing
+  )
   const installedVersion = updateCheck?.currentVersion ?? APP_VERSION
   const searchEngines: Array<{ id: SearchEngineId; name: string; description: string }> = [
     { id: 'google', name: 'Google', description: 'Broad default web search.' },
@@ -2906,19 +2916,14 @@ function SettingsModal({
   ]
 
   return (
-    <div
-      className="settings-overlay"
-      onClick={() => {
-        void onClose()
-      }}
-      role="presentation"
-    >
+    <div className="settings-overlay" role="presentation" {...settingsBackdrop}>
+      {/* No stopPropagation on the card: the backdrop dismisses on
+          `target === currentTarget`, so descendants are inert by construction. */}
       <section
         className="settings-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="settings-title"
-        onClick={(event) => event.stopPropagation()}
       >
         <div className="settings-modal-body">
           <header>

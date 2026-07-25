@@ -13,7 +13,7 @@ import { formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aet
 import { claimTextForCitation, renderAnswerMarkdown } from './answer-markdown'
 import { CrystallizingOrb } from './CrystallizingOrb'
 import { AetherSigilIcon, ChevronRightIcon, GearIcon } from './icons'
-import { Droplet, Waves, Newspaper } from 'lucide-react'
+import { Droplet, HardDriveDownload, Waves, Newspaper } from 'lucide-react'
 
 type IntelligencePanelProps = {
   busy: string | null
@@ -57,6 +57,7 @@ type IntelligencePanelProps = {
   onClearHistory: () => void
   onOpenSemanticTrailItem: (item: SemanticTrailItem) => Promise<void>
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
+  onOpenModelSetup: () => Promise<void>
 }
 
 function modelOptionsWithSelected(models: string[], selected?: string | null): string[] {
@@ -103,7 +104,8 @@ export function IntelligencePanel({
   onOpenCitation,
   onClearHistory,
   onOpenSemanticTrailItem,
-  onUpdateModels
+  onUpdateModels,
+  onOpenModelSetup
 }: IntelligencePanelProps): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [trailPanelOpen, setTrailPanelOpen] = useState(false)
@@ -529,24 +531,54 @@ export function IntelligencePanel({
                   : 'Model settings'}
               </span>
             </button>
+          ) : chatModelOptions.length === 0 ? (
+            // With nothing installed the select is a dead control, so the slot carries
+            // the action that resolves it instead. This is the only route to setup from
+            // the panel where a missing model actually shows up.
+            <button
+              className="inline-model-setup-button"
+              disabled={Boolean(busy)}
+              onClick={() => {
+                void onOpenModelSetup()
+              }}
+              type="button"
+            >
+              <HardDriveDownload size={14} aria-hidden="true" />
+              <span>Install models</span>
+            </button>
           ) : (
-            <label className="inline-model-selector">
-              <span>Model:</span>
-              <select
-                disabled={Boolean(busy) || !status || chatModelOptions.length === 0}
-                value={status?.chatModel ?? ''}
-                onChange={(event) => onUpdateModels({ chatModel: event.target.value })}
-              >
-                <option value="" disabled>
-                  No model
-                </option>
-                {chatModelOptions.map((model) => (
-                  <option key={model} value={model}>
-                    {formatVisibleModelName(model, { developerMode, role: 'chat' }) ?? model}
+            <div className="inline-model-controls">
+              <label className="inline-model-selector">
+                <span>Model:</span>
+                <select
+                  disabled={Boolean(busy) || !status}
+                  value={status?.chatModel ?? ''}
+                  onChange={(event) => onUpdateModels({ chatModel: event.target.value })}
+                >
+                  <option value="" disabled>
+                    No model
                   </option>
-                ))}
-              </select>
-            </label>
+                  {chatModelOptions.map((model) => (
+                    <option key={model} value={model}>
+                      {formatVisibleModelName(model, { developerMode, role: 'chat' }) ?? model}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {/* Outside the label: nested in it, a click would also drive the select. */}
+              <button
+                aria-label="Manage models"
+                className="inline-model-manage-button"
+                disabled={Boolean(busy)}
+                onClick={() => {
+                  void onOpenModelSetup()
+                }}
+                title="Manage models"
+                type="button"
+              >
+                <HardDriveDownload size={14} aria-hidden="true" />
+              </button>
+            </div>
           )}
         </footer>
         {developerMode && settingsOpen && (
@@ -556,6 +588,7 @@ export function IntelligencePanel({
             settingsRef={modelSettingsRef}
             status={status}
             onUpdateModels={onUpdateModels}
+            onOpenModelSetup={onOpenModelSetup}
           />
         )}
       </div>
@@ -818,13 +851,15 @@ function LocalModelSettings({
   developerMode,
   settingsRef,
   status,
-  onUpdateModels
+  onUpdateModels,
+  onOpenModelSetup
 }: {
   busy: string | null
   developerMode: boolean
   settingsRef: RefObject<HTMLElement | null>
   status: SystemStatus | null
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
+  onOpenModelSetup: () => Promise<void>
 }): React.JSX.Element {
   const models = status?.availableModels ?? []
   const chatModels = modelOptionsWithSelected(status?.chatModels ?? [], status?.chatModel)
@@ -906,6 +941,17 @@ function LocalModelSettings({
           ))}
         </select>
       </label>
+      <button
+        className="model-island-setup-button"
+        disabled={Boolean(busy)}
+        onClick={() => {
+          void onOpenModelSetup()
+        }}
+        type="button"
+      >
+        <HardDriveDownload size={14} aria-hidden="true" />
+        <span>{models.length === 0 ? 'Install models' : 'Manage models'}</span>
+      </button>
     </section>
   )
 }
