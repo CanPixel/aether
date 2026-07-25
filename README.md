@@ -32,6 +32,56 @@
   <img src="docs/images/readme/aether-dashboard.png" alt="ÆTHER dashboard with portals, knowledge hubs, saved iCE atlases, and AiON" />
 </p>
 
+## Install
+
+Download the latest build for your platform from
+**[Releases](https://github.com/CanPixel/aether/releases/latest)**:
+
+| Platform | File |
+|---|---|
+| macOS (Apple Silicon, 11+) | `AETHER_macOS.dmg` |
+| Windows (x86_64) | `AETHER_x64-setup.exe` |
+| Linux (x86_64) | `AETHER_amd64.deb` · `AETHER_amd64.AppImage` |
+| Linux (ARM64) | `AETHER_arm64.deb` |
+
+> [!NOTE]
+> **Intel Macs are not supported.** Releases are built `arm64` only, and Rosetta
+> translates Intel binaries to Apple Silicon — not the other way round — so there is
+> no way to run this DMG on an Intel Mac. Building `universal-apple-darwin` would fix
+> it at the cost of doubling an already slow llama.cpp compile.
+
+> [!IMPORTANT]
+> **Releases are not yet code-signed**, so your OS will block the first launch. This
+> is a signing status, not a warning about the app — but you should only work around
+> it for software you actually trust, and you can verify what ÆTHER does by reading
+> this repository. Signing and notarization are the top roadmap item; the setup guide
+> is in [docs/SIGNING.md](docs/SIGNING.md).
+
+**macOS.** The `.dmg` is unsigned and un-notarized, so macOS quarantines it and
+reports *"ÆTHER is damaged and can't be opened"*. It is not damaged. Drag the app to
+`/Applications`, then clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/ÆTHER.app
+```
+
+Then open it normally. (Right-click → *Open* alone does not work for un-notarized
+apps on current macOS.)
+
+**Windows.** SmartScreen shows *"Windows protected your PC"*. Click **More info**,
+then **Run anyway**.
+
+**Linux.** No workaround needed.
+
+```bash
+sudo dpkg -i AETHER_amd64.deb        # or: chmod +x AETHER_amd64.AppImage
+```
+
+After first launch, ÆTHER asks you to install a local model. Only **AiON MiST**
+(639 MB) is required — capture, search, and cited passage retrieval all work with it
+alone. The chat models are optional and can be added later from the model picker.
+See [Local Wisdom Setup](#local-wisdom-setup).
+
 ## The Æther That Is
 
 > **New here?** Read the plain-language introduction: [What is ÆTHER?](docs/WHAT-IS-AETHER.md)
@@ -807,18 +857,19 @@ iCE depends on the local chat model returning parseable JSON. Try:
 
 ## Current Limitations
 
-- macOS packages are local unsigned/ad-hoc builds until Developer ID signing and notarization are configured.
+- Tab favicons are fetched directly from each site by the privileged window, so that one request per host is not local. See [docs/SECURITY.md](docs/SECURITY.md).
+- Releases are unsigned on macOS and Windows, so the first launch has to be unblocked manually — see [Install](#install) for the steps and [docs/SIGNING.md](docs/SIGNING.md) for the fix.
 - Capture quality depends on page structure, active webview snapshots, and fallback HTTP extraction quality.
 - App-like authenticated services can still have browser API or popup edge cases.
 - iCE generation depends on local model quality and JSON compliance.
-- Update checks notify about newer app releases, but they do not download or install updates yet.
+- In-app updates are implemented but inert until an updater signing keypair exists; until then the Install button explains that it cannot verify a download. `.deb`/`.rpm` and Linux ARM64 installs never self-update by design. See [docs/SIGNING.md](docs/SIGNING.md#in-app-updates--minisign).
 - Search and Ask currently use one selected hub plus optional current page, not arbitrary multi-hub selection.
 
 ## Roadmap Ideas
 
 Likely next improvements:
 
-- Production signing and notarization flow.
+- Production signing and notarization flow ([setup guide](docs/SIGNING.md)), and generating the updater keypair that switches in-app updates on.
 - Import/export for knowledge hubs.
 - Full capture library view with filtering and bulk actions.
 - Per-hub retrieval/model settings.

@@ -46,10 +46,15 @@ export interface UpdateSettings {
   lastCheckedAt?: string
 }
 
+// 'system' follows prefers-color-scheme; 'light' and 'dark' override it in both
+// directions, so a light theme stays available on a dark desktop.
+export type Appearance = 'system' | 'light' | 'dark'
+
 export interface AppSettings {
   browser: BrowserSettings
   developerMode: boolean
   updates: UpdateSettings
+  appearance: Appearance
 }
 
 export interface CollectionSummary {
@@ -335,7 +340,6 @@ export interface IcebergItem {
   jargonDensity?: number
   prerequisiteDepth?: number
   obscurity?: number
-  confidence?: number
   reason?: string
 }
 
@@ -424,6 +428,41 @@ export interface UpdateCheckResult {
   releaseNotes?: string
   publishedAt?: string
   error?: string
+}
+
+// `installed` is the only success. The other three are distinct reasons the app
+// cannot update itself, and the UI has to tell them apart: `unconfigured` means
+// this build has no signing key, `unsupported` means the install method is owned
+// by a package manager or an app store, `unavailable` means the signed manifest
+// has nothing newer for this platform even though a release exists.
+export type UpdateInstallStatus = 'installed' | 'unconfigured' | 'unsupported' | 'unavailable'
+
+export interface UpdateInstallResult {
+  status: UpdateInstallStatus
+  version?: string
+  needsRestart: boolean
+  message: string
+}
+
+export interface UpdateInstallProgress {
+  downloadedBytes: number
+  totalBytes?: number
+  done: boolean
+}
+
+export type DiagnosticLevel = 'info' | 'warn' | 'error'
+
+export interface DiagnosticEntry {
+  at: string
+  level: DiagnosticLevel
+  message: string
+}
+
+export interface DiagnosticsExportResult {
+  path: string
+  filename: string
+  byteSize: number
+  exportedAt: string
 }
 
 export type ModelDownloadChoice = 'lite' | 'wise'
@@ -578,8 +617,21 @@ export interface AetherApi {
     updateSettings(input: Partial<AppSettings>): Promise<AppSettings>
     updateModels(input: { embeddingModel?: string; chatModel?: string }): Promise<SystemStatus>
     checkForUpdate(): Promise<UpdateCheckResult>
+    // Downloads, signature-verifies, and installs the newest signed release.
+    // Reads the updater manifest, not the GitHub API that checkForUpdate uses, so
+    // the two can legitimately disagree — see UpdateInstallStatus.
+    installUpdate(): Promise<UpdateInstallResult>
+    // Quits and relaunches. Only meaningful after installUpdate reported
+    // needsRestart, and never returns when it succeeds.
+    relaunch(): Promise<void>
     // Snapshots every local store into a timestamped folder and reveals it.
     exportLibrary(): Promise<LibraryExportResult>
+    // Recent operational log entries, newest first. Local only — see
+    // src-tauri/src/diagnostics.rs for what is deliberately never recorded.
+    diagnostics(): Promise<DiagnosticEntry[]>
+    // Copies the log somewhere attachable and reveals it. The only way anything
+    // here leaves the machine, and only when the user asks.
+    exportDiagnostics(): Promise<DiagnosticsExportResult>
     // Loads the vector store, so Settings asks for this on open rather than at startup.
     indexStatus(): Promise<LibraryIndexStatus>
     // Re-embeds retained chunk text with the loaded model. The only way to recover
@@ -605,6 +657,7 @@ export interface AetherApi {
     onState(listener: (state: AetherState) => void): () => void
     onCaptureProgress(listener: (progress: CaptureProgress) => void): () => void
     onModelDownloadProgress(listener: (progress: ModelDownloadProgress) => void): () => void
+    onUpdateProgress(listener: (progress: UpdateInstallProgress) => void): () => void
     onChatStream(listener: (event: ChatStreamEvent) => void): () => void
     onDownload(listener: (progress: DownloadProgress) => void): () => void
     onShortcut(listener: (shortcut: AetherShortcutId) => void): () => void

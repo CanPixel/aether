@@ -1,7 +1,7 @@
 import { CSSProperties, FormEvent, MouseEvent, useEffect, useState } from 'react'
 import { BrowserTabSummary, CaptureResult, CollectionSummary } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
-import { getTabTint } from '../utils/aether-ui'
+import { countLabel, getTabTint } from '../utils/aether-ui'
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -254,7 +254,7 @@ export function BrowserChrome({
           </button>
         ))}
         {tabs.length >= 12 && (
-          <span className="tab-count" title={`${tabs.length} open tabs`}>
+          <span className="tab-count" title={countLabel(tabs.length, 'open tab')}>
             {tabs.length}
           </span>
         )}
@@ -326,7 +326,7 @@ export function BrowserChrome({
           >
             <select
               id="capture-collection-select"
-              aria-label="Capture collection"
+              aria-label="Capture hub"
               value={selectedCollectionId}
               onFocus={() => {
                 void onCaptureIntent?.()

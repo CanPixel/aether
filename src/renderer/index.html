@@ -7,11 +7,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ÆTHER</title>
     <link rel="icon" type="image/svg+xml" href="/aether-favicon.svg" />
-    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:"
-    />
+    <!-- The policy lives in src-tauri/tauri.conf.json under app.security.csp (and
+         devCsp), which Tauri injects here at load. It is deliberately not also a
+         meta tag: two policies are intersected by the engine, so a stricter one
+         added in either place would silently override the other, and the pair
+         would drift. See docs/SECURITY.md. -->
   </head>
 
   <body>

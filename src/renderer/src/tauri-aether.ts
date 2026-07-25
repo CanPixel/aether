@@ -39,7 +39,11 @@ import {
   SemanticTrailResult,
   StatusToastInput,
   SystemStatus,
-  UpdateCheckResult
+  DiagnosticEntry,
+  DiagnosticsExportResult,
+  UpdateCheckResult,
+  UpdateInstallProgress,
+  UpdateInstallResult
 } from '../../shared/aether'
 import { IS_ANDROID } from './utils/platform'
 
@@ -136,7 +140,12 @@ if (isTauri) {
       updateSettings: (input) => call<AppSettings>('aether_system_update_settings', { input }),
       updateModels: (input) => call<SystemStatus>('aether_system_update_models', { input }),
       checkForUpdate: () => call<UpdateCheckResult>('aether_system_check_for_update'),
+      installUpdate: () => call<UpdateInstallResult>('aether_system_install_update'),
+      relaunch: () => call<void>('aether_system_relaunch'),
       exportLibrary: () => call<LibraryExportResult>('aether_system_export_library'),
+      diagnostics: () => call<DiagnosticEntry[]>('aether_system_diagnostics'),
+      exportDiagnostics: () =>
+        call<DiagnosticsExportResult>('aether_system_export_diagnostics'),
       indexStatus: () => call<LibraryIndexStatus>('aether_library_index_status'),
       reindexLibrary: () => call<LibraryReindexResult>('aether_library_reindex'),
       openExternalUrl: (url) => call<void>('aether_system_open_external_url', { url }),
@@ -177,6 +186,15 @@ if (isTauri) {
       },
       onModelDownloadProgress: (listener: (progress: ModelDownloadProgress) => void) => {
         const unlisten = listen<ModelDownloadProgress>('aether:model-download-progress', (event) =>
+          listener(event.payload)
+        )
+
+        return () => {
+          void unlisten.then((dispose) => dispose())
+        }
+      },
+      onUpdateProgress: (listener: (progress: UpdateInstallProgress) => void) => {
+        const unlisten = listen<UpdateInstallProgress>('aether:update-progress', (event) =>
           listener(event.payload)
         )
 

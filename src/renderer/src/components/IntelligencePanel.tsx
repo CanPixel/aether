@@ -9,7 +9,7 @@ import {
   SystemStatus
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
-import { formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aether-ui'
+import { countLabel, formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aether-ui'
 import { claimTextForCitation, renderAnswerMarkdown } from './answer-markdown'
 import { CrystallizingOrb } from './CrystallizingOrb'
 import { AetherSigilIcon, ChevronRightIcon, GearIcon } from './icons'
@@ -339,7 +339,7 @@ export function IntelligencePanel({
                   event.preventDefault()
                   event.currentTarget.form?.requestSubmit()
                 }}
-                placeholder="Ask this collection and current page"
+                placeholder="Ask this hub and current page"
               />
               <button
                 type="submit"
@@ -903,7 +903,7 @@ function LocalModelSettings({
       <div className="model-heading">
         <div>
           <h2>Built-in Models</h2>
-          <p>{status?.runtimeReady ? `${models.length} local models` : 'No local model'}</p>
+          <p>{status?.runtimeReady ? countLabel(models.length, 'local model') : 'No local model'}</p>
         </div>
         <span>{modelLabel}</span>
       </div>
@@ -1025,7 +1025,7 @@ function AnswerCard({
         })}
       </div>
       <footer>
-        <span>{result.citations.length} local citations</span>
+        <span>{countLabel(result.citations.length, 'local citation')}</span>
         <button className="answer-copy-button responsive-button" onClick={copyAnswer} type="button">
           {copied ? 'Copied' : 'Copy'}
         </button>

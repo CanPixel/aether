@@ -13,7 +13,13 @@ import {
   FlowGraphResult,
   SystemStatus
 } from '../../../shared/aether'
-import { formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aether-ui'
+import {
+  countLabel,
+  formatDate,
+  formatVisibleModelName,
+  getCaptureHost,
+  plural
+} from '../utils/aether-ui'
 import { ExternalLink, LocateFixed, Network, Search, Waves } from 'lucide-react'
 
 const CANVAS_WIDTH = 1320
@@ -300,7 +306,7 @@ export function FlowView({
               ref={svgRef}
               role="img"
               viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`}
-              aria-label={`${result.sourceCount} captured sources across ${result.hubCount} hubs`}
+              aria-label={`${countLabel(result.sourceCount, 'captured source')} across ${countLabel(result.hubCount, 'hub')}`}
             >
               <defs>
                 <radialGradient id="flow-node-hub" cx="35%" cy="25%">
@@ -457,7 +463,8 @@ export function FlowView({
 
           {result?.omittedSourceCount ? (
             <div className="flow-omitted">
-              {result.omittedSourceCount} older indexed sources are folded out for performance.
+              {countLabel(result.omittedSourceCount, 'older indexed source')}{' '}
+              {plural(result.omittedSourceCount, 'is', 'are')} folded out for performance.
             </div>
           ) : null}
         </aside>

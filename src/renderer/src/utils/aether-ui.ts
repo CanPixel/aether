@@ -1,4 +1,9 @@
-import { BrowserTabSummary, IcebergItem, SavedIcebergSummary } from '../../../shared/aether'
+import {
+  BrowserTabSummary,
+  IcebergItem,
+  SavedIcebergSummary,
+  UpdateInstallProgress
+} from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
 
 export function getCaptureHost(url: string): string {
@@ -7,6 +12,37 @@ export function getCaptureHost(url: string): string {
   } catch {
     return url || 'local'
   }
+}
+
+// "1 source" / "2 sources". English-only, matching the rest of the UI — if ÆTHER is
+// ever localized this becomes Intl.PluralRules, but a bespoke rule per call site is
+// what produced "1 local citations" in the first place.
+export function plural(count: number, singular: string, pluralForm?: string): string {
+  return count === 1 ? singular : (pluralForm ?? `${singular}s`)
+}
+
+// The common case: a count and its noun together.
+export function countLabel(count: number, singular: string, pluralForm?: string): string {
+  return `${count} ${plural(count, singular, pluralForm)}`
+}
+
+// Decimal units, matching what an OS file listing and a release page both report,
+// so an export or download size here can be compared with what the user sees there.
+export function formatByteSize(bytes: number): string {
+  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
+  if (bytes >= 1_000) return `${Math.round(bytes / 1_000)} KB`
+  return `${bytes} B`
+}
+
+// The updater reports a total only when the release host sends a Content-Length,
+// so the "of N" half has to be optional rather than showing a fabricated total or
+// a progress bar stuck at 0%.
+export function formatUpdateProgress(progress: UpdateInstallProgress | null): string {
+  if (!progress) return 'Contacting the update server'
+  const downloaded = formatByteSize(progress.downloadedBytes)
+  if (!progress.totalBytes) return `Downloaded ${downloaded}`
+  return `${downloaded} of ${formatByteSize(progress.totalBytes)}`
 }
 
 export function cleanTitle(title: string): string {

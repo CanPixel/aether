@@ -25,6 +25,11 @@ env:
   CARGO_HTTP_MULTIPLEXING: 'false'
   CARGO_HTTP_TIMEOUT: '60'
   CARGO_NET_RETRY: '10'
+  # Signs the in-app updater artifacts (minisign; unrelated to OS code signing).
+  # Absent until the keypair exists, and every job below degrades to a plain
+  # unsigned build when it is — see the "Resolve updater signing" steps.
+  TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+  TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
 jobs:
   macos:
@@ -40,13 +45,34 @@ jobs:
           workspaces: src-tauri
 
       - run: bun install --frozen-lockfile
-      - run: bun run build
+
+      - id: updater
+        uses: ./.github/actions/updater-flags
+
+      # These three mirror the `build` script in package.json. They are spelled out
+      # here only so the updater `--config` flag can be injected into the middle
+      # one; keep them in step with that script.
+      - run: bun run typecheck
+      - run: bun run tauri build --bundles app ${{ steps.updater.outputs.config }}
+      - run: bun run dmg
 
       - uses: actions/upload-artifact@v4
         with:
           name: aether-macos-dmg
           retention-days: 14
           path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+      # The in-app updater installs this tarball, not the DMG: it replaces the
+      # bundle in place, so it must not be wrapped in a disk image.
+      - if: steps.updater.outputs.signed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-macos-updater
+          retention-days: 14
+          path: |
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
 
   linux:
@@ -73,7 +99,11 @@ jobs:
       - run: bun run typecheck:web
       # Unit tests are platform-independent, so one runner is enough.
       - run: bun run test
-      - run: bun run tauri build --bundles deb,appimage
+
+      - id: updater
+        uses: ./.github/actions/updater-flags
+
+      - run: bun run tauri build --bundles deb,appimage ${{ steps.updater.outputs.config }}
       - run: scripts/normalize-deb-package.sh src-tauri/target/release/bundle/deb/*.deb
 
       - uses: actions/upload-artifact@v4
@@ -83,6 +113,17 @@ jobs:
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+
+      # AppImage only. A .deb install is owned by the package manager, so ÆTHER
+      # refuses to self-update there (see updater_install_support in lib.rs) and
+      # publishing a signature for one would be misleading.
+      - if: steps.updater.outputs.signed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-linux-x86_64-updater
+          retention-days: 14
+          path: src-tauri/target/release/bundle/appimage/*.AppImage.sig
           if-no-files-found: error
 
   linux-arm64:
@@ -134,7 +175,11 @@ jobs:
 
       - run: bun install --frozen-lockfile
       - run: bun run typecheck:web
-      - run: bun run tauri build --bundles nsis
+
+      - id: updater
+        uses: ./.github/actions/updater-flags
+
+      - run: bun run tauri build --bundles nsis ${{ steps.updater.outputs.config }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -143,6 +188,14 @@ jobs:
           path: |
             src-tauri/target/release/bundle/nsis/*.exe
             src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+      - if: steps.updater.outputs.signed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: aether-windows-x86_64-updater
+          retention-days: 14
+          path: src-tauri/target/release/bundle/nsis/*.exe.sig
           if-no-files-found: error
 
   android:
@@ -198,6 +251,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Needed for scripts/updater-manifest.sh; this job previously only consumed
+      # artifacts and so did not check out the repository.
+      - uses: actions/checkout@v4
+
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -231,6 +288,24 @@ jobs:
           copy_first_from_artifact "aether-linux-x86_64" "*.deb" "AETHER_amd64.deb"
           copy_first_from_artifact "aether-linux-x86_64" "*.AppImage" "AETHER_amd64.AppImage"
           copy_first_from_artifact "aether-linux-arm64" "*.deb" "AETHER_arm64.deb"
+
+          # The updater downloads this tarball rather than the DMG. Renamed off
+          # "ÆTHER.app.tar.gz" because a non-ASCII release asset name has to be
+          # percent-encoded in latest.json, and that is a needless way to fail.
+          copy_first_from_artifact "aether-macos-updater" "*.app.tar.gz" "AETHER_macOS.app.tar.gz"
+
+      # Writes nothing when no signing key produced signatures, which is the normal
+      # state before the keypair exists — the release then publishes installers
+      # only and the app reports the `unconfigured` update status.
+      - name: Build updater manifest
+        shell: bash
+        run: |
+          scripts/updater-manifest.sh \
+            "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" artifacts release-assets/latest.json
+
+          if [[ ! -f release-assets/latest.json ]]; then
+            echo "::warning title=No updater manifest::No updater signatures were produced, so latest.json is not published and in-app updates stay disabled for this release."
+          fi
 
       - name: Create release and attach installers
         uses: softprops/action-gh-release@v2

@@ -48,7 +48,11 @@ import {
   SavedIcebergSummary,
   StatusToastInput,
   SystemStatus,
-  UpdateCheckResult
+  Appearance,
+  DiagnosticEntry,
+  UpdateCheckResult,
+  UpdateInstallProgress,
+  UpdateInstallResult
 } from '../../shared/aether'
 import { BrowserChrome } from './components/BrowserChrome'
 import { MobileShell } from './components/MobileShell'
@@ -66,6 +70,9 @@ import { ModelSetupModal } from './components/ModelSetupModal'
 import { QuickAction } from './types/ui'
 import {
   cleanTitle,
+  countLabel,
+  formatByteSize,
+  formatUpdateProgress,
   formatVisibleModelName,
   getQuickActions,
   getTabTint,
@@ -78,8 +85,10 @@ import {
   ChevronUp,
   HardDriveDownload,
   RefreshCw,
+  FileText,
   SearchIcon,
   Snowflake,
+  SunMoon,
   Waves,
   Wind
 
@@ -93,6 +102,11 @@ import {
 // Sentinel URL for a blank tab that shows the ÆTHER start page instead of loading a
 // page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
 const START_PAGE_URL = 'aether://start'
+const APPEARANCE_OPTIONS: Array<{ id: Appearance; name: string; description: string }> = [
+  { id: 'system', name: 'System', description: 'Follow the desktop appearance.' },
+  { id: 'light', name: 'Light', description: 'The pale glass theme.' },
+  { id: 'dark', name: 'Dark', description: 'Deep navy, for night reading.' }
+]
 // AiON panel sizing. Must stay in step with --panel-collapsed-width in foundation.css
 // and PANEL_COLLAPSED_WIDTH in src-tauri/src/lib.rs.
 const PANEL_COLLAPSED_WIDTH = 58
@@ -385,12 +399,6 @@ function scheduleCitationSourceScroll(tabId: string, sourceText: string): void {
   }
 }
 
-function getNoticeTone(message: string): StatusToastInput['tone'] {
-  const errorPattern =
-    /\b(failed|could not|unexpected|error|select|open a page|create a collection|already captured|already in)\b/i
-  return errorPattern.test(message) ? 'error' : 'success'
-}
-
 function getErrorMessage(error: unknown): string {
   if (typeof error === 'string') return error
   if (!(error instanceof Error)) return 'ÆTHER hit an unexpected error.'
@@ -441,10 +449,16 @@ function App(): React.JSX.Element {
   const [settings, setSettings] = useState<AppSettings>({
     browser: { defaultSearchEngine: 'google' },
     developerMode: false,
-    updates: { autoCheck: true }
+    updates: { autoCheck: true },
+    appearance: 'system'
   })
   const [updateCheck, setUpdateCheck] = useState<UpdateCheckResult | null>(null)
   const [updateChecking, setUpdateChecking] = useState(false)
+  const [updateInstalling, setUpdateInstalling] = useState(false)
+  const [updateProgress, setUpdateProgress] = useState<UpdateInstallProgress | null>(null)
+  const [updateInstalled, setUpdateInstalled] = useState<UpdateInstallResult | null>(null)
+  const [diagnostics, setDiagnostics] = useState<DiagnosticEntry[] | null>(null)
+  const [exportingDiagnostics, setExportingDiagnostics] = useState(false)
   const [panelWidth, setPanelWidth] = useState(readStoredPanelWidth)
   const [panelResizing, setPanelResizing] = useState(false)
   // Pointer handlers read the committed width synchronously mid-drag.
@@ -524,6 +538,51 @@ function App(): React.JSX.Element {
   const addressInputRef = useRef<HTMLInputElement>(null)
   const findInputRef = useRef<HTMLInputElement>(null)
   const toastIdRef = useRef(0)
+
+  const showToast = useCallback((input: StatusToastInput): void => {
+    if (!input.message || /^starting\s+æ?ther$/i.test(input.message)) return
+
+    const id = toastIdRef.current + 1
+    toastIdRef.current = id
+    setToast({ ...input, id })
+    if (input.durationMs !== 0) {
+      window.setTimeout(() => {
+        setToast((current) => (current?.id === id ? null : current))
+      }, input.durationMs ?? 3600)
+    }
+    window.aether.layout.showStatusToast(input).catch(() => undefined)
+  }, [])
+
+  // One place where a user-facing outcome is announced: the footer keeps the text as
+  // ambient status, the toast surfaces it regardless of whether the panel is open.
+  // Tone is passed in rather than inferred from the wording — guessing it from the
+  // message meant a phrasing change silently altered how the result was presented.
+  const report = useCallback(
+    (message: string, tone: StatusToastInput['tone']): void => {
+      setNotice(message)
+      // Failures get longer on screen: they are the messages worth actually reading,
+      // and they tend to be the longest.
+      showToast({ message, tone, durationMs: tone === 'error' ? 7000 : undefined })
+    },
+    [showToast]
+  )
+
+  const reportError = useCallback(
+    (error: unknown): void => report(getErrorMessage(error), 'error'),
+    [report]
+  )
+
+  const reportSuccess = useCallback(
+    (message: string): void => report(message, 'success'),
+    [report]
+  )
+
+  // An action the user asked for that could not start yet — not a failure, but it must
+  // be visible, otherwise the control simply appears to do nothing.
+  const reportBlocked = useCallback(
+    (message: string): void => report(message, 'info'),
+    [report]
+  )
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? tabs.find((tab) => tab.isActive) ?? tabs[0],
@@ -637,11 +696,11 @@ function App(): React.JSX.Element {
 
   const openFindBar = useCallback((): void => {
     if (dashboardOpen || isStartPage || !activeTab?.id) {
-      setNotice('Open a web page before using find.')
+      reportBlocked('Open a web page before using find.')
       return
     }
     setFindOpen(true)
-  }, [activeTab?.id, dashboardOpen, isStartPage])
+  }, [activeTab?.id, dashboardOpen, isStartPage, reportBlocked])
 
   const findHighlight = useCallback(
     (query: string, action: FindAction): void => {
@@ -655,9 +714,9 @@ function App(): React.JSX.Element {
       }
       void window.aether.tabs
         .find(activeTab.id, trimmed, action)
-        .catch((error) => setNotice(getErrorMessage(error)))
+        .catch((error) => reportError(error))
     },
-    [activeTab?.id]
+    [activeTab?.id, reportError]
   )
 
   const closeFindBar = useCallback((): void => {
@@ -753,18 +812,18 @@ function App(): React.JSX.Element {
         }
       }))
       if (result.updateAvailable) {
-        setNotice(`ÆTHER ${result.latestVersion ?? result.latestName ?? 'update'} is available.`)
+        report(`ÆTHER ${result.latestVersion ?? result.latestName ?? 'update'} is available.`, 'info')
       } else if (!options?.quiet && result.error) {
-        setNotice(result.error)
+        report(result.error, 'error')
       } else if (!options?.quiet) {
-        setNotice('ÆTHER is up to date.')
+        reportSuccess('ÆTHER is up to date.')
       }
     } catch (error) {
-      if (!options?.quiet) setNotice(getErrorMessage(error))
+      if (!options?.quiet) reportError(error)
     } finally {
       if (!options?.quiet) setUpdateChecking(false)
     }
-  }, [])
+  }, [report, reportError, reportSuccess])
 
   const searchLibrary = useCallback(
     async (query: string, collectionId?: string): Promise<void> => {
@@ -773,12 +832,12 @@ function App(): React.JSX.Element {
       try {
         setSearchResult(await window.aether.search.library({ query, collectionId }))
       } catch (error) {
-        setNotice(getErrorMessage(error))
+        reportError(error)
       } finally {
         setSearching(false)
       }
     },
-    []
+    [reportError]
   )
 
   const clearSearch = useCallback((): void => setSearchResult(null), [])
@@ -835,10 +894,10 @@ function App(): React.JSX.Element {
         setChatThread([])
         setChatResult(null)
       } catch (error) {
-        setNotice(getErrorMessage(error))
+        reportError(error)
       }
     })()
-  }, [activeThreadCollectionId])
+  }, [activeThreadCollectionId, reportError])
 
   // Switching hub switches thread, so a stored session reappears where it was left.
   useEffect(() => {
@@ -863,14 +922,14 @@ function App(): React.JSX.Element {
       try {
         const result = await window.aether.capture.url({ collectionId, url })
         await refreshCollections(collectionId)
-        setNotice(`Captured "${result.title}" into ${result.collectionName}.`)
+        reportSuccess(`Captured "${result.title}" into ${result.collectionName}.`)
       } catch (error) {
-        setNotice(getErrorMessage(error))
+        reportError(error)
       } finally {
         setCapturingLink(false)
       }
     },
-    [refreshCollections]
+    [refreshCollections, reportError, reportSuccess]
   )
 
   const captureOpenTabs = useCallback(
@@ -880,7 +939,7 @@ function App(): React.JSX.Element {
         .map((tab) => tab.url)
         .filter((url) => url && url !== START_PAGE_URL && !url.startsWith('aether://'))
       if (urls.length === 0) {
-        setNotice('No open tabs point at a web page yet.')
+        reportBlocked('No open tabs point at a web page yet.')
         return
       }
 
@@ -889,20 +948,46 @@ function App(): React.JSX.Element {
       try {
         const result = await window.aether.capture.urls({ collectionId, urls })
         await refreshCollections(collectionId)
-        const saved = `Captured ${result.captured.length} of ${urls.length} tabs into ${result.collectionName}.`
-        setNotice(
+        const saved = `Captured ${result.captured.length} of ${countLabel(urls.length, 'tab')} into ${result.collectionName}.`
+        // A partial capture is neither a clean success nor a failure.
+        report(
           result.failures.length > 0
             ? `${saved} Skipped: ${result.failures.map((item) => item.reason).join(' ')}`
-            : saved
+            : saved,
+          result.failures.length > 0 ? 'info' : 'success'
         )
       } catch (error) {
-        setNotice(getErrorMessage(error))
+        reportError(error)
       } finally {
         setCapturingLink(false)
       }
     },
-    [refreshCollections, tabs]
+    [refreshCollections, report, reportBlocked, reportError, tabs]
   )
+
+  const refreshDiagnostics = useCallback(async (): Promise<void> => {
+    try {
+      setDiagnostics(await window.aether.system.diagnostics())
+    } catch {
+      // Not surfaced: a diagnostics panel that cannot load is not itself worth an
+      // error toast, and reporting it would need the very channel that just failed.
+      setDiagnostics([])
+    }
+  }, [])
+
+  const exportDiagnostics = useCallback(async (): Promise<void> => {
+    setExportingDiagnostics(true)
+    try {
+      const result = await window.aether.system.exportDiagnostics()
+      reportSuccess(
+        `Diagnostics log (${formatByteSize(result.byteSize)}) saved to ${result.path}`
+      )
+    } catch (error) {
+      reportError(error)
+    } finally {
+      setExportingDiagnostics(false)
+    }
+  }, [reportError, reportSuccess])
 
   const exportLibrary = useCallback(async (): Promise<void> => {
     setExportingLibrary(true)
@@ -910,17 +995,17 @@ function App(): React.JSX.Element {
     try {
       const result = await window.aether.system.exportLibrary()
       setLibraryExport(result)
-      setNotice(
-        `Exported ${result.captureCount} sources (${formatExportSize(result.byteSize)}) to ${
+      reportSuccess(
+        `Exported ${countLabel(result.captureCount, 'source')} (${formatByteSize(result.byteSize)}) to ${
           result.path
         }`
       )
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
     } finally {
       setExportingLibrary(false)
     }
-  }, [])
+  }, [reportError, reportSuccess])
 
   // Asked for on open rather than at startup: answering it loads the whole vector
   // store, which is work launch should not pay for.
@@ -939,18 +1024,19 @@ function App(): React.JSX.Element {
     setNotice(null)
     try {
       const result = await window.aether.system.reindexLibrary()
-      setNotice(
+      report(
         result.stillPending > 0
           ? `Re-indexed ${result.embedded} passages at ${result.dim} dims — ${result.stillPending} could not be embedded.`
-          : `Re-indexed ${result.embedded} passages at ${result.dim} dims.`
+          : `Re-indexed ${result.embedded} passages at ${result.dim} dims.`,
+        result.stillPending > 0 ? 'info' : 'success'
       )
       await refreshIndexStatus()
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
     } finally {
       setReindexing(false)
     }
-  }, [refreshIndexStatus])
+  }, [refreshIndexStatus, report, reportError])
 
   useEffect(() => {
     if (!settings.updates.autoCheck || autoUpdateCheckStartedRef.current) return undefined
@@ -974,11 +1060,11 @@ function App(): React.JSX.Element {
         await refreshShell()
         return tab
       } catch (error) {
-        setNotice(getErrorMessage(error))
+        reportError(error)
         return null
       }
     },
-    [refreshShell]
+    [refreshShell, reportError]
   )
 
   useEffect(() => {
@@ -1092,7 +1178,7 @@ function App(): React.JSX.Element {
         return
       case 'capture-page':
         if (dashboardOpen || startPageActive) {
-          setNotice('Open a web page before capturing.')
+          reportBlocked('Open a web page before capturing.')
           return
         }
         await capturePage()
@@ -1133,28 +1219,6 @@ function App(): React.JSX.Element {
       void runShortcut(shortcut)
     })
   })
-
-  const showToast = useCallback((input: StatusToastInput): void => {
-    if (!input.message || /^starting\s+æ?ther$/i.test(input.message)) return
-
-    const id = toastIdRef.current + 1
-    toastIdRef.current = id
-    setToast({ ...input, id })
-    if (input.durationMs !== 0) {
-      window.setTimeout(() => {
-        setToast((current) => (current?.id === id ? null : current))
-      }, input.durationMs ?? 3600)
-    }
-    window.aether.layout.showStatusToast(input).catch(() => undefined)
-  }, [])
-
-  useEffect(() => {
-    if (!notice) return
-    showToast({
-      message: notice,
-      tone: getNoticeTone(notice)
-    })
-  }, [notice, showToast])
 
   useEffect(() => {
     const unsubscribe = window.aether.events.onCaptureProgress((progress: CaptureProgress) => {
@@ -1208,6 +1272,26 @@ function App(): React.JSX.Element {
 
     return unsubscribe
   }, [])
+
+  useEffect(() => {
+    const unsubscribe = window.aether.events.onUpdateProgress((progress) => {
+      setUpdateProgress(progress.done ? null : progress)
+    })
+
+    return unsubscribe
+  }, [])
+
+  // The stylesheet reads data-theme off the root element. 'system' removes the
+  // attribute entirely rather than writing 'system', so prefers-color-scheme is
+  // what decides — an unrecognised value would leave the app stuck in light.
+  useEffect(() => {
+    const root = document.documentElement
+    if (settings.appearance === 'system') {
+      root.removeAttribute('data-theme')
+    } else {
+      root.setAttribute('data-theme', settings.appearance)
+    }
+  }, [settings.appearance])
 
   useEffect(() => {
     if (!modelSetupVisible) return
@@ -1264,14 +1348,14 @@ function App(): React.JSX.Element {
       })
       setStatus(nextStatus)
       setModelSetupComplete(true)
-      setNotice('AiON local models installed.')
+      reportSuccess('AiON local models installed.')
       window.setTimeout(() => {
         void closeModelSetup()
       }, 900)
     } catch (error) {
       const message = getErrorMessage(error)
       setModelSetupError(message)
-      setNotice(message)
+      report(message, 'error')
     } finally {
       setBusy(null)
     }
@@ -1281,6 +1365,15 @@ function App(): React.JSX.Element {
     await window.aether.dashboard.open()
     setWorkspaceMode('dashboard')
     setDashboardOpen(true)
+  }
+
+  // Sends an iCE topic into the dashboard's library search. The counterpart to
+  // openCrystallizedTopic, which sends it out to the web instead.
+  async function openTopicInLibrary(query: string): Promise<void> {
+    await window.aether.dashboard.open()
+    setWorkspaceMode('dashboard')
+    setDashboardOpen(true)
+    await searchLibrary(query)
   }
 
   async function openCrystallizer(): Promise<void> {
@@ -1327,7 +1420,7 @@ function App(): React.JSX.Element {
       await window.aether.tabs.close(tabId)
       await refreshShell()
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
     }
   }
 
@@ -1346,7 +1439,7 @@ function App(): React.JSX.Element {
       setDashboardOpen(false)
       await refreshShell()
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
     }
   }
 
@@ -1364,7 +1457,7 @@ function App(): React.JSX.Element {
       setDashboardOpen(false)
       await refreshShell()
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
     }
   }
 
@@ -1391,7 +1484,7 @@ function App(): React.JSX.Element {
       setDashboardOpen(false)
       addressInputRef.current?.blur()
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
     }
   }
 
@@ -1409,7 +1502,7 @@ function App(): React.JSX.Element {
         await createTab({ url: target })
       }
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
     }
   }
 
@@ -1424,7 +1517,7 @@ function App(): React.JSX.Element {
       await window.aether.tabs.navigate(activeTab.id, target)
       setDashboardOpen(false)
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
     }
   }
 
@@ -1436,7 +1529,7 @@ function App(): React.JSX.Element {
       await window.aether.tabs.goBack(activeTab.id)
       await refreshShell()
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
     }
   }
 
@@ -1448,7 +1541,7 @@ function App(): React.JSX.Element {
       await window.aether.tabs.goForward(activeTab.id)
       await refreshShell()
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
     }
   }
 
@@ -1460,7 +1553,7 @@ function App(): React.JSX.Element {
     if (!collectionDialog || collectionDialog.mode === 'delete') return
 
     await runTask(
-      collectionDialog.mode === 'create' ? 'Creating collection' : 'Updating collection',
+      collectionDialog.mode === 'create' ? 'Creating hub' : 'Updating hub',
       async () => {
         const collection =
           collectionDialog.mode === 'create'
@@ -1474,7 +1567,7 @@ function App(): React.JSX.Element {
         await closeCollectionDialog()
         await refreshCollections(collection.id)
         setFlowGraphResult(null)
-        setNotice(`${collection.name} is ready.`)
+        reportSuccess(`${collection.name} is ready.`)
       }
     )
   }
@@ -1482,7 +1575,7 @@ function App(): React.JSX.Element {
   async function confirmDeleteCollection(): Promise<void> {
     if (!collectionDialog || collectionDialog.mode !== 'delete') return
 
-    await runTask('Deleting collection', async () => {
+    await runTask('Deleting hub', async () => {
       await window.aether.collections.delete(collectionDialog.collection.id)
       await closeCollectionDialog()
       setChatResult(null)
@@ -1490,7 +1583,7 @@ function App(): React.JSX.Element {
       setFlowGraphResult(null)
       await refreshCollections()
       setStatus(await window.aether.system.status())
-      setNotice('Collection deleted.')
+      reportSuccess('Hub deleted.')
     })
   }
 
@@ -1560,7 +1653,7 @@ function App(): React.JSX.Element {
   async function capturePage(): Promise<void> {
     if (!selectedCollection) {
       await openCollectionDialog({ mode: 'create' })
-      setNotice('Create a collection before capturing.')
+      reportBlocked('Create a hub before capturing.')
       return
     }
 
@@ -1578,7 +1671,7 @@ function App(): React.JSX.Element {
       setAskCollectionId(result.collectionId)
       setSemanticTrailResult(null)
       setFlowGraphResult(null)
-      setNotice(`Saved ${result.chunkCount} chunks into ${result.collectionName}.`)
+      reportSuccess(`Saved ${countLabel(result.chunkCount, 'chunk')} into ${result.collectionName}.`)
     })
   }
 
@@ -1588,7 +1681,7 @@ function App(): React.JSX.Element {
       await refreshCollections(selectedCollection?.id)
       setSemanticTrailResult(null)
       setFlowGraphResult(null)
-      setNotice('Capture deleted.')
+      reportSuccess('Capture deleted.')
     })
   }
 
@@ -1599,7 +1692,7 @@ function App(): React.JSX.Element {
       setChatResult(null)
       setSemanticTrailResult(null)
       setFlowGraphResult(null)
-      setNotice(`Moved ${capture.title}.`)
+      reportSuccess(`Moved ${capture.title}.`)
     })
   }
 
@@ -1630,12 +1723,12 @@ function App(): React.JSX.Element {
       setPanelCollapsed(false)
       await window.aether.layout.setIntelligencePanelCollapsed(false)
       setChatPrompt(prompt)
-      setNotice('Select a knowledge hub or include the current page before asking ÆTHER.')
+      reportBlocked('Select a knowledge hub or include the current page before asking ÆTHER.')
       return
     }
 
     if (includeCurrentPage && !canUseCurrentPage) {
-      setNotice('Open a page before asking with current-page context.')
+      reportBlocked('Open a page before asking with current-page context.')
       return
     }
 
@@ -1697,11 +1790,11 @@ function App(): React.JSX.Element {
 
   async function saveActiveTabToHub(): Promise<void> {
     if (!activeTab?.url) {
-      setNotice('Open a page before saving it to the Hub.')
+      reportBlocked('Open a page before saving it to the Hub.')
       return
     }
     if (activeTabSavedToHub && !activeTabHubNeedsMetadata) {
-      setNotice('This page is already saved as a portal.')
+      reportBlocked('This page is already saved as a portal.')
       return
     }
 
@@ -1714,7 +1807,7 @@ function App(): React.JSX.Element {
         themeColor: activeTab.themeColor
       })
       await refreshShortcuts()
-      setNotice(updatingPortal ? 'Updated portal appearance.' : 'Saved to Hub.')
+      reportSuccess(updatingPortal ? 'Updated portal appearance.' : 'Saved to Hub.')
     })
   }
 
@@ -1798,7 +1891,7 @@ function App(): React.JSX.Element {
         setSemanticTrailResult(result)
       } catch (error) {
         if (semanticTrailRequestRef.current === requestId) {
-          setNotice(getErrorMessage(error))
+          reportError(error)
         }
       } finally {
         if (semanticTrailRequestRef.current === requestId) {
@@ -1806,7 +1899,7 @@ function App(): React.JSX.Element {
         }
       }
     },
-    [canUseCurrentPage, dashboardOpen, semanticTrailQuery, status?.embeddingModel]
+    [canUseCurrentPage, dashboardOpen, reportError, semanticTrailQuery, status?.embeddingModel]
   )
 
   async function buildFlowGraph(query = flowGraphQuery): Promise<void> {
@@ -1923,7 +2016,7 @@ function App(): React.JSX.Element {
       const result = await window.aether.air.render(buildAirInput())
       setAirResult(result)
       await refreshAirRecent()
-      setNotice(`Rendered ${result.filename}.`)
+      reportSuccess(`Rendered ${result.filename}.`)
     })
   }
 
@@ -1959,15 +2052,15 @@ function App(): React.JSX.Element {
 
     try {
       const result = await window.aether.crystallizer.generate({ keyword })
-      setNotice(
-        `Mapped ${result.items.length} fragments with ${
+      reportSuccess(
+        `Mapped ${countLabel(result.items.length, 'topic')} with ${
           formatVisibleModelName(result.model) ?? result.model
         }.`
       )
       return result
     } catch (error) {
       const message = error instanceof Error ? getErrorMessage(error) : 'Crystallization failed.'
-      setNotice(message)
+      report(message, 'error')
       throw error
     } finally {
       setBusy(null)
@@ -1982,11 +2075,11 @@ function App(): React.JSX.Element {
       const saved = await window.aether.crystallizer.save(input)
       setActiveSavedIceberg(saved)
       await refreshSavedIcebergs()
-      setNotice(`Crystallized ${saved.title}.`)
+      reportSuccess(`Crystallized ${saved.title}.`)
       return saved
     } catch (error) {
       const message = error instanceof Error ? getErrorMessage(error) : 'Saving iceberg failed.'
-      setNotice(message)
+      report(message, 'error')
       throw error
     } finally {
       setBusy(null)
@@ -2003,12 +2096,12 @@ function App(): React.JSX.Element {
       setActiveSavedIceberg(saved)
       setWorkspaceMode('crystallizer')
       setDashboardOpen(true)
-      setNotice(`Opened ${saved.title}.`)
+      reportSuccess(`Opened ${saved.title}.`)
       return saved
     } catch (error) {
       const message =
         error instanceof Error ? getErrorMessage(error) : 'Could not open saved iceberg.'
-      setNotice(message)
+      report(message, 'error')
       throw error
     } finally {
       setBusy(null)
@@ -2025,11 +2118,11 @@ function App(): React.JSX.Element {
         setActiveSavedIceberg(null)
       }
       await refreshSavedIcebergs()
-      setNotice('Saved iceberg deleted.')
+      reportSuccess('Saved iceberg deleted.')
     } catch (error) {
       const message =
         error instanceof Error ? getErrorMessage(error) : 'Could not delete saved iceberg.'
-      setNotice(message)
+      report(message, 'error')
       throw error
     } finally {
       setBusy(null)
@@ -2077,8 +2170,10 @@ function App(): React.JSX.Element {
 
   async function openSettings(): Promise<void> {
     setSettingsOpen(true)
-    // Not awaited: this loads the vector store, and the panel should open immediately.
+    // Neither is awaited: the index status loads the vector store, and the panel
+    // should open immediately.
     void refreshIndexStatus()
+    void refreshDiagnostics()
     await window.aether.layout.setModalOverlayOpen(true)
   }
 
@@ -2093,7 +2188,7 @@ function App(): React.JSX.Element {
         browser: { defaultSearchEngine }
       })
       setSettings(nextSettings)
-      setNotice('Default search engine updated.')
+      reportSuccess('Default search engine updated.')
     })
   }
 
@@ -2101,7 +2196,17 @@ function App(): React.JSX.Element {
     await runTask('Updating settings', async () => {
       const nextSettings = await window.aether.system.updateSettings({ developerMode })
       setSettings(nextSettings)
-      setNotice(developerMode ? 'Developer Mode enabled.' : 'Developer Mode disabled.')
+      reportSuccess(developerMode ? 'Developer Mode enabled.' : 'Developer Mode disabled.')
+    })
+  }
+
+  async function updateAppearance(appearance: Appearance): Promise<void> {
+    // Applied optimistically: the effect above repaints on the next frame, and
+    // waiting for the disk write would make a theme click feel broken.
+    setSettings((current) => ({ ...current, appearance }))
+    await runTask('Updating settings', async () => {
+      const nextSettings = await window.aether.system.updateSettings({ appearance })
+      setSettings(nextSettings)
     })
   }
 
@@ -2111,7 +2216,7 @@ function App(): React.JSX.Element {
         updates: { autoCheck }
       })
       setSettings(nextSettings)
-      setNotice(autoCheck ? 'Update checks enabled.' : 'Update checks disabled.')
+      reportSuccess(autoCheck ? 'Update checks enabled.' : 'Update checks disabled.')
     })
   }
 
@@ -2120,7 +2225,39 @@ function App(): React.JSX.Element {
     try {
       await window.aether.system.openExternalUrl(updateCheck.releaseUrl)
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
+    }
+  }
+
+  async function installUpdate(): Promise<void> {
+    setUpdateInstalling(true)
+    setUpdateProgress(null)
+    try {
+      const result = await window.aether.system.installUpdate()
+      if (result.status === 'installed') {
+        setUpdateInstalled(result)
+        reportSuccess(result.message)
+      } else {
+        // The three non-install outcomes are all things the user has to act on
+        // themselves, so they read as blocked rather than as failures.
+        setUpdateInstalled(null)
+        reportBlocked(result.message)
+      }
+    } catch (error) {
+      setUpdateInstalled(null)
+      reportError(error)
+    } finally {
+      setUpdateInstalling(false)
+      setUpdateProgress(null)
+    }
+  }
+
+  async function relaunchForUpdate(): Promise<void> {
+    try {
+      // Never resolves when it works — the process is replaced.
+      await window.aether.system.relaunch()
+    } catch (error) {
+      reportError(error)
     }
   }
 
@@ -2131,7 +2268,7 @@ function App(): React.JSX.Element {
     await runTask('Updating local models', async () => {
       const nextStatus = await window.aether.system.updateModels(input)
       setStatus(nextStatus)
-      setNotice('Local model selection updated.')
+      reportSuccess('Local model selection updated.')
     })
   }
 
@@ -2205,7 +2342,7 @@ function App(): React.JSX.Element {
     try {
       await task()
     } catch (error) {
-      setNotice(getErrorMessage(error))
+      reportError(error)
     } finally {
       setBusy(null)
     }
@@ -2248,6 +2385,7 @@ function App(): React.JSX.Element {
       onGenerate={generateIceberg}
       onOpenSaved={openSavedIceberg}
       onOpenTopic={openCrystallizedTopic}
+      onOpenInLibrary={openTopicInLibrary}
       onSave={saveIceberg}
     />
   )
@@ -2338,12 +2476,21 @@ function App(): React.JSX.Element {
           settings={settings}
           updateCheck={updateCheck}
           updateChecking={updateChecking}
+          updateInstalling={updateInstalling}
+          updateProgress={updateProgress}
+          updateInstalled={updateInstalled}
+          diagnostics={diagnostics}
+          exportingDiagnostics={exportingDiagnostics}
+          onExportDiagnostics={exportDiagnostics}
+          onInstallUpdate={installUpdate}
+          onRelaunchForUpdate={relaunchForUpdate}
           onClose={closeSettings}
           onDefaultSearchEngineChange={updateDefaultSearchEngine}
           onDeveloperModeChange={updateDeveloperMode}
           onExportLibrary={exportLibrary}
           onCheckForUpdates={() => checkForUpdates()}
           onOpenUpdateRelease={openUpdateRelease}
+          onAppearanceChange={updateAppearance}
           onUpdateAutoCheck={updateAutoCheck}
           onOpenModelSetup={openModelSetup}
         />
@@ -2835,13 +2982,6 @@ function FindBar({
   )
 }
 
-function formatExportSize(bytes: number): string {
-  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`
-  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`
-  if (bytes >= 1_000) return `${Math.round(bytes / 1_000)} KB`
-  return `${bytes} B`
-}
-
 function formatSettingsDate(value?: string): string {
   if (!value) return 'Never'
   const date = new Date(value)
@@ -2871,12 +3011,21 @@ function SettingsModal({
   settings,
   updateCheck,
   updateChecking,
+  updateInstalling,
+  updateProgress,
+  updateInstalled,
+  diagnostics,
+  exportingDiagnostics,
+  onExportDiagnostics,
+  onInstallUpdate,
+  onRelaunchForUpdate,
   onClose,
   onCheckForUpdates,
   onDefaultSearchEngineChange,
   onDeveloperModeChange,
   onExportLibrary,
   onOpenUpdateRelease,
+  onAppearanceChange,
   onUpdateAutoCheck,
   onOpenModelSetup
 }: {
@@ -2889,22 +3038,32 @@ function SettingsModal({
   settings: AppSettings
   updateCheck: UpdateCheckResult | null
   updateChecking: boolean
+  updateInstalling: boolean
+  updateProgress: UpdateInstallProgress | null
+  updateInstalled: UpdateInstallResult | null
+  diagnostics: DiagnosticEntry[] | null
+  exportingDiagnostics: boolean
+  onExportDiagnostics: () => Promise<void>
+  onInstallUpdate: () => Promise<void>
+  onRelaunchForUpdate: () => Promise<void>
   onClose: () => Promise<void>
   onCheckForUpdates: () => Promise<void>
   onDefaultSearchEngineChange: (value: SearchEngineId) => Promise<void>
   onDeveloperModeChange: (value: boolean) => Promise<void>
   onExportLibrary: () => Promise<void>
   onOpenUpdateRelease: () => Promise<void>
+  onAppearanceChange: (value: Appearance) => Promise<void>
   onUpdateAutoCheck: (value: boolean) => Promise<void>
   onOpenModelSetup: () => Promise<void>
 }): React.JSX.Element {
-  // Suppressed while a library export or re-index is running, so a stray click or
-  // Escape cannot close the panel out from under work the user is watching.
+  // Suppressed while a library export, re-index, or update install is running, so
+  // a stray click or Escape cannot close the panel out from under work the user is
+  // watching. The update matters most: it is the one that replaces the app binary.
   const settingsBackdrop = useDismissableOverlay(
     () => {
       void onClose()
     },
-    !exportingLibrary && !reindexing
+    !exportingLibrary && !reindexing && !updateInstalling
   )
   const installedVersion = updateCheck?.currentVersion ?? APP_VERSION
   const searchEngines: Array<{ id: SearchEngineId; name: string; description: string }> = [
@@ -2989,6 +3148,39 @@ function SettingsModal({
             </div>
           </div>
 
+          <div className="settings-field">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <SunMoon height={30} width={30} />
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <label style={{ margin: 0 }}>Appearance</label>
+                <p style={{ margin: 0 }}>
+                  System follows your desktop; the other two override it either way.
+                </p>
+              </div>
+            </div>
+            <div
+              className="settings-engine-list"
+              aria-label="Appearance"
+              role="radiogroup"
+            >
+              {APPEARANCE_OPTIONS.map((option) => (
+                <button
+                  aria-checked={settings.appearance === option.id}
+                  className={settings.appearance === option.id ? 'crystal-button' : ''}
+                  key={option.id}
+                  onClick={() => {
+                    void onAppearanceChange(option.id)
+                  }}
+                  role="radio"
+                  type="button"
+                >
+                  <strong>{option.name}</strong>
+                  <span>{option.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="settings-field developer-mode-field">
             <label className="settings-checkbox-row">
               <input
@@ -3033,7 +3225,7 @@ function SettingsModal({
                 <strong>Library backup</strong>
                 <small>
                   {libraryExport
-                    ? `Last export: ${libraryExport.captureCount} sources, ${formatExportSize(
+                    ? `Last export: ${countLabel(libraryExport.captureCount, 'source')}, ${formatByteSize(
                         libraryExport.byteSize
                       )} — ${libraryExport.path}`
                     : 'ÆTHER keeps no cloud copy. Save a snapshot of your hubs, sources, and maps.'}
@@ -3051,6 +3243,51 @@ function SettingsModal({
               {exportingLibrary ? 'Exporting…' : 'Export Library'}
             </button>
           </div>
+
+          <div className="settings-field settings-model-setup-field">
+            <div className="settings-model-setup-copy">
+              <FileText size={28} style={{ color: 'var(--accent-strong)' }} />
+              <span>
+                <strong>Diagnostics</strong>
+                <small>
+                  {diagnostics === null
+                    ? 'Loading…'
+                    : diagnostics.length === 0
+                      ? 'No problems recorded. Kept on this machine only; nothing is sent anywhere.'
+                      : `${countLabel(diagnostics.length, 'entry', 'entries')} recorded. Kept on this machine only; nothing is sent anywhere.`}
+                </small>
+              </span>
+            </div>
+            <button
+              className="model-setup-button"
+              disabled={Boolean(busy) || exportingDiagnostics}
+              onClick={() => {
+                void onExportDiagnostics()
+              }}
+              type="button"
+            >
+              {exportingDiagnostics ? 'Exporting…' : 'Export Log'}
+            </button>
+          </div>
+
+          {diagnostics !== null && diagnostics.length > 0 && (
+            <div className="settings-diagnostics-log" aria-label="Recent diagnostics">
+              {/* Newest first, and capped: this is a glance at what went wrong, not
+                  a log viewer. The full history goes out through Export Log. */}
+              {diagnostics.slice(0, 12).map((entry, index) => (
+                <div
+                  className={`settings-diagnostics-row is-${entry.level}`}
+                  key={`${entry.at}-${index}`}
+                >
+                  <span className="settings-diagnostics-when">
+                    {formatSettingsDate(entry.at)}
+                  </span>
+                  <span className="settings-diagnostics-level">{entry.level}</span>
+                  <span className="settings-diagnostics-message">{entry.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {indexStatus && indexStatus.pendingReembed > 0 && (
             <div className="settings-field settings-model-setup-field settings-reindex-field">
@@ -3114,6 +3351,35 @@ function SettingsModal({
               <p className="settings-update-notes">{updateCheck.releaseNotes}</p>
             )}
 
+            {updateInstalling && (
+              <div aria-live="polite" className="settings-update-progress" role="status">
+                <div
+                  aria-hidden="true"
+                  className={`settings-update-progress-track${
+                    updateProgress?.totalBytes ? '' : ' is-indeterminate'
+                  }`}
+                >
+                  <span
+                    style={
+                      updateProgress?.totalBytes
+                        ? {
+                            width: `${Math.min(
+                              100,
+                              Math.round(
+                                (updateProgress.downloadedBytes / updateProgress.totalBytes) * 100
+                              )
+                            )}%`
+                          }
+                        : undefined
+                    }
+                  />
+                </div>
+                <small>{formatUpdateProgress(updateProgress)}</small>
+              </div>
+            )}
+
+            {updateInstalled && <p className="settings-update-notes">{updateInstalled.message}</p>}
+
             <div className="settings-update-actions">
               <label className="settings-checkbox-row settings-update-toggle">
                 <input
@@ -3133,7 +3399,7 @@ function SettingsModal({
                 {updateCheck?.releaseUrl && (
                   <button
                     className="button"
-                    disabled={Boolean(busy)}
+                    disabled={Boolean(busy) || updateInstalling}
                     onClick={() => {
                       void onOpenUpdateRelease()
                     }}
@@ -3142,16 +3408,39 @@ function SettingsModal({
                     View Release
                   </button>
                 )}
-                <button
-                  className="button crystal-button"
-                  disabled={Boolean(busy) || updateChecking}
-                  onClick={() => {
-                    void onCheckForUpdates()
-                  }}
-                  type="button"
-                >
-                  {updateChecking ? 'Checking' : 'Check Now'}
-                </button>
+                {updateInstalled ? (
+                  <button
+                    className="button crystal-button"
+                    onClick={() => {
+                      void onRelaunchForUpdate()
+                    }}
+                    type="button"
+                  >
+                    Restart Now
+                  </button>
+                ) : updateCheck?.updateAvailable ? (
+                  <button
+                    className="button crystal-button"
+                    disabled={Boolean(busy) || updateInstalling}
+                    onClick={() => {
+                      void onInstallUpdate()
+                    }}
+                    type="button"
+                  >
+                    {updateInstalling ? 'Installing' : 'Install Update'}
+                  </button>
+                ) : (
+                  <button
+                    className="button crystal-button"
+                    disabled={Boolean(busy) || updateChecking}
+                    onClick={() => {
+                      void onCheckForUpdates()
+                    }}
+                    type="button"
+                  >
+                    {updateChecking ? 'Checking' : 'Check Now'}
+                  </button>
+                )}
               </div>
             </div>
           </div>

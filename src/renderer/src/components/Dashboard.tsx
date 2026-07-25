@@ -30,14 +30,7 @@ import {
   SavedIcebergSummary
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
-import {
-  cleanTitle,
-  formatDate,
-  getCaptureHost,
-  getPortalTint,
-  getRootDomainLetter,
-  inferIcebergIcon
-} from '../utils/aether-ui'
+import { cleanTitle, countLabel, formatDate, getCaptureHost, getPortalTint, getRootDomainLetter, inferIcebergIcon } from '../utils/aether-ui'
 import { ChevronRightIcon, AetherSigilIcon, CloseIcon, CubeIcon } from './icons'
 import { SquarePen, Trash2 as TrashIcon } from 'lucide-react'
 import { portals } from '../constants/Features'
@@ -398,7 +391,7 @@ export function Dashboard({
                     }}
                     type="button"
                   >
-                    <span>{iceberg.itemCount} fragments</span>
+                    <span>{countLabel(iceberg.itemCount, 'topic')}</span>
                     <strong>{iceberg.title}</strong>
                     <small>
                       {formatDate(iceberg.savedAt)}
@@ -434,7 +427,7 @@ export function Dashboard({
           </span>
           <div style={{ marginTop: '-6px' }}>
             <h2>Knowledge Hubs</h2>
-            <p>Persistent local collections for captured pages, notes, and research trails.</p>
+            <p>Persistent local hubs for captured pages, notes, and research trails.</p>
           </div>
           <button
             className="new-collection-button"
@@ -502,9 +495,7 @@ export function Dashboard({
                 <p className="library-search-summary">
                   {searchResult.hits.length === 0
                     ? `No sources match "${searchResult.query}".`
-                    : `${searchResult.hits.length} source${
-                        searchResult.hits.length !== 1 ? 's' : ''
-                      } for "${searchResult.query}"`}
+                    : `${countLabel(searchResult.hits.length, 'source')} for "${searchResult.query}"`}
                   {/* Say when ranking was literal, so a weak result set is not
                       mistaken for an empty library. */}
                   {searchResult.mode === 'literal' && (
@@ -584,7 +575,7 @@ export function Dashboard({
                 }}
                 type="button"
               >
-                Capture {openTabCount} open tab{openTabCount !== 1 ? 's' : ''}
+                Capture {countLabel(openTabCount, 'open tab')}
               </button>
             )}
             <small>Or drag a tab or link onto a hub below.</small>
@@ -593,10 +584,10 @@ export function Dashboard({
 
         {collections.length === 0 ? (
           <div className="empty-state">
-            <h3>No collections yet</h3>
-            <p>Create a collection, open a page, and capture it into your local knowledge base.</p>
+            <h3>No hubs yet</h3>
+            <p>Create a hub, open a page, and capture it into your local knowledge base.</p>
             <button onClick={() => openCollectionDialog({ mode: 'create' })} type="button">
-              Create first collection
+              Create first hub
             </button>
           </div>
         ) : (
@@ -708,8 +699,7 @@ export function Dashboard({
                       </span>
                       <span className="collection-meta">
                         <strong>
-                          {collection.captureCount} capture
-                          {collection.captureCount !== 1 ? 's' : ''}
+                          {countLabel(collection.captureCount, 'capture')}
                         </strong>
                       </span>
                       <ChevronRightIcon />
@@ -870,7 +860,7 @@ function CaptureCard({
         <h3>{capture.title}</h3>
         <div className="data-badges">
           <time>{formatDate(capture.capturedAt)}</time>
-          <span>{capture.chunkCount} chunks</span>
+          <span>{countLabel(capture.chunkCount, 'chunk')}</span>
         </div>
       </div>
       <div className="capture-hub-row">

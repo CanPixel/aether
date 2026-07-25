@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { CaptureSummary } from '../../../shared/aether'
-import { formatDate, getCaptureHost } from '../utils/aether-ui'
+import { countLabel, formatDate, getCaptureHost } from '../utils/aether-ui'
 import { TrashIcon } from './icons'
 
 type CaptureDetailCardProps = {
@@ -67,7 +67,7 @@ export function CaptureDetailCard({
         </form>
       )}
       <footer>
-        <span>{capture.chunkCount} chunks</span>
+        <span>{countLabel(capture.chunkCount, 'chunk')}</span>
         <time>{formatDate(capture.capturedAt)}</time>
         {onAskCapture && (
           <button onClick={() => onAskCapture(capture)} type="button">
