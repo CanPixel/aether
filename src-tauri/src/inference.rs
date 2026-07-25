@@ -211,13 +211,47 @@ pub(crate) async fn local_generate_iceberg(
             state.paths.models_path.display()
         )
     })?;
+    let prompt = build_iceberg_prompt(topic);
+    let generated =
+        complete_iceberg_attempt(state, model_path.clone(), prompt.clone(), 0.35).await?;
+    let items = match normalize_iceberg_items(&generated) {
+        Ok(items) => items,
+        Err(first_error) => {
+            let retry_prompt = format!(
+                "{prompt}\n\nThe previous response was malformed. Return exactly 18 compact items \
+                 and close every JSON object and array. Keep each description and reason to one \
+                 short sentence. Output JSON only."
+            );
+            let retry =
+                complete_iceberg_attempt(state, model_path.clone(), retry_prompt, 0.2).await?;
+            normalize_iceberg_items(&retry).map_err(|retry_error| {
+                format!(
+                    "Crystallization returned malformed data twice. First attempt: {first_error} \
+                     Retry: {retry_error}"
+                )
+            })?
+        }
+    };
+    Ok(IcebergResult {
+        keyword: topic.to_string(),
+        model: model_label(&model_path),
+        items,
+        generated_at: now(),
+    })
+}
+
+async fn complete_iceberg_attempt(
+    state: &State<'_, Backend>,
+    model_path: PathBuf,
+    prompt: String,
+    temperature: f32,
+) -> Cmd<String> {
     let messages = vec![ChatPromptMessage {
         role: "user",
-        content: build_iceberg_prompt(topic),
+        content: prompt,
     }];
     let runtime = Arc::clone(&state.native_runtime);
     let cancel = Arc::clone(&state.generation_cancelled);
-    let model_label = model_label(&model_path);
     let completion = task::spawn_blocking(move || {
         let mut runtime = runtime
             .lock()
@@ -226,7 +260,7 @@ pub(crate) async fn local_generate_iceberg(
             &model_path,
             messages,
             DEFAULT_ICEBERG_GENERATION_TOKENS,
-            0.35,
+            temperature,
             &cancel,
             ChatSinks::default(),
         )
@@ -237,13 +271,7 @@ pub(crate) async fn local_generate_iceberg(
     if state.generation_cancelled.load(AtomicOrdering::Relaxed) {
         return Err("Crystallization stopped.".to_string());
     }
-    let generated = clean_model_output(&generated);
-    Ok(IcebergResult {
-        keyword: topic.to_string(),
-        model: model_label,
-        items: normalize_iceberg_items(&generated)?,
-        generated_at: now(),
-    })
+    Ok(clean_model_output(&generated))
 }
 
 impl NativeModelRuntime {

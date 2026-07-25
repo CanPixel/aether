@@ -499,6 +499,11 @@ button:disabled:hover {
 }
 
 @media (max-width: 1120px) {
+  .crystallizer {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
   .saved-shelves {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -523,11 +528,14 @@ button:disabled:hover {
   }
 
   .crystallizer-body {
+    flex: 0 0 auto;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) 260px;
+    grid-template-rows: minmax(420px, 56vh) minmax(280px, auto);
   }
 
   .crystallizer-dock {
+    height: auto;
+    min-height: 280px;
     border-top: 1px solid rgb(var(--sky-rgb) / 0.26);
     border-left: 0;
   }

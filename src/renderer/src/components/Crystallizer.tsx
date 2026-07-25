@@ -40,7 +40,6 @@ type LayerDefinition = {
   name: string
   shortName: string
   caption: string
-  depth: string
   accent: string
 }
 
@@ -74,9 +73,6 @@ type CrystallizerProps = {
   onGenerate: (keyword: string) => Promise<IcebergResult>
   onOpenSaved: (id: string) => Promise<SavedIceberg>
   onOpenTopic: (keyword: string, item: IcebergItem) => Promise<void>
-  // Routes a topic into the dashboard's library search, which is what makes iCE
-  // feed the library rather than only pointing at the open web.
-  onOpenInLibrary: (query: string) => Promise<void>
   onSave: (input: SaveIcebergInput) => Promise<SavedIceberg>
 }
 
@@ -102,6 +98,7 @@ const RAISED_CARD_MIN_WIDTH = 250
 const MIN_ZOOM = 0.74
 const MAX_ZOOM = 2.25
 const FITTED_ZOOM = 0.74
+const FOCUSED_ZOOM = 1.9
 const NODE_FIELD = {
   minX: 600,
   maxX: CANVAS_WIDTH - 430,
@@ -121,7 +118,6 @@ const LAYERS: LayerDefinition[] = [
     name: 'Surface',
     shortName: 'Surface',
     caption: 'Common language',
-    depth: '0-20%',
     accent: '#0f8cc2'
   },
   {
@@ -129,7 +125,6 @@ const LAYERS: LayerDefinition[] = [
     name: 'Formation',
     shortName: 'Formation',
     caption: 'Adjacent concepts',
-    depth: '20-40%',
     accent: '#0f8f80'
   },
   {
@@ -137,7 +132,6 @@ const LAYERS: LayerDefinition[] = [
     name: 'Cold Current',
     shortName: 'Current',
     caption: 'Methods and mechanisms',
-    depth: '40-60%',
     accent: '#64748b'
   },
   {
@@ -145,7 +139,6 @@ const LAYERS: LayerDefinition[] = [
     name: 'Black Ice',
     shortName: 'Black Ice',
     caption: 'Specialist patterns',
-    depth: '60-80%',
     accent: '#7560b1'
   },
   {
@@ -153,7 +146,6 @@ const LAYERS: LayerDefinition[] = [
     name: 'Abyssal Lattice',
     shortName: 'Abyssal',
     caption: 'Hidden edge knowledge',
-    depth: '80-100%',
     accent: '#b76e2d'
   }
 ]
@@ -246,7 +238,6 @@ export function Crystallizer({
   onGenerate,
   onOpenSaved,
   onOpenTopic,
-  onOpenInLibrary,
   onSave
 }: CrystallizerProps): React.JSX.Element {
   const [keyword, setKeyword] = useState(openedIceberg?.keyword ?? '')
@@ -418,7 +409,7 @@ export function Crystallizer({
       setResult(nextResult)
       setSelectedItem(nextResult.items[0] ?? null)
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Crystallization failed.')
+      setError(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
     }
@@ -539,7 +530,7 @@ export function Crystallizer({
     const positionedItem = positionedItems.find(({ item: candidate }) => candidate.id === item.id)
     if (!positionedItem) return
 
-    const nextZoom = clamp(Math.max(zoom, 1.72), MIN_ZOOM, MAX_ZOOM)
+    const nextZoom = clamp(Math.max(zoom, FOCUSED_ZOOM), MIN_ZOOM, MAX_ZOOM)
     animateView(nextZoom, {
       x: CANVAS_WIDTH / 2 - positionedItem.displayX * nextZoom,
       y: CANVAS_HEIGHT / 2 - positionedItem.displayY * nextZoom
@@ -842,7 +833,6 @@ export function Crystallizer({
                       setHoveredItemId(null)
                       setRaisedVisible(false)
                     }}
-                    onKeyDown={(event) => handleNodeKeyDown(event, item)}
                     onMouseEnter={(event) => {
                       setHoveredItemId(item.id)
                       raiseCard(event.currentTarget, item, layer.accent)
@@ -853,6 +843,7 @@ export function Crystallizer({
                       // actually leaves the canvas via handlePointerLeave.
                       setHoveredItemId(null)
                     }}
+                    onKeyDown={(event) => handleNodeKeyDown(event, item)}
                     role="button"
                     style={
                       {
@@ -865,18 +856,27 @@ export function Crystallizer({
                   >
                     <g className="ice-node-scale">
                       <foreignObject
+                        className="ice-node-content"
                         height={NODE_HEIGHT}
                         width={NODE_WIDTH}
                         x={-NODE_WIDTH / 2}
                         y={-NODE_HEIGHT / 2}
                       >
-                        <button className="ice-node" type="button">
+                        <div className="ice-node">
                           <span>{item.level}</span>
                           <strong>{item.name}</strong>
                           <small>{item.description}</small>
-                        </button>
+                        </div>
                       </foreignObject>
                     </g>
+                    <rect
+                      className="ice-node-hit-target"
+                      height={NODE_HEIGHT}
+                      rx="11"
+                      width={NODE_WIDTH}
+                      x={-NODE_WIDTH / 2}
+                      y={-NODE_HEIGHT / 2}
+                    />
                   </g>
                 )
               })}
@@ -889,7 +889,6 @@ export function Crystallizer({
                 pinned horizontally, so they are always readable. */}
             {LAYERS.map((layer) => {
               const bandTop = (CANVAS_HEIGHT / LAYERS.length) * (layer.level - 1)
-              const bandMiddle = (CANVAS_HEIGHT / LAYERS.length) * (layer.level - 0.5)
 
               return (
                 <g
@@ -913,13 +912,6 @@ export function Crystallizer({
                       {layer.caption}
                     </text>
                   </g>
-                  <text
-                    className="layer-depth-label"
-                    x={CANVAS_WIDTH - 122}
-                    y={bandMiddle * zoom + pan.y}
-                  >
-                    {layer.depth}
-                  </text>
                 </g>
               )
             })}
@@ -1015,21 +1007,6 @@ export function Crystallizer({
                 <em className="crystallizer-depth-reason">{activeSelectedItem.reason}</em>
               )}
               <div className="crystallizer-detail-actions">
-                {/* Only offered once coverage confirms there is something to open.
-                    Routing a topic into the library is the half of iCE that feeds
-                    the knowledge base rather than pointing back out at the web. */}
-                {activeCoverage?.status === 'ready' && activeCoverage.hits > 0 && (
-                  <button
-                    className="explore-web-button"
-                    onClick={() => {
-                      void onOpenInLibrary(activeSelectedItem.name)
-                    }}
-                    type="button"
-                  >
-                    <Search size={14} />
-                    Open in Library
-                  </button>
-                )}
                 <button
                   className="explore-web-button"
                   onClick={() => {

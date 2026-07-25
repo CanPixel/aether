@@ -174,7 +174,7 @@ const CAPTURE_SUGGEST_MIN_SCORE: f64 = 50.0;
 // of loading a remote page. Must match START_PAGE_URL in src/renderer/src/App.tsx.
 const START_PAGE_URL: &str = "aether://start";
 const DEFAULT_GENERATION_TOKENS: usize = 900;
-const DEFAULT_ICEBERG_GENERATION_TOKENS: usize = 4200;
+const DEFAULT_ICEBERG_GENERATION_TOKENS: usize = 5200;
 const DEFAULT_TOP_K: i32 = 64;
 const DEFAULT_TOP_P: f32 = 0.95;
 const QWEN3_EMBEDDING_RETRIEVAL_INSTRUCTION: &str =
@@ -2943,6 +2943,34 @@ mod tests {
         assert!(normalized
             .iter()
             .any(|item| item.level == 5 && item.depth_score.unwrap_or_default() >= 80.0));
+    }
+
+    #[test]
+    fn iceberg_normalizer_recovers_complete_items_from_truncated_json() {
+        let response = r#"{
+            "recommendedItemCount": 24,
+            "items": [
+                {
+                    "name": "Quantum mechanics",
+                    "description": "The physical framework for quantum systems.",
+                    "depthScore": 12
+                },
+                {
+                    "name": "Bloch sphere",
+                    "description": "A geometric representation of a qubit state.",
+                    "depthScore": 32
+                },
+                {
+                    "name": "Incomplete fragment",
+                    "description": "Generation stopped midway"
+        "#;
+
+        let normalized =
+            normalize_iceberg_items(response).expect("complete generated items are recoverable");
+
+        assert_eq!(normalized.len(), 2);
+        assert_eq!(normalized[0].name, "Quantum mechanics");
+        assert_eq!(normalized[1].name, "Bloch sphere");
     }
 
     #[test]

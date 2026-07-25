@@ -55,6 +55,55 @@ pub(crate) struct ScoredIcebergItem {
     pub(crate) score: f64,
 }
 
+fn recover_complete_iceberg_items(json_text: &str) -> Option<serde_json::Value> {
+    let array_start = json_text.find('[')?;
+    let mut objects = Vec::new();
+    let mut object_start = None;
+    let mut object_depth = 0_u32;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (offset, character) in json_text[array_start + 1..].char_indices() {
+        let index = array_start + 1 + offset;
+
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match character {
+            '"' if object_depth > 0 => in_string = true,
+            '{' => {
+                if object_depth == 0 {
+                    object_start = Some(index);
+                }
+                object_depth += 1;
+            }
+            '}' if object_depth > 0 => {
+                object_depth -= 1;
+                if object_depth == 0 {
+                    let start = object_start.take()?;
+                    if let Ok(value) =
+                        serde_json::from_str::<serde_json::Value>(&json_text[start..=index])
+                    {
+                        objects.push(value);
+                    }
+                }
+            }
+            ']' if object_depth == 0 => break,
+            _ => {}
+        }
+    }
+
+    (!objects.is_empty()).then(|| serde_json::Value::Array(objects))
+}
+
 pub(crate) fn normalize_iceberg_items(response: &str) -> Cmd<Vec<IcebergItem>> {
     let json_text = response
         .trim()
@@ -65,14 +114,16 @@ pub(crate) fn normalize_iceberg_items(response: &str) -> Cmd<Vec<IcebergItem>> {
     let parsed = match serde_json::from_str::<serde_json::Value>(json_text) {
         Ok(value) => value,
         Err(_) => {
-            let start = json_text
-                .find('[')
-                .ok_or_else(|| "Local model did not return valid iceberg JSON.".to_string())?;
-            let end = json_text
-                .rfind(']')
-                .ok_or_else(|| "Local model did not return valid iceberg JSON.".to_string())?;
-            serde_json::from_str(&json_text[start..=end])
-                .map_err(|_| "Local model did not return valid iceberg JSON.".to_string())?
+            let parsed_array =
+                json_text
+                    .find('[')
+                    .zip(json_text.rfind(']'))
+                    .and_then(|(start, end)| {
+                        serde_json::from_str::<serde_json::Value>(&json_text[start..=end]).ok()
+                    });
+            parsed_array
+                .or_else(|| recover_complete_iceberg_items(json_text))
+                .ok_or_else(|| "Local model did not return valid iceberg JSON.".to_string())?
         }
     };
     let requested_count = iceberg_requested_count(&parsed);

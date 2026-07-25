@@ -516,14 +516,12 @@
   stroke-width: 1.2px;
 }
 
-.crystallizer-body.results-ready .crystallizer-layer-label,
-.crystallizer-body.results-ready .layer-depth-label {
+.crystallizer-body.results-ready .crystallizer-layer-label {
   animation: crystallizerLabelReveal 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: 340ms;
 }
 
-.crystallizer-layer-label text,
-.layer-depth-label {
+.crystallizer-layer-label text {
   pointer-events: none;
   text-transform: uppercase;
 }
@@ -543,18 +541,11 @@
   text-transform: uppercase;
 }
 
-.layer-label-caption,
-.layer-depth-label {
+.layer-label-caption {
   fill: rgb(var(--slate-deep-rgb) / 0.5);
   font-size: 11px;
   font-weight: 860;
   letter-spacing: 0.16em;
-}
-
-.layer-depth-label {
-  fill: rgb(var(--slate-deep-rgb) / 0.46);
-  font-size: 14px;
-  text-anchor: end;
 }
 
 .depth-thread {
@@ -588,22 +579,16 @@
 }
 
 .ice-node-scale {
-  transform-box: fill-box;
-  transform-origin: center;
-  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
 }
 
-.ice-node-hit.hovered .ice-node-scale,
-.ice-node-hit:focus-visible .ice-node-scale {
-  transform: scale(1.025);
+.ice-node-content {
+  pointer-events: none;
 }
 
-.ice-node-hit.selected .ice-node-scale {
-  transform: scale(1.035);
-}
-
-.ice-node-hit.selected.hovered .ice-node-scale {
-  transform: scale(1.045);
+.ice-node-hit-target {
+  fill: transparent;
+  pointer-events: all;
 }
 
 .crystallizer-body.results-ready .ice-node-hit {
@@ -648,9 +633,7 @@
 
 .ice-node-hit.selected .ice-node,
 .ice-node-hit.hovered .ice-node,
-.ice-node-hit:focus-visible .ice-node,
-.ice-node:hover,
-.ice-node:focus-visible {
+.ice-node-hit:focus-visible .ice-node {
   border-color: color-mix(in srgb, var(--layer-accent) 62%, white);
   border-left-color: var(--layer-accent);
   background:

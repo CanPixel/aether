@@ -1364,15 +1364,6 @@ function App(): React.JSX.Element {
     setDashboardOpen(true)
   }
 
-  // Sends an iCE topic into the dashboard's library search. The counterpart to
-  // openCrystallizedTopic, which sends it out to the web instead.
-  async function openTopicInLibrary(query: string): Promise<void> {
-    await window.aether.dashboard.open()
-    setWorkspaceMode('dashboard')
-    setDashboardOpen(true)
-    await searchLibrary(query)
-  }
-
   async function openCrystallizer(): Promise<void> {
     await window.aether.dashboard.open()
     setWorkspaceMode('crystallizer')
@@ -2071,7 +2062,7 @@ function App(): React.JSX.Element {
       )
       return result
     } catch (error) {
-      const message = error instanceof Error ? getErrorMessage(error) : 'Crystallization failed.'
+      const message = getErrorMessage(error)
       report(message, 'error')
       throw error
     } finally {
@@ -2397,7 +2388,6 @@ function App(): React.JSX.Element {
       onGenerate={generateIceberg}
       onOpenSaved={openSavedIceberg}
       onOpenTopic={openCrystallizedTopic}
-      onOpenInLibrary={openTopicInLibrary}
       onSave={saveIceberg}
     />
   )
