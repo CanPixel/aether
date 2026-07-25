@@ -1110,6 +1110,17 @@
   line-height: 1.45;
 }
 
+.hub-empty-state p {
+  max-width: 760px;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .hub-empty-state p {
+    white-space: normal;
+  }
+}
+
 .empty-state.large {
   min-height: 500px;
 }

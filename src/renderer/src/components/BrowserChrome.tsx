@@ -1,4 +1,4 @@
-import { CSSProperties, FormEvent, MouseEvent, useEffect, useState } from 'react'
+import { CSSProperties, DragEvent, FormEvent, MouseEvent, useEffect, useState } from 'react'
 import { BrowserTabSummary, CaptureResult, CollectionSummary } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
 import { countLabel, getTabTint } from '../utils/aether-ui'
@@ -51,6 +51,7 @@ type BrowserChromeProps = {
   onForward: () => Promise<void>
   onNavigate: (event: FormEvent<HTMLFormElement>) => Promise<void>
   onQuickAction: (action: QuickAction) => Promise<void>
+  onReorderTabs: (ids: string[]) => Promise<void>
   onSavePortal: () => Promise<void>
   onSelectTab: (tabId: string) => Promise<void>
   onSelectCollection: (value: string) => Promise<void>
@@ -90,6 +91,7 @@ export function BrowserChrome({
   onForward,
   onNavigate,
   onQuickAction,
+  onReorderTabs,
   onSavePortal,
   onSelectTab,
   onSelectCollection,
@@ -101,6 +103,8 @@ export function BrowserChrome({
   const dashboardAddress = dashboardOpen && DASHBOARD_ADDRESSES.has(trimmedAddress)
   const addressSubmittable = Boolean(activeTab && trimmedAddress && !dashboardAddress)
   const [tabMenu, setTabMenu] = useState<{ tabId: string; x: number; y: number } | null>(null)
+  const [draggedTabId, setDraggedTabId] = useState<string | null>(null)
+  const [tabDropTarget, setTabDropTarget] = useState<string | null>(null)
   const menuTab = tabMenu ? tabs.find((tab) => tab.id === tabMenu.tabId) : undefined
 
   useEffect(() => {
@@ -148,6 +152,21 @@ export function BrowserChrome({
     setTabMenu(null)
     onTabMenuClose()
     await action()
+  }
+
+  function isTabReorderDrag(event: DragEvent<HTMLButtonElement>): boolean {
+    return Array.from(event.dataTransfer.types).includes('application/x-aether-tab-reorder')
+  }
+
+  function reorderTabIds(sourceId: string, targetId: string, insertAfter: boolean): string[] {
+    if (sourceId === targetId) return tabs.map((tab) => tab.id)
+    const source = tabs.find((tab) => tab.id === sourceId)
+    const remaining = tabs.filter((tab) => tab.id !== sourceId)
+    const targetIndex = remaining.findIndex((tab) => tab.id === targetId)
+    if (!source || targetIndex < 0) return tabs.map((tab) => tab.id)
+
+    remaining.splice(targetIndex + (insertAfter ? 1 : 0), 0, source)
+    return remaining.map((tab) => tab.id)
   }
 
   return (
@@ -212,20 +231,47 @@ export function BrowserChrome({
               tab.isActive && !dashboardOpen ? 'active' : ''
             }`}
             key={tab.id}
-            // Dragging a tab onto a Knowledge Hub on the dashboard captures it.
-            // The private MIME type is what lets the drop target tell this apart
-            // from ÆTHER's internal reorder drags.
             draggable={Boolean(tab.url)}
             onDragStart={(event) => {
               if (!tab.url) return
-              event.dataTransfer.effectAllowed = 'copy'
+              event.dataTransfer.effectAllowed = 'copyMove'
+              event.dataTransfer.setData('application/x-aether-tab-reorder', tab.id)
+              // Dragging a tab onto a Knowledge Hub on the dashboard captures it.
               event.dataTransfer.setData('application/x-aether-tab', tab.url)
               event.dataTransfer.setData('text/uri-list', tab.url)
               event.dataTransfer.setData('text/plain', tab.url)
+              setDraggedTabId(tab.id)
+            }}
+            onDragEnd={() => {
+              setDraggedTabId(null)
+              setTabDropTarget(null)
+            }}
+            onDragOver={(event) => {
+              if (!isTabReorderDrag(event)) return
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'move'
+              if (draggedTabId !== tab.id) setTabDropTarget(tab.id)
+            }}
+            onDragLeave={(event) => {
+              if (event.currentTarget === event.target) setTabDropTarget(null)
+            }}
+            onDrop={(event) => {
+              if (!isTabReorderDrag(event)) return
+              event.preventDefault()
+              event.stopPropagation()
+              const sourceId = event.dataTransfer.getData('application/x-aether-tab-reorder')
+              const midpoint =
+                event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2
+              const ids = reorderTabIds(sourceId, tab.id, event.clientX > midpoint)
+              setDraggedTabId(null)
+              setTabDropTarget(null)
+              if (sourceId && sourceId !== tab.id) void onReorderTabs(ids)
             }}
             onClick={() => onSelectTab(tab.id)}
             onContextMenu={(event) => openTabMenu(event, tab.id)}
             style={getTabStyle(tab)}
+            data-tab-dragging={draggedTabId === tab.id || undefined}
+            data-tab-drop-target={tabDropTarget === tab.id || undefined}
             title={tab.title}
             type="button"
           >

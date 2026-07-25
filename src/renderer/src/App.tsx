@@ -104,8 +104,8 @@ import {
 // page. Must match START_PAGE_URL in src-tauri/src/lib.rs.
 const START_PAGE_URL = 'aether://start'
 const APPEARANCE_OPTIONS: Array<{ id: Appearance; name: string; description: string }> = [
-  { id: 'system', name: 'System', description: 'Follow the desktop appearance.' },
   { id: 'light', name: 'Light', description: 'The pale glass theme.' },
+  { id: 'system', name: 'System', description: 'Follow the desktop appearance.' },
   { id: 'dark', name: 'Dark', description: 'Deep navy, for night reading.' }
 ]
 // AiON panel sizing. Must stay in step with --panel-collapsed-width in foundation.css
@@ -451,7 +451,7 @@ function App(): React.JSX.Element {
     browser: { defaultSearchEngine: 'google' },
     developerMode: false,
     updates: { autoCheck: true },
-    appearance: 'system'
+    appearance: 'light'
   })
   const [updateCheck, setUpdateCheck] = useState<UpdateCheckResult | null>(null)
   const [updateChecking, setUpdateChecking] = useState(false)
@@ -1282,16 +1282,12 @@ function App(): React.JSX.Element {
     return unsubscribe
   }, [])
 
-  // The stylesheet reads data-theme off the root element. 'system' removes the
-  // attribute entirely rather than writing 'system', so prefers-color-scheme is
-  // what decides — an unrecognised value would leave the app stuck in light.
+  // The stylesheet starts in light mode before this effect runs. Stamping every
+  // saved choice, including 'system', prevents a dark OS preference from flashing
+  // briefly before the user's saved Light choice has loaded.
   useEffect(() => {
     const root = document.documentElement
-    if (settings.appearance === 'system') {
-      root.removeAttribute('data-theme')
-    } else {
-      root.setAttribute('data-theme', settings.appearance)
-    }
+    root.setAttribute('data-theme', settings.appearance)
   }, [settings.appearance])
 
   useEffect(() => {
@@ -1421,6 +1417,21 @@ function App(): React.JSX.Element {
       await window.aether.tabs.close(tabId)
       await refreshShell()
     } catch (error) {
+      reportError(error)
+    }
+  }
+
+  async function reorderTabs(ids: string[]): Promise<void> {
+    const previousTabs = tabs
+    const byId = new Map(tabs.map((tab) => [tab.id, tab]))
+    const reorderedTabs = ids.map((id) => byId.get(id)).filter(Boolean) as BrowserTabSummary[]
+    if (reorderedTabs.length !== tabs.length) return
+
+    setTabs(reorderedTabs)
+    try {
+      setTabs(await window.aether.tabs.reorder(ids))
+    } catch (error) {
+      setTabs(previousTabs)
       reportError(error)
     }
   }
@@ -2744,6 +2755,7 @@ function App(): React.JSX.Element {
           onForward={goForward}
           onNavigate={navigate}
           onQuickAction={handleQuickAction}
+          onReorderTabs={reorderTabs}
           onSavePortal={saveActiveTabToHub}
           onSelectTab={activateTab}
           onCaptureIntent={maybeSuggestCaptureHub}

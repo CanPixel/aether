@@ -170,6 +170,18 @@
     color-mix(in srgb, var(--tab-tint, rgb(var(--steel-soft-rgb))) 34%, transparent);
 }
 
+.tab-chip[data-tab-dragging='true'] {
+  opacity: 0.48;
+}
+
+.tab-chip[data-tab-drop-target='true'] {
+  border-color: rgb(var(--azure-rgb) / 0.8);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.92),
+    0 0 0 2px rgb(var(--azure-rgb) / 0.26),
+    0 10px 24px rgb(var(--steel-vivid-rgb) / 0.18);
+}
+
 .tab-status,
 .tab-close,
 .new-tab-button,
@@ -470,7 +482,7 @@
 }
 
 .webview-underlay {
-  inset: var(--top-bar-height) 0 0;
+  inset: var(--desktop-webview-top) 0 0;
   background: rgb(var(--surface-tint-warm-rgb) / 0.42);
 }
 

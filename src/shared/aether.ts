@@ -520,6 +520,7 @@ export interface AetherApi {
     create(input?: { url?: string }): Promise<BrowserTabSummary>
     activate(tabId: string): Promise<void>
     close(tabId: string): Promise<void>
+    reorder(ids: string[]): Promise<BrowserTabSummary[]>
     navigate(tabId: string, url: string): Promise<void>
     scrollToText(tabId: string, text: string): Promise<void>
     find(tabId: string, query?: string, action?: FindAction): Promise<void>

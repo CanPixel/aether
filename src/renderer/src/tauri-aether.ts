@@ -67,6 +67,7 @@ if (isTauri) {
       create: (input) => call<BrowserTabSummary>('aether_tabs_create', { input }),
       activate: (tabId) => call<void>('aether_tabs_activate', { tabId }),
       close: (tabId) => call<void>('aether_tabs_close', { tabId }),
+      reorder: (ids) => call<BrowserTabSummary[]>('aether_tabs_reorder', { ids }),
       navigate: (tabId, url) => call<void>('aether_tabs_navigate', { tabId, url }),
       scrollToText: (tabId, text) => call<void>('aether_tabs_scroll_to_text', { tabId, text }),
       find: (tabId, query, action) => call<void>('aether_tabs_find', { tabId, query, action }),

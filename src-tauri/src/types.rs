@@ -1197,8 +1197,8 @@ pub(crate) struct UserSettings {
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Appearance {
     #[default]
-    System,
     Light,
+    System,
     Dark,
 }
 

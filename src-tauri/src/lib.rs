@@ -833,6 +833,7 @@ pub fn run() {
             aether_tabs_create,
             aether_tabs_activate,
             aether_tabs_close,
+            aether_tabs_reorder,
             aether_tabs_navigate,
             aether_tabs_scroll_to_text,
             aether_tabs_find,

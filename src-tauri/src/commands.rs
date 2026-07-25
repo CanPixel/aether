@@ -155,6 +155,44 @@ pub(crate) fn aether_tabs_close(app: AppHandle, state: State<Backend>, tab_id: S
     Ok(())
 }
 
+#[tauri::command]
+pub(crate) fn aether_tabs_reorder(
+    app: AppHandle,
+    state: State<Backend>,
+    ids: Vec<String>,
+) -> Cmd<Vec<BrowserTabSummary>> {
+    let summaries = {
+        let mut tabs = lock_tabs(&state)?;
+        let has_every_tab_once = ids.len() == tabs.tabs.len()
+            && ids
+                .iter()
+                .all(|id| tabs.tabs.iter().any(|tab| tab.id == *id))
+            && !ids
+                .iter()
+                .enumerate()
+                .any(|(index, id)| ids[..index].iter().any(|previous| previous == id));
+        if !has_every_tab_once {
+            return Err("Tab order does not match the open tabs.".to_string());
+        }
+
+        let mut remaining = std::mem::take(&mut tabs.tabs);
+        tabs.tabs = ids
+            .iter()
+            .map(|id| {
+                let index = remaining
+                    .iter()
+                    .position(|tab| tab.id == *id)
+                    .expect("tab order was validated");
+                remaining.remove(index)
+            })
+            .collect();
+        tabs.tabs()
+    };
+    emit_state(&app, &state)?;
+    schedule_session_save(&app);
+    Ok(summaries)
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub(crate) async fn aether_tabs_navigate(
     app: AppHandle,

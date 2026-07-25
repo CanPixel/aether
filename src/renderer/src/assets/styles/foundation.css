@@ -12,8 +12,8 @@
    called out below are intentionally adjusted where the rendered foreground and
    frosted surface did not clear WCAG AA.
 
-   Dark values are set in the `prefers-color-scheme` block further down, and
-   `:root[data-theme]` beats both so an explicit choice always wins.
+   Light is the initial paint. System mode opts into the dark media query only
+   after the saved appearance setting has been loaded.
    --------------------------------------------------------------------------- */
 :root {
   color-scheme: light;
@@ -22,6 +22,7 @@
   --titlebar-height: 24px;
   --nav-height: 116px;
   --top-bar-height: 150px;
+  --desktop-webview-top: 172px;
   --panel-width: 404px;
   --panel-collapsed-width: 58px;
 
@@ -225,7 +226,7 @@
    or too glaring as a large fill.
    --------------------------------------------------------------------------- */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
+  :root[data-theme='system'] {
     color-scheme: dark;
 
     /* Panels, lightest to deepest. Each sits above the page wash so cards lift
@@ -330,11 +331,9 @@
   }
 }
 
-/* The Appearance setting stamps data-theme on the root element, and it has to
-   beat the media query in both directions — hence the :not() above and the
-   duplicated block here rather than a single shared selector list. Custom
-   properties do not cascade out of a media query into one, so this cannot be
-   expressed as `:root[data-theme='dark'], @media (...)`. */
+/* The Appearance setting stamps data-theme on the root element. Light is the
+   unstyled initial state; system mode is the only setting that opts into the
+   media query above. */
 :root[data-theme='dark'] {
   color-scheme: dark;
 
@@ -1190,7 +1189,7 @@ button {
 
 .webview-underlay {
   position: absolute;
-  inset: var(--top-bar-height) 0 0;
+  inset: var(--desktop-webview-top) 0 0;
   display: grid;
   place-items: center;
   color: rgb(var(--slate-blue-rgb) / 0.62);

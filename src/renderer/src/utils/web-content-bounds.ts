@@ -5,9 +5,9 @@ import { useLayoutEffect, type RefObject } from 'react'
 // offsets, so restyling the chrome or dragging the AiON panel moves the content with
 // it instead of leaving it misaligned.
 //
-// A ResizeObserver only fires when the observed box changes size, so window resizes
-// and any layout change that shifts the slot without resizing it are covered by the
-// extra resize listener and by callers re-running this on their own layout state.
+// Native webviews always paint above the DOM. Measure the bottom of the visible
+// browser chrome as well as the slot, so an overflowing chrome row can never be
+// covered by a live page.
 export function useWebContentBounds(ref: RefObject<HTMLElement | null>, deps: unknown[] = []): void {
   useLayoutEffect(() => {
     const host = ref.current
@@ -16,18 +16,23 @@ export function useWebContentBounds(ref: RefObject<HTMLElement | null>, deps: un
     let last = ''
     const report = (): void => {
       const rect = host.getBoundingClientRect()
+      const quickActions = document.querySelector<HTMLElement>('.quick-action-row')
+      const browserChrome = document.querySelector<HTMLElement>('.browser-chrome')
+      const chromeBottom = quickActions?.getBoundingClientRect().bottom ?? browserChrome?.getBoundingClientRect().bottom
+      const top = Math.max(rect.top, chromeBottom ?? rect.top)
+      const height = Math.max(0, rect.bottom - top)
       // Skip identical rects: the observer fires on every layout pass, and each
       // report repositions native webviews, which flickers if done needlessly.
-      const key = `${rect.top}:${rect.left}:${rect.width}:${rect.height}`
+      const key = `${top}:${rect.left}:${rect.width}:${height}`
       if (key === last) return
       last = key
 
       void window.aether.layout
         .setWebContentBounds({
-          top: rect.top,
+          top,
           left: rect.left,
           width: rect.width,
-          height: rect.height
+          height
         })
         .catch(() => undefined)
     }
@@ -35,6 +40,8 @@ export function useWebContentBounds(ref: RefObject<HTMLElement | null>, deps: un
     report()
     const observer = new ResizeObserver(report)
     observer.observe(host)
+    const chrome = document.querySelector<HTMLElement>('.quick-action-row, .browser-chrome')
+    if (chrome) observer.observe(chrome)
     window.addEventListener('resize', report)
     return () => {
       observer.disconnect()
