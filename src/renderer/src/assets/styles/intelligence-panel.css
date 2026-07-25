@@ -686,6 +686,20 @@
   gap: 8px;
 }
 
+/* Shown when only the embedding model is installed, so a list of passages is not
+   read as a failed answer. */
+.chat-extractive-note {
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(214, 178, 96, 0.36);
+  border-radius: 9px;
+  background: rgba(250, 240, 214, 0.42);
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1.4;
+  color: #6d4c15;
+}
+
 .chat-form textarea {
   min-height: 88px;
   max-height: 142px;

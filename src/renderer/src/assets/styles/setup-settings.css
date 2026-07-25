@@ -383,6 +383,12 @@
 }
 
 .model-choice-copy code,
+/* Reassures that a MiST-only install is complete, not half-finished. */
+.model-core-scope {
+  color: rgba(30, 110, 158, 0.92) !important;
+  font-weight: 700;
+}
+
 .model-core-card code,
 .model-access-card code,
 .model-dir-card code {

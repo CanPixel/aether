@@ -87,14 +87,22 @@ Fresh installs use **AiON Launch**, the in-app setup flow for downloading local 
 | Model         | Role                                                          | Official source                       |     Size |
 | ------------- | ------------------------------------------------------------- | ------------------------------------- | -------: |
 | **AiON MiST** | Required embedding model for search, capture, and retrieval   | `Qwen/Qwen3-Embedding-0.6B-GGUF`      | ~0.64 GB |
-| **AiON LiTE** | Smaller, faster chat model for everyday answers and summaries | `google/gemma-4-E2B-it-qat-q4_0-gguf` | ~3.35 GB |
-| **AiON WiSE** | Larger chat model for richer synthesis and iCE maps           | `google/gemma-4-E4B-it-qat-q4_0-gguf` | ~5.15 GB |
+| **AiON LiTE** | Optional chat model for everyday answers and summaries        | `google/gemma-4-E2B-it-qat-q4_0-gguf` | ~3.35 GB |
+| **AiON WiSE** | Optional chat model for richer synthesis and iCE maps         | `google/gemma-4-E4B-it-qat-q4_0-gguf` | ~5.15 GB |
 
 Install choices:
 
-- **MiST + LiTE**: best default for laptops, mobile-class hardware, and quick grounded answers.
-- **MiST + WiSE**: better for deeper synthesis, longer answers, and iCE generation.
+- **MiST alone (~0.64 GB)**: the smallest complete install. Capture, semantic search
+  across hubs, Flow, and Ask all work — Ask returns the best-matching passages from
+  your sources with citations instead of a written answer. Chat models can be added
+  later from Settings without re-indexing anything.
+- **MiST + LiTE**: adds written answers. Best default for laptops and mobile-class
+  hardware.
+- **MiST + WiSE**: deeper synthesis, longer answers, and iCE map generation.
 - **MiST + LiTE + WiSE**: lets the user switch between speed and depth.
+
+Only **iCE map generation** strictly requires a chat model; everything else degrades
+to retrieval rather than failing.
 
 Manual development installs can also place models here:
 

@@ -132,7 +132,8 @@ export function ModelSetupModal({
         ? 'Begin Install'
         : coreInstalled
           ? 'All Installed'
-          : 'Install Core'
+          : // Name the size, because 639 MB versus 4 GB is the whole decision.
+            'Install MiST only · 639 MB'
 
   return (
     <div className="model-setup-overlay" role="presentation">
@@ -152,7 +153,8 @@ export function ModelSetupModal({
                 Choose the local model pack for ascending
                 <br></br>
                 <small style={{ fontWeight: '700' }}>
-                  AiON MiST installs with every selection for private semantic search
+                  AiON MiST is all ÆTHER needs — chat models are optional and can be
+                  added any time
                 </small>
               </p>
             </div>
@@ -210,6 +212,11 @@ export function ModelSetupModal({
                     : 'The misty semantic search core · 639 MB'}
                 </code>
                 {!coreInstalled ? <code>Qwen3 Embedding 0.6B Q8_0</code> : <></>}
+                {/* Without this, an empty checkbox list reads as an unfinished setup
+                    rather than a valid, complete install. */}
+                <code className="model-core-scope">
+                  Enough on its own: capture, semantic search, Flow, and cited passages
+                </code>
               </div>
 
               <div className="model-access-card">

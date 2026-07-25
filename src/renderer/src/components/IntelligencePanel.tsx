@@ -17,6 +17,8 @@ import { Droplet, Waves, Newspaper } from 'lucide-react'
 type IntelligencePanelProps = {
   busy: string | null
   chatBlocked: boolean
+  // True when only the embedding model is installed: Ask returns passages, not prose.
+  chatIsExtractive: boolean
   chatPrompt: string
   askCollectionId: string
   askCurrentPageOnly: boolean
@@ -61,6 +63,7 @@ function modelOptionsWithSelected(models: string[], selected?: string | null): s
 export function IntelligencePanel({
   busy,
   chatBlocked,
+  chatIsExtractive,
   chatPrompt,
   askCollectionId,
   askCurrentPageOnly,
@@ -327,8 +330,16 @@ export function IntelligencePanel({
                 type="submit"
                 disabled={Boolean(busy) || !chatPrompt.trim() || !hasAskContext || chatBlocked}
               >
-                Ask AiON
+                {chatIsExtractive ? 'Find Passages' : 'Ask AiON'}
               </button>
+              {/* Say up front that nothing will be written, so a passage list is not
+                  read as a failed answer. */}
+              {chatIsExtractive && (
+                <p className="chat-extractive-note">
+                  No chat model installed — AiON will return the best matching passages
+                  from your sources instead of a written answer.
+                </p>
+              )}
             </form>
           </div>
         </section>

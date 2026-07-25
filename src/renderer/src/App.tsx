@@ -530,10 +530,13 @@ function App(): React.JSX.Element {
     : ''
   const currentPageTint =
     canUseCurrentPage && activeTab ? getTabTint(activeTab.host, activeTab.themeColor) : ''
-  const chatBlocked = status ? !status.runtimeReady || !status.chatModel : false
+  // Only the embedding model is required. Without a chat model, Ask degrades to ranked
+  // cited passages rather than being blocked, so a 0.64 GB install is fully usable.
+  const chatBlocked = status ? !status.runtimeReady || !status.embeddingModel : false
+  const chatIsExtractive = Boolean(status && status.embeddingModel && !status.chatModel)
   const installedSetupModels = useMemo(() => installedSetupModelsFromStatus(status), [status])
   const modelSetupCoreInstalled = setupCoreInstalled(status)
-  const modelSetupNeeded = Boolean(status && (!status.chatModel || !status.embeddingModel))
+  const modelSetupNeeded = Boolean(status && !status.embeddingModel)
   const modelSetupBusy = Boolean(
     busy === 'Installing local models' ||
     modelDownloadProgress.some(
@@ -2480,6 +2483,7 @@ function App(): React.JSX.Element {
       <IntelligencePanel
         busy={busy}
         chatBlocked={chatBlocked}
+        chatIsExtractive={chatIsExtractive}
         chatPrompt={chatPrompt}
         askCollectionId={askCollectionId}
         askCurrentPageOnly={askCurrentPageOnly}

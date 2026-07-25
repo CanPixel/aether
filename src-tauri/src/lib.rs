@@ -6905,12 +6905,21 @@ async fn local_chat(
 ) -> Cmd<ChatResult> {
     let started_at = Instant::now();
     let catalog = model_catalog(&state.paths, &settings.local_model);
-    let model_path = catalog.chat_model.ok_or_else(|| {
-        format!(
-            "No local chat GGUF model found. Add Gemma or another chat model to {} or set {AETHER_CHAT_MODEL_ENV}.",
-            state.paths.models_path.display()
-        )
-    })?;
+    // With only the embedding model installed there is nothing to generate with, but
+    // retrieval still works. Returning the ranked passages is far more useful than an
+    // error, and it is what makes MiST-only a usable install rather than a dead end.
+    let Some(model_path) = catalog.chat_model else {
+        if citations.is_empty() {
+            return Err(format!(
+                "No local chat model is installed, and no captured passages matched. Capture a page or install a chat model in {}.",
+                state.paths.models_path.display()
+            ));
+        }
+        if let Some(stream) = &stream {
+            stream.citations(&citations);
+        }
+        return Ok(extractive_answer(citations, started_at.elapsed().as_secs_f64()));
+    };
     if let Some(stream) = &stream {
         stream.citations(&citations);
     }
@@ -6958,6 +6967,41 @@ async fn local_chat(
             chunks,
         },
     })
+}
+
+// The retrieval-only answer. Deliberately presented as quoted passages with their
+// sources rather than as prose: nothing here was generated, and dressing excerpts up
+// as an answer would imply reasoning that did not happen.
+const EXTRACTIVE_MODEL_LABEL: &str = "AiON MiST (passages only)";
+
+fn extractive_answer(citations: Vec<SearchResult>, elapsed_seconds: f64) -> ChatResult {
+    let mut answer = String::from(
+        "No chat model is installed, so ÆTHER cannot write an answer. These are the passages from your library that best match the question:\n\n",
+    );
+    for (index, citation) in citations.iter().enumerate() {
+        answer.push_str(&format!(
+            "**{}. {}** [{}]\n\n> {}\n\n",
+            index + 1,
+            citation.title.trim(),
+            index + 1,
+            semantic_trail_excerpt(citation.text.trim(), 480).replace('\n', " ")
+        ));
+    }
+    answer.push_str("_Install a chat model in Settings to get written answers grounded in these sources._");
+
+    let chunks = citations.len();
+    ChatResult {
+        answer,
+        model: EXTRACTIVE_MODEL_LABEL.to_string(),
+        citations,
+        metrics: ChatMetrics {
+            // Nothing was generated, so the token metrics are honestly zero.
+            generated_tokens: 0,
+            tokens_per_second: 0.0,
+            elapsed_seconds,
+            chunks,
+        },
+    }
 }
 
 async fn local_generate_iceberg(
@@ -9605,6 +9649,32 @@ mod tests {
         assert_eq!(marker_of(&seeded), None);
         assert!(path.exists(), "first read should create the store");
         assert_eq!(corrupt_count(&dir.0), 0);
+    }
+
+    // With no chat model the answer must be visibly a passage list, and must not claim
+    // generation metrics it did not earn.
+    #[test]
+    fn extractive_answer_quotes_sources_and_reports_no_generated_tokens() {
+        let citations = vec![
+            search_result("1", "https://example.com/a", "Quantum mechanics arose gradually."),
+            search_result("2", "https://example.com/b", "The Schrodinger equation governs."),
+        ];
+
+        let result = extractive_answer(citations, 0.25);
+
+        assert_eq!(result.metrics.generated_tokens, 0);
+        assert_eq!(result.metrics.tokens_per_second, 0.0);
+        assert_eq!(result.metrics.chunks, 2);
+        assert_eq!(result.model, EXTRACTIVE_MODEL_LABEL);
+        assert!(result.answer.contains("cannot write an answer"));
+        // Both passages must be present and marked as quotes.
+        assert!(result.answer.contains("Quantum mechanics arose gradually."));
+        assert!(result.answer.contains("The Schrodinger equation governs."));
+        assert_eq!(result.answer.matches("\n> ").count(), 2);
+        // Citation markers must line up with the citation list for the UI.
+        assert!(result.answer.contains("[1]"));
+        assert!(result.answer.contains("[2]"));
+        assert_eq!(result.citations.len(), 2);
     }
 
     fn vector_chunk(capture_id: &str, vector: Vec<f32>) -> ChunkRecord {
