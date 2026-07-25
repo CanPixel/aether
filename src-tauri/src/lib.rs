@@ -26,32 +26,44 @@ use std::{
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
     webview::{NewWindowResponse, PageLoadEvent},
-    Webview, WebviewBuilder, WebviewUrl, Window,
+    LogicalPosition, LogicalSize, Position, Rect, Size, Webview, WebviewBuilder, WebviewUrl,
+    Window, WindowEvent,
 };
-use tauri::{
-    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Position, Rect, Size, State,
-    WindowEvent,
-};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::AsyncWriteExt;
 use tokio::task;
 use url::Url;
 
 const CHUNKS_TABLE: &str = "chunks";
+#[cfg(desktop)]
 const SIDEBAR_WIDTH: f64 = 76.0;
+#[cfg(desktop)]
 const BROWSER_VIEW_TOP: f64 = 172.0;
+#[cfg(desktop)]
 const PANEL_WIDTH: f64 = 404.0;
+#[cfg(desktop)]
 const PANEL_COLLAPSED_WIDTH: f64 = 58.0;
 const LOCAL_RUNTIME_NAME: &str = "llama.cpp";
+#[cfg(desktop)]
 const AETHER_SHORTCUT_EVENT: &str = "aether:shortcut";
+#[cfg(desktop)]
 const AETHER_FIND_MENU_ID: &str = "aether-find-in-page";
+#[cfg(desktop)]
 const AETHER_FOCUS_ADDRESS_MENU_ID: &str = "aether-focus-address";
+#[cfg(desktop)]
 const AETHER_NEW_TAB_MENU_ID: &str = "aether-new-tab";
+#[cfg(desktop)]
 const AETHER_OPEN_DASHBOARD_MENU_ID: &str = "aether-open-dashboard";
+#[cfg(desktop)]
 const AETHER_OPEN_ICE_MENU_ID: &str = "aether-open-ice";
+#[cfg(desktop)]
 const AETHER_OPEN_BROWSER_MENU_ID: &str = "aether-open-browser";
+#[cfg(desktop)]
 const AETHER_TOGGLE_AION_MENU_ID: &str = "aether-toggle-aion";
+#[cfg(desktop)]
 const AETHER_CAPTURE_PAGE_MENU_ID: &str = "aether-capture-page";
+#[cfg(desktop)]
 const AETHER_FIND_REQUESTED_EVENT: &str = "aether:find-requested";
 const AETHER_FIND_RESULT_EVENT: &str = "aether:find-result";
 const AETHER_CHAT_STREAM_EVENT: &str = "aether:chat-stream";
@@ -104,8 +116,10 @@ const PREFERRED_CHAT_MODEL_HINTS: [&str; 8] = [
     "gemma4", "gemma-4", "gemma3", "gemma-3", "gemma-2b", "2b", "gemma", "qwen",
 ];
 const MIN_CAPTURE_TEXT_LENGTH: usize = 120;
+#[cfg(desktop)]
 const DESKTOP_BROWSER_USER_AGENT: &str =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
+#[cfg(desktop)]
 const NATIVE_WEBVIEW_SCROLLBAR_SCRIPT: &str = r##"
 (() => {
   const styleId = 'aether-native-scrollbar-style';
@@ -182,6 +196,10 @@ struct Backend {
     tabs: Mutex<TabState>,
     #[cfg(desktop)]
     webviews: Mutex<NativeBrowserViews>,
+    // Where the renderer wants Android tab WebViews placed, in CSS pixels
+    // (reported by MobileTabView via aether_layout_set_mobile_tab_bounds).
+    #[cfg(not(desktop))]
+    mobile_tab_bounds: Mutex<MobileTabBounds>,
     client: Client,
     native_runtime: Arc<Mutex<NativeModelRuntime>>,
     vectors: tokio::sync::RwLock<Option<VectorStoreData>>,
@@ -192,6 +210,15 @@ struct Backend {
 #[derive(Default)]
 struct NativeBrowserViews {
     views: HashMap<String, Webview>,
+}
+
+#[cfg(not(desktop))]
+#[derive(Clone, Copy, Default)]
+struct MobileTabBounds {
+    top: f64,
+    left: f64,
+    width: f64,
+    height: f64,
 }
 
 #[derive(Default)]
@@ -282,6 +309,12 @@ struct ManagedTab {
     theme_color: Option<String>,
     history: Vec<String>,
     history_index: usize,
+    // On Android the tab's real history lives in its native WebView, whose
+    // canGoBack/canGoForward are reported via aether_tabs_report_native_event.
+    // They extend (OR with) the Rust-side history, which still tracks entries
+    // the WebView never saw — most notably the aether://start page.
+    native_can_go_back: Option<bool>,
+    native_can_go_forward: Option<bool>,
 }
 
 #[derive(Clone, Serialize)]
@@ -832,6 +865,7 @@ struct CreateShortcutInput {
     theme_color: Option<String>,
 }
 
+#[cfg(desktop)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PageMetadataSnapshot {
@@ -839,10 +873,34 @@ struct PageMetadataSnapshot {
     favicon: Option<String>,
 }
 
+#[cfg(desktop)]
 #[derive(Deserialize)]
 struct FindMatchSnapshot {
     current: usize,
     total: usize,
+}
+
+// Event payload forwarded by the renderer from the Kotlin TabsPlugin
+// (window.__AETHER_TAB_EVENT__): per-tab navigation, title, and find updates.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NativeTabEventInput {
+    tab_id: String,
+    kind: String,
+    #[serde(default)]
+    url: Option<String>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    is_loading: Option<bool>,
+    #[serde(default)]
+    can_go_back: Option<bool>,
+    #[serde(default)]
+    can_go_forward: Option<bool>,
+    #[serde(default)]
+    current: Option<usize>,
+    #[serde(default)]
+    total: Option<usize>,
 }
 
 #[derive(Clone, Serialize)]
@@ -969,7 +1027,6 @@ struct UpdateCheckResult {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct GithubRelease {
     tag_name: String,
     name: Option<String>,
@@ -1177,6 +1234,8 @@ impl Backend {
             tabs: Mutex::new(TabState::new()),
             #[cfg(desktop)]
             webviews: Mutex::new(NativeBrowserViews::default()),
+            #[cfg(not(desktop))]
+            mobile_tab_bounds: Mutex::new(MobileTabBounds::default()),
             client: Client::builder()
                 .user_agent("Aether/1.0 Tauri")
                 .build()
@@ -1268,6 +1327,8 @@ impl ManagedTab {
             theme_color: None,
             history: vec![url],
             history_index: 0,
+            native_can_go_back: None,
+            native_can_go_forward: None,
         }
     }
 
@@ -1281,24 +1342,9 @@ impl ManagedTab {
         self.history.truncate(self.history_index + 1);
         self.history.push(url);
         self.history_index = self.history.len().saturating_sub(1);
-    }
-
-    #[cfg(not(desktop))]
-    fn go_back(&mut self) {
-        if self.can_go_back() {
-            self.history_index -= 1;
-            self.url = self.history[self.history_index].clone();
-            self.title = title_from_url(&self.url);
-        }
-    }
-
-    #[cfg(not(desktop))]
-    fn go_forward(&mut self) {
-        if self.can_go_forward() {
-            self.history_index += 1;
-            self.url = self.history[self.history_index].clone();
-            self.title = title_from_url(&self.url);
-        }
+        // Unknown until the native webview reports in after the load.
+        self.native_can_go_back = None;
+        self.native_can_go_forward = None;
     }
 
     fn commit_history_url(&mut self, url: String) {
@@ -1339,8 +1385,8 @@ impl ManagedTab {
             host: get_tab_host(&self.url),
             is_active,
             is_loading: self.is_loading,
-            can_go_back: self.can_go_back(),
-            can_go_forward: self.can_go_forward(),
+            can_go_back: self.can_go_back() || self.native_can_go_back.unwrap_or(false),
+            can_go_forward: self.can_go_forward() || self.native_can_go_forward.unwrap_or(false),
             favicon: self.favicon.clone(),
             theme_color: self.theme_color.clone(),
         }
@@ -1384,8 +1430,35 @@ fn ensure_native_webview(app: &AppHandle, state: &State<Backend>, tab_id: &str) 
 }
 
 #[cfg(not(desktop))]
-fn ensure_native_webview(_app: &AppHandle, _state: &State<Backend>, _tab_id: &str) -> Cmd<()> {
-    Ok(())
+fn ensure_native_webview(app: &AppHandle, state: &State<Backend>, tab_id: &str) -> Cmd<()> {
+    #[cfg(target_os = "android")]
+    {
+        let tab = {
+            let tabs = lock_tabs(state)?;
+            tabs.tabs
+                .iter()
+                .find(|tab| tab.id == tab_id)
+                .cloned()
+                .ok_or_else(|| format!("Unknown tab: {tab_id}"))?
+        };
+        // Like the desktop path: a start-page tab has nothing to load, only
+        // visibility to reconcile so the renderer's start page shows.
+        if tab.url != START_PAGE_URL {
+            app.state::<android_tabs::AndroidTabs>().run(
+                "ensure",
+                android_tabs::TabUrlPayload {
+                    tab_id: &tab.id,
+                    url: &tab.url,
+                },
+            )?;
+        }
+        return sync_native_webview_visibility(app, state);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
@@ -1491,16 +1564,27 @@ fn navigate_native_webview(
 
 #[cfg(not(desktop))]
 fn navigate_native_webview(
-    _app: &AppHandle,
-    _state: &State<Backend>,
-    _tab_id: &str,
-    _url: &str,
+    app: &AppHandle,
+    state: &State<Backend>,
+    tab_id: &str,
+    url: &str,
 ) -> Cmd<()> {
-    Ok(())
+    #[cfg(target_os = "android")]
+    {
+        app.state::<android_tabs::AndroidTabs>()
+            .run("navigate", android_tabs::TabUrlPayload { tab_id, url })?;
+        return sync_native_webview_visibility(app, state);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id, url);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
 fn navigate_native_webview_history(
+    _app: &AppHandle,
     state: &State<Backend>,
     tab_id: &str,
     direction: WebviewHistoryDirection,
@@ -1522,15 +1606,36 @@ fn navigate_native_webview_history(
 
 #[cfg(not(desktop))]
 fn navigate_native_webview_history(
-    _state: &State<Backend>,
-    _tab_id: &str,
-    _direction: WebviewHistoryDirection,
+    app: &AppHandle,
+    state: &State<Backend>,
+    tab_id: &str,
+    direction: WebviewHistoryDirection,
 ) -> Cmd<()> {
-    Ok(())
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        let command = match direction {
+            WebviewHistoryDirection::Back => "goBack",
+            WebviewHistoryDirection::Forward => "goForward",
+        };
+        return app
+            .state::<android_tabs::AndroidTabs>()
+            .run(command, android_tabs::TabPayload { tab_id });
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id, direction);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
-fn scroll_native_webview_to_text(state: &State<Backend>, tab_id: &str, text: &str) -> Cmd<()> {
+fn scroll_native_webview_to_text(
+    _app: &AppHandle,
+    state: &State<Backend>,
+    tab_id: &str,
+    text: &str,
+) -> Cmd<()> {
     let source_text = text.trim();
     if source_text.is_empty() {
         return Ok(());
@@ -1549,8 +1654,30 @@ fn scroll_native_webview_to_text(state: &State<Backend>, tab_id: &str, text: &st
 }
 
 #[cfg(not(desktop))]
-fn scroll_native_webview_to_text(_state: &State<Backend>, _tab_id: &str, _text: &str) -> Cmd<()> {
-    Ok(())
+fn scroll_native_webview_to_text(
+    app: &AppHandle,
+    state: &State<Backend>,
+    tab_id: &str,
+    text: &str,
+) -> Cmd<()> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        let source_text = text.trim();
+        if source_text.is_empty() {
+            return Ok(());
+        }
+        let text_json = serde_json::to_string(source_text).map_err(|error| error.to_string())?;
+        let script = scroll_to_text_script().replace("__AETHER_SOURCE_TEXT__", &text_json);
+        return app
+            .state::<android_tabs::AndroidTabs>()
+            .run("eval", android_tabs::EvalPayload { tab_id, script });
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id, text);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
@@ -1598,17 +1725,36 @@ fn find_native_webview_text(
 
 #[cfg(not(desktop))]
 fn find_native_webview_text(
-    _app: &AppHandle,
-    _state: &State<Backend>,
-    _tab_id: &str,
-    _query: Option<&str>,
-    _action: &str,
+    app: &AppHandle,
+    state: &State<Backend>,
+    tab_id: &str,
+    query: Option<&str>,
+    action: &str,
 ) -> Cmd<()> {
-    Ok(())
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        // Android WebView has native find support (findAllAsync/findNext); the
+        // match counts come back through the FindListener as a "find" event on
+        // aether_tabs_report_native_event.
+        return app.state::<android_tabs::AndroidTabs>().run(
+            "find",
+            android_tabs::FindPayload {
+                tab_id,
+                query: query.map(str::trim).filter(|value| !value.is_empty()),
+                action,
+            },
+        );
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id, query, action);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
-fn close_native_webview(state: &State<Backend>, tab_id: &str) -> Cmd<()> {
+fn close_native_webview(_app: &AppHandle, state: &State<Backend>, tab_id: &str) -> Cmd<()> {
     if let Some(webview) = state
         .webviews
         .lock()
@@ -1622,10 +1768,22 @@ fn close_native_webview(state: &State<Backend>, tab_id: &str) -> Cmd<()> {
 }
 
 #[cfg(not(desktop))]
-fn close_native_webview(_state: &State<Backend>, _tab_id: &str) -> Cmd<()> {
-    Ok(())
+fn close_native_webview(app: &AppHandle, state: &State<Backend>, tab_id: &str) -> Cmd<()> {
+    #[cfg(target_os = "android")]
+    {
+        let _ = state;
+        return app
+            .state::<android_tabs::AndroidTabs>()
+            .run("close", android_tabs::TabPayload { tab_id });
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, tab_id);
+        Ok(())
+    }
 }
 
+#[cfg(desktop)]
 fn find_in_page_script() -> &'static str {
     r#"
 (() => {
@@ -2037,11 +2195,6 @@ fn resize_native_webviews(app: &AppHandle, state: &State<Backend>) -> Cmd<()> {
     sync_native_webview_visibility(app, state)
 }
 
-#[cfg(not(desktop))]
-fn resize_native_webviews(_app: &AppHandle, _state: &State<Backend>) -> Cmd<()> {
-    Ok(())
-}
-
 #[cfg(desktop)]
 fn sync_native_webview_visibility(app: &AppHandle, state: &State<Backend>) -> Cmd<()> {
     let (active_tab_id, show_active, panel_collapsed) = {
@@ -2082,8 +2235,42 @@ fn sync_native_webview_visibility(app: &AppHandle, state: &State<Backend>) -> Cm
 }
 
 #[cfg(not(desktop))]
-fn sync_native_webview_visibility(_app: &AppHandle, _state: &State<Backend>) -> Cmd<()> {
-    Ok(())
+fn sync_native_webview_visibility(app: &AppHandle, state: &State<Backend>) -> Cmd<()> {
+    #[cfg(target_os = "android")]
+    {
+        let (active_tab_id, show_active) = {
+            let tabs = lock_tabs(state)?;
+            // Same rules as desktop: keep webviews hidden behind the dashboard,
+            // modal overlays, and the renderer's start-page overlay.
+            let active_is_start = tabs
+                .active_tab()
+                .map(|tab| tab.url == START_PAGE_URL)
+                .unwrap_or(false);
+            (
+                tabs.active_tab_id.clone(),
+                !tabs.dashboard_open && !tabs.modal_overlay_open && !active_is_start,
+            )
+        };
+        let bounds = *state
+            .mobile_tab_bounds
+            .lock()
+            .map_err(|_| "Æther layout bounds are unavailable.".to_string())?;
+        return app.state::<android_tabs::AndroidTabs>().run(
+            "sync",
+            android_tabs::SyncPayload {
+                active_tab_id: show_active.then_some(active_tab_id.as_str()),
+                top: bounds.top,
+                left: bounds.left,
+                width: bounds.width,
+                height: bounds.height,
+            },
+        );
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state);
+        Ok(())
+    }
 }
 
 #[cfg(desktop)]
@@ -2213,6 +2400,7 @@ fn is_transient_webview_url(url: &str) -> bool {
         || normalized == "about:srcdoc"
 }
 
+#[cfg(desktop)]
 fn update_tab_metadata(
     state: &State<Backend>,
     tab_id: &str,
@@ -2259,6 +2447,128 @@ fn force_exit() -> ! {
         fn _exit(code: i32) -> !;
     }
     unsafe { _exit(0) }
+}
+
+// Bridge to the Kotlin TabsPlugin (gen/android/.../TabsPlugin.kt), which hosts
+// one android.webkit.WebView per browser tab above the main app webview. This
+// is the Android counterpart of the desktop `Window::add_child` path: the same
+// `*_native_webview` functions drive it, keeping Rust the source of truth for
+// tab state. Navigation events come back through the renderer via the
+// `aether_tabs_report_native_event` command.
+#[cfg(target_os = "android")]
+mod android_tabs {
+    use serde::{de::DeserializeOwned, Deserialize, Serialize};
+    use std::sync::OnceLock;
+    use tauri::{
+        plugin::{Builder, PluginHandle, TauriPlugin},
+        Manager, Wry,
+    };
+
+    pub struct AndroidTabs(PluginHandle<Wry>);
+
+    // The plugin handle, additionally kept in a module global so helpers that
+    // only receive `State<Backend>` (page capture) can reach the Kotlin side
+    // without threading an AppHandle through every call site.
+    static HANDLE: OnceLock<PluginHandle<Wry>> = OnceLock::new();
+
+    impl AndroidTabs {
+        pub fn run(&self, command: &str, payload: impl Serialize) -> Result<(), String> {
+            self.0
+                .run_mobile_plugin::<()>(command, payload)
+                .map_err(|error| error.to_string())
+        }
+
+        pub fn run_for<T: DeserializeOwned>(
+            &self,
+            command: &str,
+            payload: impl Serialize,
+        ) -> Result<T, String> {
+            self.0
+                .run_mobile_plugin::<T>(command, payload)
+                .map_err(|error| error.to_string())
+        }
+    }
+
+    // Run a plugin command via the global handle. Blocks until Kotlin resolves,
+    // so only call from async commands (tokio workers), never the main thread —
+    // Kotlin resolves on the Android UI thread and would deadlock against it.
+    pub fn run_for_global<T: DeserializeOwned>(
+        command: &str,
+        payload: impl Serialize,
+    ) -> Result<T, String> {
+        HANDLE
+            .get()
+            .ok_or_else(|| "Android tabs plugin is not ready.".to_string())?
+            .run_mobile_plugin::<T>(command, payload)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn init() -> TauriPlugin<Wry> {
+        Builder::new("aether-tabs")
+            .setup(|app, api| {
+                let handle = api.register_android_plugin("com.canur.aether", "TabsPlugin")?;
+                let _ = HANDLE.set(handle.clone());
+                app.manage(AndroidTabs(handle));
+                Ok(())
+            })
+            .build()
+    }
+
+    #[derive(Deserialize)]
+    pub struct ThumbnailResponse {
+        pub image: Option<String>,
+    }
+
+    #[derive(Deserialize)]
+    pub struct SnapshotResponse {
+        pub payload: String,
+    }
+
+    #[derive(Deserialize, Serialize, Default)]
+    pub struct InsetsResponse {
+        pub top: f64,
+        pub bottom: f64,
+        pub left: f64,
+        pub right: f64,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct TabUrlPayload<'a> {
+        pub tab_id: &'a str,
+        pub url: &'a str,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SyncPayload<'a> {
+        pub active_tab_id: Option<&'a str>,
+        pub top: f64,
+        pub left: f64,
+        pub width: f64,
+        pub height: f64,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct TabPayload<'a> {
+        pub tab_id: &'a str,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct EvalPayload<'a> {
+        pub tab_id: &'a str,
+        pub script: String,
+    }
+
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct FindPayload<'a> {
+        pub tab_id: &'a str,
+        pub query: Option<&'a str>,
+        pub action: &'a str,
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -2391,8 +2701,11 @@ pub fn run() {
             }
         });
 
+    let builder = builder.plugin(tauri_plugin_opener::init());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(android_tabs::init());
+
     builder
-        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir().expect("app data dir");
             app.manage(Backend::new(app_data_dir));
@@ -2438,6 +2751,10 @@ pub fn run() {
             aether_tabs_find,
             aether_tabs_go_back,
             aether_tabs_go_forward,
+            aether_tabs_report_native_event,
+            aether_tabs_thumbnail,
+            aether_layout_window_insets,
+            aether_layout_set_mobile_tab_bounds,
             aether_dashboard_open,
             aether_hub_list,
             aether_hub_create,
@@ -2482,9 +2799,9 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building Æther")
-        .run(|_app_handle, event| {
+        .run(|_app_handle, _event| {
             #[cfg(desktop)]
-            if let tauri::RunEvent::ExitRequested { .. } = event {
+            if let tauri::RunEvent::ExitRequested { .. } = _event {
                 force_exit();
             }
         });
@@ -2655,7 +2972,7 @@ fn aether_tabs_close(app: AppHandle, state: State<Backend>, tab_id: String) -> C
             }
         }
     }
-    close_native_webview(&state, &tab_id)?;
+    close_native_webview(&app, &state, &tab_id)?;
     if let Some(active_tab_id) = next_active_tab_id {
         ensure_native_webview(&app, &state, &active_tab_id)?;
     } else {
@@ -2690,14 +3007,19 @@ async fn aether_tabs_navigate(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-fn aether_tabs_scroll_to_text(state: State<Backend>, tab_id: String, text: String) -> Cmd<()> {
+fn aether_tabs_scroll_to_text(
+    app: AppHandle,
+    state: State<Backend>,
+    tab_id: String,
+    text: String,
+) -> Cmd<()> {
     {
         let tabs = lock_tabs(&state)?;
         if !tabs.tabs.iter().any(|tab| tab.id == tab_id) {
             return Err(format!("Unknown tab: {tab_id}"));
         }
     }
-    scroll_native_webview_to_text(&state, &tab_id, &text)
+    scroll_native_webview_to_text(&app, &state, &tab_id, &text)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -2748,17 +3070,17 @@ fn aether_tabs_go_back(app: AppHandle, state: State<Backend>, tab_id: String) ->
             tab.is_loading = false;
             restore_start_page = true;
         }
-        let target_tab_id = tab.id.clone();
-        #[cfg(not(desktop))]
-        if !restore_start_page {
-            tab.go_back();
-        }
-        target_tab_id
+        tab.id.clone()
     };
     if restore_start_page {
         sync_native_webview_visibility(&app, &state)?;
     } else {
-        navigate_native_webview_history(&state, &target_tab_id, WebviewHistoryDirection::Back)?;
+        navigate_native_webview_history(
+            &app,
+            &state,
+            &target_tab_id,
+            WebviewHistoryDirection::Back,
+        )?;
     }
     emit_state(&app, &state)
 }
@@ -2786,19 +3108,155 @@ fn aether_tabs_go_forward(app: AppHandle, state: State<Backend>, tab_id: String)
             tab.is_loading = false;
             leave_start_page = true;
         }
-        let target_tab_id = tab.id.clone();
-        #[cfg(not(desktop))]
-        if !leave_start_page {
-            tab.go_forward();
-        }
-        target_tab_id
+        tab.id.clone()
     };
     if leave_start_page {
         ensure_native_webview(&app, &state, &target_tab_id)?;
     } else {
-        navigate_native_webview_history(&state, &target_tab_id, WebviewHistoryDirection::Forward)?;
+        navigate_native_webview_history(
+            &app,
+            &state,
+            &target_tab_id,
+            WebviewHistoryDirection::Forward,
+        )?;
     }
     emit_state(&app, &state)
+}
+
+// Mobile-only feedback channel: the Kotlin TabsPlugin evaluates
+// `window.__AETHER_TAB_EVENT__(...)` in the main webview and the renderer
+// forwards the payload here, mirroring how desktop child-webview callbacks
+// (on_navigation / on_page_load / on_document_title_changed) feed tab state.
+#[tauri::command]
+fn aether_tabs_report_native_event(
+    app: AppHandle,
+    state: State<Backend>,
+    input: NativeTabEventInput,
+) -> Cmd<()> {
+    match input.kind.as_str() {
+        "navigation" => {
+            let parked_on_start_page = {
+                let tabs = lock_tabs(&state)?;
+                tabs.tabs
+                    .iter()
+                    .find(|tab| tab.id == input.tab_id)
+                    .map(|tab| tab.url == START_PAGE_URL)
+                    .unwrap_or(true)
+            };
+            // A tab parked on the start page keeps its (hidden) webview alive;
+            // ignore its stray events so the start-page sentinel survives.
+            if parked_on_start_page {
+                return Ok(());
+            }
+            if let Some(url) = input.url.as_deref() {
+                update_tab_navigation_state(
+                    &state,
+                    &input.tab_id,
+                    url,
+                    input.is_loading.unwrap_or(false),
+                );
+            }
+            {
+                let mut tabs = lock_tabs(&state)?;
+                if let Some(tab) = tabs.tabs.iter_mut().find(|tab| tab.id == input.tab_id) {
+                    tab.native_can_go_back = input.can_go_back;
+                    tab.native_can_go_forward = input.can_go_forward;
+                }
+            }
+            emit_state(&app, &state)
+        }
+        "title" => {
+            if let Some(title) = input.title.as_deref() {
+                update_tab_title(&state, &input.tab_id, title);
+            }
+            emit_state(&app, &state)
+        }
+        "find" => app
+            .emit(
+                AETHER_FIND_RESULT_EVENT,
+                FindResultPayload {
+                    tab_id: input.tab_id,
+                    current: input.current.unwrap_or(0),
+                    total: input.total.unwrap_or(0),
+                },
+            )
+            .map_err(|error| error.to_string()),
+        _ => Ok(()),
+    }
+}
+
+// Preview image (data-URI JPEG) for the mobile tab-grid switcher. Desktop
+// renders live child webviews and never asks for one, so it returns None.
+// Async on purpose: the Kotlin side resolves on the Android UI thread, so the
+// blocking run_mobile_plugin call must sit on a tokio worker.
+#[tauri::command(rename_all = "camelCase")]
+async fn aether_tabs_thumbnail(app: AppHandle, tab_id: String) -> Cmd<Option<String>> {
+    #[cfg(target_os = "android")]
+    {
+        let response: android_tabs::ThumbnailResponse = app
+            .state::<android_tabs::AndroidTabs>()
+            .run_for("thumbnail", android_tabs::TabPayload { tab_id: &tab_id })?;
+        return Ok(response.image);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, tab_id);
+        Ok(None)
+    }
+}
+
+// System-bar/cutout insets (CSS px) for the edge-to-edge Android activity;
+// zero on desktop, where the OS window frame handles this. Async for the same
+// UI-thread reason as aether_tabs_thumbnail.
+#[tauri::command]
+async fn aether_layout_window_insets(app: AppHandle) -> Cmd<serde_json::Value> {
+    #[cfg(target_os = "android")]
+    {
+        let response: android_tabs::InsetsResponse = app
+            .state::<android_tabs::AndroidTabs>()
+            .run_for("insets", serde_json::json!({}))?;
+        return serde_json::to_value(response).map_err(|error| error.to_string());
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = app;
+        serde_json::to_value(serde_json::json!({
+            "top": 0.0, "bottom": 0.0, "left": 0.0, "right": 0.0
+        }))
+        .map_err(|error| error.to_string())
+    }
+}
+
+// The renderer measures where Android tab WebViews belong (MobileTabView's
+// bounding rect, CSS px) and reports it here; desktop computes bounds natively
+// from the window size instead, so this is a no-op there.
+#[tauri::command(rename_all = "camelCase")]
+fn aether_layout_set_mobile_tab_bounds(
+    app: AppHandle,
+    state: State<Backend>,
+    top: f64,
+    left: f64,
+    width: f64,
+    height: f64,
+) -> Cmd<()> {
+    #[cfg(not(desktop))]
+    {
+        *state
+            .mobile_tab_bounds
+            .lock()
+            .map_err(|_| "Æther layout bounds are unavailable.".to_string())? = MobileTabBounds {
+            top,
+            left,
+            width,
+            height,
+        };
+        return sync_native_webview_visibility(&app, &state);
+    }
+    #[allow(unreachable_code)]
+    {
+        let _ = (app, state, top, left, width, height);
+        Ok(())
+    }
 }
 
 #[tauri::command]
@@ -3347,7 +3805,11 @@ async fn aether_chat_ask(
             if let Some(captured) = captured {
                 // Give the current page fewer slots when a hub is also in play so the
                 // hub still contributes; let it use the full budget on its own.
-                let page_limit = if input.collection_id.is_some() { 3 } else { 8 };
+                let page_limit = if input.collection_id.is_some() {
+                    3
+                } else {
+                    chat_citation_limit()
+                };
                 let page_citations = current_page_citations(
                     &state,
                     &settings,
@@ -3364,7 +3826,7 @@ async fn aether_chat_ask(
     }
     let citations = dedupe_citations(citations)
         .into_iter()
-        .take(8)
+        .take(chat_citation_limit())
         .collect::<Vec<_>>();
     local_chat(&state, &settings, &prompt, citations, Some(stream)).await
 }
@@ -5681,8 +6143,11 @@ async fn local_chat(
         let mut runtime = runtime
             .lock()
             .map_err(|_| "Local model runtime is unavailable.".to_string())?;
-        let on_token: Option<Box<dyn FnMut(&str) + Send>> = stream
+        let token_stream = stream.clone();
+        let on_token: Option<Box<dyn FnMut(&str) + Send>> = token_stream
             .map(|stream| Box::new(move |delta: &str| stream.delta(delta)) as Box<dyn FnMut(&str) + Send>);
+        let on_status: Option<Box<dyn FnMut(String) + Send>> = stream
+            .map(|stream| Box::new(move |status: String| stream.status(&status)) as Box<dyn FnMut(String) + Send>);
         runtime.complete_chat(
             &model_path,
             messages,
@@ -5690,6 +6155,7 @@ async fn local_chat(
             0.2,
             &cancel,
             on_token,
+            on_status,
         )
     })
     .await
@@ -5745,6 +6211,7 @@ async fn local_generate_iceberg(
             0.35,
             &cancel,
             None,
+            None,
         )
     })
     .await
@@ -5791,7 +6258,13 @@ impl NativeModelRuntime {
             .backend
             .as_ref()
             .ok_or_else(|| "Local model backend is not initialized.".to_string())?;
-        let mut params = LlamaModelParams::default().with_use_mmap(backend.supports_mmap());
+        // Mobile: load weights into anonymous memory instead of mmapping the
+        // GGUF. Mmapped weight pages are ordinary page cache, and Android
+        // evicts them under the memory pressure the native tab WebViews
+        // create — after which every generated token faults back to flash and
+        // decode slows to a crawl. Malloc'd weights are app RSS and stay put.
+        let use_mmap = if cfg!(mobile) { false } else { backend.supports_mmap() };
+        let mut params = LlamaModelParams::default().with_use_mmap(use_mmap);
         let use_gpu = match kind {
             NativeModelKind::Chat => local_gpu_enabled(),
             NativeModelKind::Embedding => embedding_gpu_enabled(),
@@ -5963,6 +6436,7 @@ impl NativeModelRuntime {
         Ok(embeddings)
     }
 
+    #[cfg(desktop)]
     fn warm_embedding_model(&mut self, model_path: &Path) -> Cmd<()> {
         self.ensure_model(NativeModelKind::Embedding, model_path)
     }
@@ -5975,7 +6449,23 @@ impl NativeModelRuntime {
         temperature: f32,
         cancel: &AtomicBool,
         on_token: Option<Box<dyn FnMut(&str) + Send>>,
+        mut on_status: Option<Box<dyn FnMut(String) + Send>>,
     ) -> Cmd<ChatCompletion> {
+        // The first ask pays for the multi-GB model load; on phone-class
+        // storage that is long enough to read as a hang without a status.
+        let needs_load = self
+            .chat
+            .as_ref()
+            .map(|loaded| loaded.path != canonical_model_path(model_path))
+            .unwrap_or(true);
+        if needs_load {
+            if let Some(callback) = on_status.as_mut() {
+                callback(format!(
+                    "Loading {} (first ask takes a moment)",
+                    friendly_model_label(model_path)
+                ));
+            }
+        }
         self.ensure_model(NativeModelKind::Chat, model_path)?;
         let rendered = {
             let model = &self
@@ -5992,9 +6482,11 @@ impl NativeModelRuntime {
             rendered.add_bos,
             cancel,
             on_token,
+            on_status,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn complete_loaded_prompt(
         &mut self,
         prompt: &str,
@@ -6003,6 +6495,7 @@ impl NativeModelRuntime {
         add_bos: AddBos,
         cancel: &AtomicBool,
         mut on_token: Option<Box<dyn FnMut(&str) + Send>>,
+        mut on_status: Option<Box<dyn FnMut(String) + Send>>,
     ) -> Cmd<ChatCompletion> {
         let backend = self
             .backend
@@ -6027,7 +6520,14 @@ impl NativeModelRuntime {
             tokens = tokens[tokens.len() - max_prompt_tokens..].to_vec();
         }
         let n_batch = (chat_batch_token_limit() as u32).min(n_ctx).max(512);
-        let n_ubatch = n_batch.min(2048).max(512);
+        // Mobile: small micro-batches keep the compute buffer allocation
+        // phone-sized and make prefill progress tick in visible steps.
+        let n_ubatch = if cfg!(mobile) {
+            n_batch.min(512)
+        } else {
+            n_batch.min(2048)
+        }
+        .max(512);
         let threads = auto_thread_count();
         let offload_ops = local_gpu_enabled();
         let ctx_params = LlamaContextParams::default()
@@ -6043,12 +6543,21 @@ impl NativeModelRuntime {
             .map_err(|error| error.to_string())?;
 
         let last_prompt_index = tokens.len().saturating_sub(1);
-        let prompt_batch_limit = n_batch as usize;
+        let prompt_batch_limit = if cfg!(mobile) {
+            (n_batch as usize).min(512)
+        } else {
+            n_batch as usize
+        };
+        let total_prompt_tokens = tokens.len();
         let mut prompt_cursor = 0usize;
         let mut sample_index = 0;
         while prompt_cursor < tokens.len() {
             if cancel.load(AtomicOrdering::Relaxed) {
                 return Err("Generation stopped.".to_string());
+            }
+            if let Some(callback) = on_status.as_mut() {
+                let percent = prompt_cursor * 100 / total_prompt_tokens;
+                callback(format!("Reading context {percent}%"));
             }
             let prompt_end = (prompt_cursor + prompt_batch_limit).min(tokens.len());
             let mut prompt_batch = LlamaBatch::new(prompt_end - prompt_cursor, 1);
@@ -6064,6 +6573,9 @@ impl NativeModelRuntime {
                 sample_index = prompt_batch.n_tokens() - 1;
             }
             prompt_cursor = prompt_end;
+        }
+        if let Some(callback) = on_status.as_mut() {
+            callback("Generating answer".to_string());
         }
 
         let mut sampler = LlamaSampler::chain_simple([
@@ -6599,7 +7111,9 @@ fn collect_gguf_models(root: &Path, models: &mut Vec<PathBuf>) {
 }
 
 fn default_models_path(app_data_dir: &Path) -> PathBuf {
-    if cfg!(debug_assertions) {
+    // The repo-relative dev path is a compile-time string from the build
+    // machine; on a phone it would point at a nonexistent host filesystem.
+    if cfg!(all(debug_assertions, desktop)) {
         project_models_path()
     } else {
         app_data_dir.join("aether-models")
@@ -6818,6 +7332,17 @@ fn model_label(path: &Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
+/// Product name for user-facing status text. Filenames must stay in sync with
+/// `managed_model_spec`; anything unmanaged falls back to its cleaned filename.
+fn friendly_model_label(path: &Path) -> String {
+    match path.file_name().and_then(|name| name.to_str()) {
+        Some("gemma-4-E2B_q4_0-it.gguf") => "AiON LiTE".to_string(),
+        Some("gemma-4-E4B_q4_0-it.gguf") => "AiON WiSE".to_string(),
+        Some("Qwen3-Embedding-0.6B-Q8_0.gguf") => "AiON MiST".to_string(),
+        _ => model_label(path),
+    }
+}
+
 fn strip_gguf_extension(value: &str) -> String {
     value
         .strip_suffix(".gguf")
@@ -6827,10 +7352,18 @@ fn strip_gguf_extension(value: &str) -> String {
 }
 
 fn chat_context_tokens() -> u32 {
+    // Phones get half the desktop window: the KV cache plus compute buffers
+    // for 6k context put a multi-GB model into zram-thrashing territory,
+    // which reads as a silent hang during prefill.
+    let default = if cfg!(mobile) {
+        3072
+    } else {
+        DEFAULT_CHAT_CONTEXT_TOKENS
+    };
     env::var(AETHER_LLM_CONTEXT_ENV)
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
-        .unwrap_or(DEFAULT_CHAT_CONTEXT_TOKENS)
+        .unwrap_or(default)
         .clamp(1024, 65_536)
 }
 
@@ -6878,8 +7411,12 @@ fn embedding_context_tokens(input_tokens: usize) -> u32 {
 }
 
 fn auto_thread_count() -> i32 {
+    // Mobile keeps one core free instead of two: recent flagships (like the
+    // all-big-core Snapdragon 8 Elite) have no little cores to avoid, prefill
+    // is compute-bound, and the UI sits idle while AiON works.
+    let reserve = if cfg!(mobile) { 1 } else { 2 };
     std::thread::available_parallelism()
-        .map(|threads| threads.get().saturating_sub(2).clamp(2, 12) as i32)
+        .map(|threads| threads.get().saturating_sub(reserve).clamp(2, 12) as i32)
         .unwrap_or(6)
 }
 
@@ -6898,12 +7435,37 @@ fn normalize_embedding(values: &[f32]) -> Vec<f32> {
         .collect()
 }
 
+// Phones prefill on CPU, so prompt length is the ask latency. The mobile
+// budget (5 sources x ~1100 chars + system + question) fits the 2048-token
+// prompt window, where desktop's 8 full chunks would overflow it and get
+// front-truncated — losing the system message and top-ranked sources while
+// still paying full prefill cost.
+fn chat_citation_limit() -> usize {
+    if cfg!(mobile) {
+        5
+    } else {
+        8
+    }
+}
+
+fn chat_snippet_char_limit() -> usize {
+    if cfg!(mobile) {
+        1100
+    } else {
+        usize::MAX
+    }
+}
+
 fn build_chat_messages(prompt: &str, citations: &[SearchResult]) -> Vec<ChatPromptMessage> {
+    let snippet_limit = chat_snippet_char_limit();
     let context_block = citations
         .iter()
         .enumerate()
         .map(|(index, item)| {
-            let source_text = strip_numeric_bracket_markers(&item.text);
+            let mut source_text = strip_numeric_bracket_markers(&item.text);
+            if source_text.chars().count() > snippet_limit {
+                source_text = source_text.chars().take(snippet_limit).collect();
+            }
             format!(
                 "[{}] {}\nURL: {}\nCollection: {}\n{}",
                 index + 1,
@@ -6920,11 +7482,18 @@ fn build_chat_messages(prompt: &str, citations: &[SearchResult]) -> Vec<ChatProm
     } else {
         &context_block
     };
+    // Phones decode on CPU, so every generated token is user-visible latency:
+    // steer the model toward tight answers instead of hard-truncating them.
+    let brevity = if cfg!(mobile) {
+        " Keep answers concise: a few sentences or a short list unless the question needs more."
+    } else {
+        ""
+    };
     vec![
         ChatPromptMessage {
             role: "system",
             content: format!(
-                "You are Æther, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources only with Æther source numbers [1] through [{}]. Do not copy bracketed reference numbers from webpage text.",
+                "You are Æther, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources only with Æther source numbers [1] through [{}]. Do not copy bracketed reference numbers from webpage text.{brevity}",
                 citations.len().max(1)
             ),
         },
@@ -7155,7 +7724,35 @@ async fn extract_readable_active_page(
         }
     }
 
+    #[cfg(target_os = "android")]
+    {
+        match extract_readable_page_from_android(active_tab) {
+            Ok(page) => return Ok(page),
+            Err(_) => {}
+        }
+    }
+
     extract_readable_page(&state.client, &active_tab.url).await
+}
+
+// Android counterpart of extract_readable_page_from_webview: the Kotlin
+// TabsPlugin's `snapshot` command reads the live DOM through
+// evaluateJavascript's value callback, so logged-in and JS-rendered pages
+// capture correctly instead of falling back to an anonymous HTTP re-fetch.
+#[cfg(target_os = "android")]
+fn extract_readable_page_from_android(active_tab: &ManagedTab) -> Cmd<CapturedPage> {
+    let response: android_tabs::SnapshotResponse = android_tabs::run_for_global(
+        "snapshot",
+        android_tabs::TabPayload {
+            tab_id: &active_tab.id,
+        },
+    )?;
+    let payload = response.payload.trim();
+    if payload.is_empty() || payload == "null" {
+        return Err("Unable to read the active page.".to_string());
+    }
+    let snapshot = parse_page_snapshot(payload)?;
+    snapshot_to_captured_page(snapshot, &active_tab.title)
 }
 
 #[cfg(desktop)]
@@ -7860,6 +8457,7 @@ fn active_tab_url(state: &State<Backend>) -> Cmd<String> {
         .ok_or_else(|| "No active browser tab.".to_string())
 }
 
+#[cfg(desktop)]
 fn active_tab_id(state: &State<Backend>) -> Cmd<String> {
     Ok(lock_tabs(state)?.active_tab_id.clone())
 }
@@ -8161,6 +8759,22 @@ mod tests {
         assert!(version_is_newer("1.0.1", "1.0.0"));
         assert!(!version_is_newer("1.0.0", "1.0.0"));
         assert!(!version_is_newer("0.9.9", "1.0.0"));
+    }
+
+    #[test]
+    fn github_release_parses_snake_case_api_payload() {
+        let payload = serde_json::json!({
+            "tag_name": "v1.0.28",
+            "name": "v1.0.28",
+            "html_url": "https://github.com/CanPixel/aether/releases/tag/v1.0.28",
+            "body": "**Full Changelog**: ...",
+            "published_at": "2026-06-25T20:49:36Z",
+            "draft": false,
+            "prerelease": false
+        });
+        let release: GithubRelease = serde_json::from_value(payload).expect("release parses");
+        assert_eq!(release_version_from_tag(&release.tag_name), "1.0.28");
+        assert_eq!(release.published_at.as_deref(), Some("2026-06-25T20:49:36Z"));
     }
 
     #[test]

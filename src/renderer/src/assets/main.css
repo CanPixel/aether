@@ -11,4 +11,5 @@
 @import './styles/start-page.css';
 @import './styles/crystallizer.css';
 @import './styles/setup-settings.css';
+@import './styles/mobile-shell.css';
 @import './styles/shared-overrides.css';

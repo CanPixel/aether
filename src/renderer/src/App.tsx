@@ -1,4 +1,5 @@
 import { FormEvent, RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { addPluginListener, invoke, type PluginListener } from '@tauri-apps/api/core'
 import packageManifest from '../../../package.json'
 import {
   AetherState,
@@ -36,6 +37,8 @@ import {
   UpdateCheckResult
 } from '../../shared/aether'
 import { BrowserChrome } from './components/BrowserChrome'
+import { MobileShell } from './components/MobileShell'
+import { MobileTabView } from './components/MobileTabView'
 import { StartPage } from './components/StartPage'
 import { CollectionDialog, CollectionDialogState } from './components/CollectionDialog'
 import { Crystallizer } from './components/Crystallizer'
@@ -53,6 +56,7 @@ import {
   getTabTint,
   normalizeComparableUrl
 } from './utils/aether-ui'
+import { HAS_NATIVE_TAB_WEBVIEWS, IS_ANDROID } from './utils/platform'
 import {
   ChevronDown,
   ChevronUp,
@@ -1130,6 +1134,24 @@ function App(): React.JSX.Element {
     }
   }
 
+  // Mobile address bar: navigate the active tab (or open one) from a plain
+  // string, since MobileShell owns its own input instead of App's form.
+  async function mobileNavigateAddress(value: string): Promise<void> {
+    const target = value.trim()
+    if (!target) return
+    try {
+      if (activeTab) {
+        await window.aether.tabs.navigate(activeTab.id, target)
+        setDashboardOpen(false)
+        setWorkspaceMode('dashboard')
+      } else {
+        await createTab({ url: target })
+      }
+    } catch (error) {
+      setNotice(getErrorMessage(error))
+    }
+  }
+
   // Navigate the active (start-page) tab to a destination. The backend normalizes a
   // bare query into a search and lazily creates the tab's webview at the target.
   async function navigateActiveTab(input: string): Promise<void> {
@@ -1263,6 +1285,12 @@ function App(): React.JSX.Element {
     setAskCurrentPageOnly(false)
     setAskIncludeCurrentPage(false)
     setChatResult(null)
+    // On mobile the AiON surface is MobileShell's bottom sheet, not the
+    // desktop intelligence panel.
+    if (IS_ANDROID) {
+      mobileOpenAionRef.current?.()
+      return
+    }
     setAskPanelOpen(true)
     setPanelCollapsed(false)
     await window.aether.layout.setIntelligencePanelCollapsed(false)
@@ -1843,6 +1871,54 @@ function App(): React.JSX.Element {
     await window.aether.layout.setIntelligencePanelCollapsed(next)
   }
 
+  // Android hardware back: peel UI layers before letting the system have it.
+  // Registering a `back-button` listener makes Tauri's AppPlugin route every
+  // back press here instead of applying its default (webview history) handling.
+  // The ref keeps the plugin subscription stable across renders while the
+  // handler always sees current state.
+  const androidBackRef = useRef<() => void>(() => undefined)
+  // MobileShell registers a handler here to close its own overlays (tab grid,
+  // sheets) before the app-level layers get peeled.
+  const mobileBackInterceptorRef = useRef<(() => boolean) | null>(null)
+  const mobileOpenAionRef = useRef<(() => void) | null>(null)
+  androidBackRef.current = () => {
+    if (mobileBackInterceptorRef.current?.()) return
+    if (findOpen) {
+      closeFindBar()
+      return
+    }
+    if (!dashboardOpen && activeTab?.canGoBack) {
+      void goBack()
+      return
+    }
+    if (!dashboardOpen) {
+      void openDashboard()
+      return
+    }
+    // Dashboard is the root of the app — hand back to Android, which
+    // backgrounds/finishes the activity like any other browser at its root.
+    void invoke('plugin:app|exit').catch(() => undefined)
+  }
+
+  useEffect(() => {
+    if (!IS_ANDROID) return
+    let disposed = false
+    let listener: PluginListener | null = null
+    void addPluginListener('app', 'back-button', () => androidBackRef.current())
+      .then((registered) => {
+        if (disposed) {
+          void registered.unregister()
+        } else {
+          listener = registered
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      disposed = true
+      void listener?.unregister()
+    }
+  }, [])
+
   async function runTask(label: string, task: () => Promise<void>): Promise<void> {
     setBusy(label)
     setNotice(null)
@@ -1875,22 +1951,217 @@ function App(): React.JSX.Element {
   const showRailTooltips = dashboardOpen
   const startPageActive = !dashboardOpen && isStartPage
 
+  // Shared between the desktop and mobile shells so the two trees stay in sync
+  // without duplicating these prop lists.
+  const findBarNode =
+    findOpen && !dashboardOpen && !isStartPage && activeTab?.id ? (
+      <FindBar
+        inputRef={findInputRef}
+        query={findQuery}
+        current={findCurrent}
+        total={findTotal}
+        onChange={setFindQuery}
+        onSearch={(value) => findHighlight(value, 'find')}
+        onNext={() => findHighlight(findQuery, 'next')}
+        onPrev={() => findHighlight(findQuery, 'prev')}
+        onClose={closeFindBar}
+      />
+    ) : null
+
+  const crystallizerNode = (
+    <Crystallizer
+      busy={busy}
+      key={activeSavedIceberg?.id ?? 'new-iceberg'}
+      openedIceberg={activeSavedIceberg}
+      savedIcebergs={savedIcebergs}
+      onDeleteSaved={deleteSavedIceberg}
+      onGenerate={generateIceberg}
+      onOpenSaved={openSavedIceberg}
+      onOpenTopic={openCrystallizedTopic}
+      onSave={saveIceberg}
+    />
+  )
+
+  const dashboardNode = (
+    <Dashboard
+      busy={busy}
+      capturesByCollection={capturesByCollection}
+      collections={collections}
+      deleteCapture={deleteCapture}
+      deleteSavedIceberg={deleteSavedIceberg}
+      deleteShortcut={deleteShortcut}
+      moveCapture={moveCapture}
+      openCapture={openCapture}
+      openSavedIceberg={openSavedIceberg}
+      openShortcut={openShortcut}
+      openCollectionDialog={(state) => {
+        void openCollectionDialog(state)
+      }}
+      askCollection={(collectionId) => {
+        void askCollectionHub(collectionId)
+      }}
+      reorderCollections={reorderCollections}
+      reorderSavedIcebergs={reorderSavedIcebergs}
+      reorderShortcuts={reorderShortcuts}
+      selectedCollectionId={selectedCollectionId}
+      savedIcebergs={savedIcebergs}
+      shortcuts={shortcuts}
+      selectCollection={selectCollection}
+    />
+  )
+
+  const startPageNode = <StartPage shortcuts={shortcuts} onNavigate={navigateActiveTab} />
+
+  const overlayModals = (
+    <>
+      {collectionDialog && (
+        <CollectionDialog
+          busy={busy}
+          state={collectionDialog}
+          onClose={() => {
+            void closeCollectionDialog()
+          }}
+          onDelete={confirmDeleteCollection}
+          onSave={saveCollectionDialog}
+        />
+      )}
+
+      {modelSetupVisible && (
+        <ModelSetupModal
+          busy={modelSetupBusy}
+          complete={modelSetupComplete}
+          coreInstalled={modelSetupCoreInstalled}
+          error={modelSetupError}
+          installedModels={installedSetupModels}
+          modelDir={status?.modelDir ?? ''}
+          progress={modelDownloadProgress}
+          selectedModels={selectedSetupModels}
+          onClose={() => {
+            void closeModelSetup()
+          }}
+          onStart={() => {
+            void startModelSetup()
+          }}
+          onToggleModel={toggleSetupModel}
+        />
+      )}
+
+      {settingsOpen && (
+        <SettingsModal
+          busy={busy}
+          settings={settings}
+          updateCheck={updateCheck}
+          updateChecking={updateChecking}
+          onClose={closeSettings}
+          onDefaultSearchEngineChange={updateDefaultSearchEngine}
+          onDeveloperModeChange={updateDeveloperMode}
+          onCheckForUpdates={() => checkForUpdates()}
+          onOpenUpdateRelease={openUpdateRelease}
+          onUpdateAutoCheck={updateAutoCheck}
+          onOpenModelSetup={openModelSetupFromSettings}
+        />
+      )}
+    </>
+  )
+
+  if (IS_ANDROID) {
+    const mobileContent = crystallizerOpen ? (
+      crystallizerNode
+    ) : dashboardOpen ? (
+      dashboardNode
+    ) : startPageActive ? (
+      startPageNode
+    ) : activeTab ? (
+      <MobileTabView />
+    ) : (
+      <div className="webview-underlay" aria-hidden="true" />
+    )
+
+    return (
+      <main className="aether-shell aether-mobile">
+        {toast && <StatusToast toast={toast} />}
+        <MobileShell
+          activeTab={activeTab}
+          addressValue={addressValue}
+          appModalOpen={Boolean(collectionDialog || settingsOpen || modelSetupVisible)}
+          ask={{
+            askCollectionId,
+            askCurrentPageOnly,
+            askPhase,
+            canUseCurrentPage,
+            chatBlocked,
+            chatPrompt,
+            chatResult,
+            currentPageTitle,
+            streamingAnswer,
+            streamingCitations,
+            usableCollections: usableAskCollections,
+            onAskCollectionChange: setAskCollectionId,
+            onAskCurrentPageOnlyChange: (value) => {
+              setAskCurrentPageOnly(value)
+              setAskIncludeCurrentPage(value)
+            },
+            onAskPrompt: (prompt) => askPrompt(prompt),
+            onCancel: cancelAsk,
+            onChatPromptChange: setChatPrompt,
+            onOpenCitation: openCitation,
+            onOpenModelSetup: openModelSetupFromSettings
+          }}
+          backInterceptorRef={mobileBackInterceptorRef}
+          openAionRef={mobileOpenAionRef}
+          busy={busy}
+          capturesBlocked={dashboardOpen || startPageActive}
+          collections={collections}
+          crystallizerOpen={crystallizerOpen}
+          dashboardOpen={dashboardOpen}
+          findBar={findBarNode}
+          isWebPage={!dashboardOpen && !isStartPage && Boolean(activeTab)}
+          portalSaveBlocked={
+            dashboardOpen ||
+            startPageActive ||
+            !activeTab?.url ||
+            (activeTabSavedToHub && !activeTabHubNeedsMetadata)
+          }
+          portalSaveTitle={
+            activeTabSavedToHub
+              ? activeTabHubNeedsMetadata
+                ? 'Refresh portal appearance'
+                : 'Already saved as a portal'
+              : 'Save current page as portal'
+          }
+          quickActions={dashboardOpen || startPageActive ? [] : quickActions}
+          selectedCollectionId={selectedCollectionId}
+          tabs={tabs}
+          onCapture={capturePage}
+          onCaptureIntent={maybeSuggestCaptureHub}
+          onCloseTab={closeTab}
+          onCreateCollection={() => {
+            void openCollectionDialog({ mode: 'create' })
+          }}
+          onCreateTab={() => {
+            void createTab()
+          }}
+          onGoForward={goForward}
+          onNavigateAddress={mobileNavigateAddress}
+          onOpenCrystallizer={openCrystallizer}
+          onOpenDashboard={openDashboard}
+          onOpenFind={openFindBar}
+          onOpenSettings={openSettings}
+          onSavePortal={saveActiveTabToHub}
+          onSelectCollection={handleCaptureHubSelect}
+          onSelectTab={activateTab}
+        >
+          {mobileContent}
+        </MobileShell>
+        {overlayModals}
+      </main>
+    )
+  }
+
   return (
     <main className={`aether-shell ${panelCollapsed ? 'panel-collapsed' : ''}`}>
       {toast && <StatusToast toast={toast} />}
-      {findOpen && !dashboardOpen && !isStartPage && activeTab?.id && (
-        <FindBar
-          inputRef={findInputRef}
-          query={findQuery}
-          current={findCurrent}
-          total={findTotal}
-          onChange={setFindQuery}
-          onSearch={(value) => findHighlight(value, 'find')}
-          onNext={() => findHighlight(findQuery, 'next')}
-          onPrev={() => findHighlight(findQuery, 'prev')}
-          onClose={closeFindBar}
-        />
-      )}
+      {findBarNode}
       <div className="window-titlebar" aria-hidden="true">
         <strong>ÆTHER</strong>
       </div>
@@ -1921,6 +2192,21 @@ function App(): React.JSX.Element {
             <Snowflake />
             <span className="app-dot" aria-hidden="true" />
           </button>
+          {settings.developerMode ? (
+            <>
+              <button
+                className={`app-button air-button tooltip-host ${airOpen ? 'active' : ''}`}
+                data-tooltip={showRailTooltips ? 'AiR' : undefined}
+                data-tooltip-side="right"
+                onClick={openAir}
+                title="AiR"
+                type="button"
+              >
+                <Wind />
+                <span className="app-dot" aria-hidden="true" />
+              </button>
+            </>
+          ) : (<></>)}
           <button
             className={`app-button tooltip-host ${!dashboardOpen ? 'active' : ''}`}
             data-tooltip={showRailTooltips ? 'Discover' : undefined}
@@ -1946,21 +2232,8 @@ function App(): React.JSX.Element {
                 <Waves />
                 <span className="app-dot" aria-hidden="true" />
               </button>
-              <button
-                className={`app-button air-button tooltip-host ${airOpen ? 'active' : ''}`}
-                data-tooltip={showRailTooltips ? 'AiR' : undefined}
-                data-tooltip-side="right"
-                onClick={openAir}
-                title="AiR"
-                type="button"
-              >
-                <Wind />
-                <span className="app-dot" aria-hidden="true" />
-              </button>
             </>
-          ) : (
-            <></>
-          )}
+          ) : (<></>)}
         </nav>
         <button
           className="app-button settings-button"
@@ -1988,7 +2261,7 @@ function App(): React.JSX.Element {
               : flowOpen
                 ? 'Semantic Relation Flow'
                 : airOpen
-                  ? 'Automated Info Renderer'
+                  ? 'Automatic Info Renderer'
                   : 'Knowledge Gatherer'
           }
           dashboardTitle={crystallizerOpen ? 'iCE' : flowOpen ? 'Flow' : airOpen ? 'AiR' : 'ÆTHER'}
@@ -2039,17 +2312,7 @@ function App(): React.JSX.Element {
         />
 
         {crystallizerOpen ? (
-          <Crystallizer
-            busy={busy}
-            key={activeSavedIceberg?.id ?? 'new-iceberg'}
-            openedIceberg={activeSavedIceberg}
-            savedIcebergs={savedIcebergs}
-            onDeleteSaved={deleteSavedIceberg}
-            onGenerate={generateIceberg}
-            onOpenSaved={openSavedIceberg}
-            onOpenTopic={openCrystallizedTopic}
-            onSave={saveIceberg}
-          />
+          crystallizerNode
         ) : flowOpen ? (
           <FlowView
             busy={busy}
@@ -2093,33 +2356,11 @@ function App(): React.JSX.Element {
             onUseLens={useAirLens}
           />
         ) : startPageActive ? (
-          <StartPage shortcuts={shortcuts} onNavigate={navigateActiveTab} />
+          startPageNode
         ) : dashboardOpen ? (
-          <Dashboard
-            busy={busy}
-            capturesByCollection={capturesByCollection}
-            collections={collections}
-            deleteCapture={deleteCapture}
-            deleteSavedIceberg={deleteSavedIceberg}
-            deleteShortcut={deleteShortcut}
-            moveCapture={moveCapture}
-            openCapture={openCapture}
-            openSavedIceberg={openSavedIceberg}
-            openShortcut={openShortcut}
-            openCollectionDialog={(state) => {
-              void openCollectionDialog(state)
-            }}
-            askCollection={(collectionId) => {
-              void askCollectionHub(collectionId)
-            }}
-            reorderCollections={reorderCollections}
-            reorderSavedIcebergs={reorderSavedIcebergs}
-            reorderShortcuts={reorderShortcuts}
-            selectedCollectionId={selectedCollectionId}
-            savedIcebergs={savedIcebergs}
-            shortcuts={shortcuts}
-            selectCollection={selectCollection}
-          />
+          dashboardNode
+        ) : !HAS_NATIVE_TAB_WEBVIEWS && activeTab ? (
+          <MobileTabView />
         ) : (
           <div className="webview-underlay" aria-hidden="true" />
         )}
@@ -2164,53 +2405,7 @@ function App(): React.JSX.Element {
         onOpenSemanticTrailItem={openSemanticTrailItem}
       />
 
-      {collectionDialog && (
-        <CollectionDialog
-          busy={busy}
-          state={collectionDialog}
-          onClose={() => {
-            void closeCollectionDialog()
-          }}
-          onDelete={confirmDeleteCollection}
-          onSave={saveCollectionDialog}
-        />
-      )}
-
-      {modelSetupVisible && (
-        <ModelSetupModal
-          busy={modelSetupBusy}
-          complete={modelSetupComplete}
-          coreInstalled={modelSetupCoreInstalled}
-          error={modelSetupError}
-          installedModels={installedSetupModels}
-          modelDir={status?.modelDir ?? ''}
-          progress={modelDownloadProgress}
-          selectedModels={selectedSetupModels}
-          onClose={() => {
-            void closeModelSetup()
-          }}
-          onStart={() => {
-            void startModelSetup()
-          }}
-          onToggleModel={toggleSetupModel}
-        />
-      )}
-
-      {settingsOpen && (
-        <SettingsModal
-          busy={busy}
-          settings={settings}
-          updateCheck={updateCheck}
-          updateChecking={updateChecking}
-          onClose={closeSettings}
-          onDefaultSearchEngineChange={updateDefaultSearchEngine}
-          onDeveloperModeChange={updateDeveloperMode}
-          onCheckForUpdates={() => checkForUpdates()}
-          onOpenUpdateRelease={openUpdateRelease}
-          onUpdateAutoCheck={updateAutoCheck}
-          onOpenModelSetup={openModelSetupFromSettings}
-        />
-      )}
+      {overlayModals}
     </main>
   )
 }

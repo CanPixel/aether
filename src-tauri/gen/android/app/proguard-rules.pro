@@ -19,3 +19,14 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# TabsPlugin is instantiated and its @Command methods invoked reflectively by
+# Tauri's PluginManager (registered from Rust via register_android_plugin),
+# and its @InvokeArg classes are populated by Jackson.
+-keep class com.canur.aether.TabsPlugin { *; }
+-keep class com.canur.aether.EnsureArgs { *; }
+-keep class com.canur.aether.NavigateArgs { *; }
+-keep class com.canur.aether.SyncArgs { *; }
+-keep class com.canur.aether.TabArgs { *; }
+-keep class com.canur.aether.EvalArgs { *; }
+-keep class com.canur.aether.FindArgs { *; }

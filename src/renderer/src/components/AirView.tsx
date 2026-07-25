@@ -20,7 +20,8 @@ import {
   Layers3,
   Search,
   Sparkles,
-  WandSparkles
+  WandSparkles,
+  Wind
 } from 'lucide-react'
 import { formatDate, formatVisibleModelName } from '../utils/aether-ui'
 
@@ -113,11 +114,11 @@ export function AirView({
       <header className="air-hero">
         <div className="air-identity">
           <span className="air-mark" aria-hidden="true">
-            <FileText />
+            <Wind />
           </span>
           <div>
             <h1>AiR</h1>
-            <p>Automated Info Renderer</p>
+            <p>Automatic Info Renderer</p>
           </div>
         </div>
         <div className="air-output-note">
