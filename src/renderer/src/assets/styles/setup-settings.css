@@ -862,9 +862,9 @@
   border-radius: 999px;
   background: linear-gradient(
     180deg,
-    rgb(var(--surface-rgb) / 0.98),
+    rgb(var(--accent-soft-rgb) / 0.98),
     rgb(var(--accent-pale-rgb) / 0.92) 44%,
-    rgba(54, 150, 206, 0.82)
+    rgb(var(--accent-ocean-rgb) / 0.82)
   );
   background-clip: padding-box;
   box-shadow:

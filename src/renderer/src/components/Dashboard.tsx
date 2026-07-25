@@ -587,7 +587,7 @@ export function Dashboard({
             <h3>No hubs yet</h3>
             <p>Create a hub, open a page, and capture it into your local knowledge base.</p>
             <button onClick={() => openCollectionDialog({ mode: 'create' })} type="button">
-              Create first hub
+              Create First Hub
             </button>
           </div>
         ) : (

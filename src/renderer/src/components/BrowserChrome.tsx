@@ -285,10 +285,10 @@ export function BrowserChrome({
             disabled={tabs.length <= 1}
             onClick={() => runTabMenuAction(() => onCloseOtherTabs(menuTab.id))}
           >
-            Close others
+            Close Others
           </button>
           <button type="button" role="menuitem" onClick={() => runTabMenuAction(onCloseAllTabs)}>
-            Close all
+            Close All
           </button>
         </div>
       )}

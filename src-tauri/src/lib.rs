@@ -1168,6 +1168,114 @@ mod tests {
         );
     }
 
+    // The AiON panel's primary button shipped broken in dark mode because one opaque
+    // gradient mixed a themed surface channel (which correctly inverts to navy) with
+    // unthemed accent channels (which stay pale). The result ran from near-black to
+    // pale blue under light label text. Low-alpha decorative gradients mix the two
+    // families harmlessly, so this only guards fills solid enough to sit under text.
+    #[test]
+    fn opaque_fills_do_not_mix_themed_and_unthemed_channels() {
+        const STYLES: &str = "../src/renderer/src/assets/styles";
+        let foundation =
+            std::fs::read_to_string(format!("{STYLES}/foundation.css")).expect("foundation.css");
+
+        let channels_in = |block: &str| -> std::collections::HashSet<String> {
+            block
+                .lines()
+                .filter_map(|line| {
+                    let line = line.trim();
+                    let name = line.strip_prefix("--")?.split_once(':')?.0;
+                    name.ends_with("-rgb").then(|| name.to_string())
+                })
+                .collect()
+        };
+
+        let root_end = foundation.find("\n}").expect("closing brace for :root");
+        let (root, rest) = foundation.split_at(root_end);
+        let dark_start = rest
+            .find(":root[data-theme='dark']")
+            .expect("explicit dark block");
+        let defined = channels_in(root);
+        let themed = channels_in(&rest[dark_start..]);
+
+        // Only surfaces and ink decide light-versus-dark; a brand accent that keeps
+        // its hue on both themes is intentional.
+        let must_flip = |name: &str| {
+            name.starts_with("surface") || name.starts_with("ink") || name == "highlight-rgb"
+        };
+
+        let mut offenders = Vec::new();
+        for entry in std::fs::read_dir(STYLES).expect("styles dir") {
+            let path = entry.expect("dir entry").path();
+            if path.extension().is_none_or(|ext| ext != "css") {
+                continue;
+            }
+            let css = std::fs::read_to_string(&path).expect("stylesheet");
+            for declaration in css.split(';') {
+                let Some((prop, value)) = declaration.split_once(':') else {
+                    continue;
+                };
+                if prop.trim_start_matches(['{', '}', '\n', ' ']).trim() != "background" {
+                    continue;
+                }
+                // color-mix() composites by percentage, not by the `/ alpha` this
+                // check reads, so its channels would all look opaque. Those call
+                // sites are checked by eye instead.
+                if value.contains("color-mix") {
+                    continue;
+                }
+
+                let mut flips = Vec::new();
+                let mut fixed = Vec::new();
+                for (index, _) in value.match_indices("rgb(var(--") {
+                    let tail = &value[index + "rgb(var(--".len()..];
+                    let name: String = tail
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
+                        .collect();
+                    if !defined.contains(&name) {
+                        continue;
+                    }
+                    // Alpha follows the name as `) / 0.42)`; absent means fully opaque.
+                    // The name has to be stepped over first, or the `/` search finds
+                    // the one in a later stop and every fill reads as opaque.
+                    let after_name = &tail[name.len()..];
+                    let alpha = after_name
+                        .strip_prefix(')')
+                        .map(str::trim_start)
+                        .and_then(|rest| rest.strip_prefix('/'))
+                        .and_then(|rest| rest.trim_start().split(')').next())
+                        .and_then(|rest| rest.trim().parse::<f64>().ok())
+                        .unwrap_or(1.0);
+                    if alpha < 0.9 {
+                        continue;
+                    }
+                    if must_flip(&name) {
+                        flips.push(name);
+                    } else if !themed.contains(&name) {
+                        fixed.push(name);
+                    }
+                }
+
+                if !flips.is_empty() && !fixed.is_empty() {
+                    offenders.push(format!(
+                        "{}: {} (inverts) mixed with {} (does not)",
+                        path.file_name().unwrap_or_default().to_string_lossy(),
+                        flips.join(", "),
+                        fixed.join(", ")
+                    ));
+                }
+            }
+        }
+
+        assert!(
+            offenders.is_empty(),
+            "opaque fills mixing themed and unthemed channels render incoherently in \
+             dark mode:\n  {}",
+            offenders.join("\n  ")
+        );
+    }
+
     // The shipped config carries an empty pubkey placeholder, and that has to read
     // as "not configured" rather than as a key — otherwise the app offers an
     // Install button that downloads a hundred megabytes and then fails signature

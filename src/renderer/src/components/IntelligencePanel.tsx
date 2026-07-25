@@ -521,14 +521,14 @@ export function IntelligencePanel({
               data-tooltip={showTooltips ? 'Model Settings' : undefined}
               data-tooltip-side={showTooltips ? 'left' : undefined}
               onClick={() => setSettingsOpen((current) => !current)}
-              title="Model settings"
+              title="Model Settings"
               type="button"
             >
               <GearIcon />
               <span>
                 {status?.chatModel
                   ? formatVisibleModelName(status.chatModel, { developerMode, role: 'chat' })
-                  : 'Model settings'}
+                  : 'Model Settings'}
               </span>
             </button>
           ) : chatModelOptions.length === 0 ? (
@@ -544,7 +544,7 @@ export function IntelligencePanel({
               type="button"
             >
               <HardDriveDownload size={14} aria-hidden="true" />
-              <span>Install models</span>
+              <span>Install Models</span>
             </button>
           ) : (
             <div className="inline-model-controls">
@@ -567,13 +567,13 @@ export function IntelligencePanel({
               </label>
               {/* Outside the label: nested in it, a click would also drive the select. */}
               <button
-                aria-label="Manage models"
+                aria-label="Manage Models"
                 className="inline-model-manage-button"
                 disabled={Boolean(busy)}
                 onClick={() => {
                   void onOpenModelSetup()
                 }}
-                title="Manage models"
+                title="Manage Models"
                 type="button"
               >
                 <HardDriveDownload size={14} aria-hidden="true" />
@@ -950,7 +950,7 @@ function LocalModelSettings({
         type="button"
       >
         <HardDriveDownload size={14} aria-hidden="true" />
-        <span>{models.length === 0 ? 'Install models' : 'Manage models'}</span>
+        <span>{models.length === 0 ? 'Install Models' : 'Manage Models'}</span>
       </button>
     </section>
   )

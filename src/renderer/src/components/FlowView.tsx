@@ -391,7 +391,7 @@ export function FlowView({
               </span>
               {collections.length > 0 && (
                 <button disabled={Boolean(busy)} onClick={() => onBuildGraph()} type="button">
-                  Build graph
+                  Build Graph
                 </button>
               )}
             </div>
@@ -581,7 +581,7 @@ function FlowNodeDetail({
         {node.kind === 'source' && (
           <button disabled={Boolean(busy)} onClick={() => onOpenSource(node)} type="button">
             <ExternalLink size={15} />
-            <span>Open source</span>
+            <span>Open Source</span>
           </button>
         )}
         {node.kind === 'hub' && node.collectionId && (
@@ -591,13 +591,13 @@ function FlowNodeDetail({
             type="button"
           >
             <Network size={15} />
-            <span>Open hub</span>
+            <span>Open Hub</span>
           </button>
         )}
         {node.kind !== 'query' && (
           <button disabled={Boolean(busy)} onClick={() => onUseNodeAsLens(node)} type="button">
             <LocateFixed size={15} />
-            <span>Use as lens</span>
+            <span>Use as Lens</span>
           </button>
         )}
       </footer>

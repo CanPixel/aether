@@ -1027,7 +1027,7 @@ export function Crystallizer({
                     type="button"
                   >
                     <Search size={14} />
-                    Open in library
+                    Open in Library
                   </button>
                 )}
                 <button

@@ -371,7 +371,7 @@ export function MobileShell({
             }}
             type="button"
           >
-            Install local models
+            Install Local Models
           </button>
         </div>
       ) : (
@@ -751,7 +751,7 @@ export function MobileShell({
                 }}
                 type="button"
               >
-                <Search /> Find on page
+                <Search /> Find on Page
               </button>
               <button
                 disabled={!isWebPage || !activeTab}
@@ -761,7 +761,7 @@ export function MobileShell({
                 }}
                 type="button"
               >
-                <RefreshCw /> Reload page
+                <RefreshCw /> Reload Page
               </button>
               <button
                 disabled={dashboardOpen || !activeTab?.canGoForward}

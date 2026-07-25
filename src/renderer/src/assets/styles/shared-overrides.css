@@ -1,6 +1,38 @@
+/* The only call to action on an otherwise empty surface, so it gets the primary
+   treatment. It was previously 30px with the shadow stripped, which left the app's
+   most important first-run action looking like disabled text. */
 .empty-state button {
-  height: 30px;
-  box-shadow: none;
+  height: 36px;
+  padding: 0 18px;
+  border-color: rgb(var(--primary-edge-rgb) / 0.34);
+  background:
+    linear-gradient(180deg, rgb(var(--surface-rgb) / 0.24), transparent 44%),
+    linear-gradient(
+      145deg,
+      rgb(var(--primary-from-rgb)),
+      rgb(var(--primary-mid-rgb)) 52%,
+      rgb(var(--primary-to-rgb))
+    );
+  color: rgb(var(--highlight-rgb));
+  box-shadow:
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.5),
+    0 9px 18px rgb(var(--primary-edge-rgb) / 0.14);
+  font-family: var(--font-ice);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.empty-state button:hover {
+  border-color: rgb(var(--primary-edge-rgb) / 0.5);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.58),
+    0 11px 22px rgb(var(--primary-edge-rgb) / 0.2);
+}
+
+.empty-state button:active {
+  box-shadow:
+    inset 0 1px 3px rgb(var(--depth-rgb) / 0.28),
+    0 3px 8px rgb(var(--primary-edge-rgb) / 0.16);
 }
 
 .empty-state {
@@ -415,16 +447,19 @@
   font-weight: 820;
 }
 
+/* Same gradient family as the primary buttons in foundation.css, and it carried the
+   same defect: a themed surface stop mixed with unthemed accents, which in dark mode
+   ran from navy to pale blue under light label text. */
 .primary-button,
 .danger-primary {
-  border-color: rgb(var(--sky-deep-rgb) / 0.4);
+  border-color: rgb(var(--primary-edge-rgb) / 0.4);
   background:
-    radial-gradient(circle at 28% 16%, rgb(var(--surface-rgb) / 0.95), transparent 36%),
+    radial-gradient(circle at 28% 16%, rgb(var(--highlight-rgb) / 0.18), transparent 36%),
     linear-gradient(
       145deg,
-      rgb(var(--surface-tint-cool-rgb) / 0.96),
-      rgb(var(--accent-light-rgb) / 0.94) 48%,
-      rgb(var(--azure-rgb) / 0.92)
+      rgb(var(--primary-from-rgb) / 0.96),
+      rgb(var(--primary-mid-rgb) / 0.94) 48%,
+      rgb(var(--primary-to-rgb) / 0.92)
     );
   color: rgb(var(--highlight-rgb));
   box-shadow:

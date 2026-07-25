@@ -182,6 +182,22 @@
   --font-old: 'New York', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
   --font-alt:
     Didot, 'Bodoni 72', 'Bodoni 72 Smallcaps', 'Baskerville', 'Iowan Old Style', Georgia, serif;
+  /* Primary-action button gradient. These exist because the button previously mixed
+     --surface-sky (a themed surface, which correctly inverts to navy in dark mode)
+     with --accent-light/--azure (unthemed, which stay pale). The result in dark mode
+     was a gradient running from near-black to pale blue with unreadable label text.
+     Light values below are byte-identical to the literals they replaced. */
+  --primary-from-rgb: 224 242 254;
+  --primary-from-hover-rgb: 229 248 255;
+  --primary-mid-rgb: 106 193 229;
+  --primary-to-rgb: 54 122 178;
+  --primary-edge-rgb: 54 122 178;
+  /* The dark end of the iCE Crystallize button. It previously used --ink-abyss,
+     which is an *ink* channel and therefore inverts to near-white in dark mode —
+     under light label text that made the button unreadable. This stays dark in
+     both themes because the button is dark by design, not by theme. */
+  --crystal-deep-rgb: 15 23 42;
+
 }
 
 /* ---------------------------------------------------------------------------
@@ -265,6 +281,14 @@
 
     --wordmark-ink-rgb: 214 233 250;
     --wordmark-ink-soft-rgb: 150 196 226;
+  /* Deep enough that --highlight (198 220 246) clears 4.5:1 on every stop:
+     from 8.40:1, mid 4.96:1, to 7.07:1. */
+  --primary-from-rgb: 16 58 92;
+  --primary-from-hover-rgb: 22 72 112;
+  --primary-mid-rgb: 28 94 138;
+  --primary-to-rgb: 18 70 108;
+  --primary-edge-rgb: 96 168 208;
+  --crystal-deep-rgb: 10 17 30;
     --text-success-rgb: 118 214 178;
     --success-rgb: 96 200 162;
     --aurora-deep-rgb: 92 198 166;
@@ -354,6 +378,14 @@
 
   --wordmark-ink-rgb: 214 233 250;
   --wordmark-ink-soft-rgb: 150 196 226;
+  /* Deep enough that --highlight (198 220 246) clears 4.5:1 on every stop:
+     from 8.40:1, mid 4.96:1, to 7.07:1. */
+  --primary-from-rgb: 16 58 92;
+  --primary-from-hover-rgb: 22 72 112;
+  --primary-mid-rgb: 28 94 138;
+  --primary-to-rgb: 18 70 108;
+  --primary-edge-rgb: 96 168 208;
+  --crystal-deep-rgb: 10 17 30;
   --text-success-rgb: 118 214 178;
   --success-rgb: 96 200 162;
   --aurora-deep-rgb: 92 198 166;
@@ -484,12 +516,44 @@ textarea {
 
 button {
   cursor: pointer;
+  /* Transitioned here rather than per-component so every control reacts, including
+     the many buttons that carry no class of their own. */
+  transition:
+    transform 120ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
+}
+
+/* Baseline press feedback for every button. Component rules that define their own
+   :active still win; this only covers the ones that previously did nothing at all. */
+button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+/* Keyboard focus. There was exactly one focus-visible rule for buttons in the whole
+   stylesheet, so tabbing through the app was almost entirely invisible. */
+button:focus-visible {
+  outline: 2px solid rgb(var(--accent-strong-rgb));
+  outline-offset: 2px;
+  border-radius: 10px;
 }
 
 button:disabled {
   cursor: not-allowed;
   opacity: 0.44;
   filter: grayscale(0.55) saturate(0.68);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: none;
+  }
+
+  button:not(:disabled):active {
+    transform: none;
+  }
 }
 
 .aether-shell {
@@ -1023,10 +1087,15 @@ button {
 .semantic-trail-form button,
 .new-collection-button,
 .save-page-button {
-  border-color: rgb(var(--azure-rgb) / 0.34);
+  border-color: rgb(var(--primary-edge-rgb) / 0.34);
   background:
     linear-gradient(180deg, rgb(var(--surface-rgb) / 0.24), transparent 44%),
-    linear-gradient(145deg, rgb(var(--surface-sky-rgb)), rgb(var(--accent-light-rgb)) 52%, rgb(var(--azure-rgb)));
+    linear-gradient(
+      145deg,
+      rgb(var(--primary-from-rgb)),
+      rgb(var(--primary-mid-rgb)) 52%,
+      rgb(var(--primary-to-rgb))
+    );
   color: rgb(var(--highlight-rgb));
   box-shadow:
     inset 0 1px 0 rgb(var(--highlight-rgb) / 0.5),
@@ -1044,14 +1113,33 @@ button {
 .semantic-trail-form button:hover,
 .new-collection-button:hover,
 .save-page-button:hover {
-  border-color: rgb(var(--azure-rgb) / 0.42);
+  border-color: rgb(var(--primary-edge-rgb) / 0.42);
   background:
     linear-gradient(180deg, rgb(var(--surface-rgb) / 0.32), transparent 46%),
-    linear-gradient(145deg, rgb(var(--surface-tint-cool-rgb)), rgb(var(--accent-light-rgb)) 52%, rgb(var(--azure-rgb)));
+    linear-gradient(
+      145deg,
+      rgb(var(--primary-from-hover-rgb)),
+      rgb(var(--primary-mid-rgb)) 52%,
+      rgb(var(--primary-to-rgb))
+    );
   box-shadow:
     inset 0 1px 0 rgb(var(--highlight-rgb) / 0.58),
     inset 0 -1px 0 rgb(var(--ocean-deep-rgb) / 0.16),
-    0 11px 22px rgb(var(--azure-rgb) / 0.18);
+    0 11px 22px rgb(var(--primary-edge-rgb) / 0.18);
+}
+
+/* Press feedback. Only 5 :active rules existed across 11.7k lines of CSS, so most
+   controls felt inert on click regardless of theme. */
+.address-bar button:active,
+.start-search button:active,
+.chat-form button:active,
+.semantic-trail-form button:active,
+.new-collection-button:active,
+.save-page-button:active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 1px 3px rgb(var(--depth-rgb) / 0.28),
+    0 3px 8px rgb(var(--primary-edge-rgb) / 0.16);
 }
 
 .save-page-button {

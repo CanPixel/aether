@@ -242,7 +242,7 @@
   white-space: nowrap;
 
   color: rgb(var(--highlight-rgb));
-  background: linear-gradient(135deg, rgb(var(--ink-abyss-rgb)), rgb(var(--marine-rgb)) 58%, rgb(var(--teal-deep-rgb)));
+  background: linear-gradient(135deg, rgb(var(--crystal-deep-rgb)), rgb(var(--marine-rgb)) 58%, rgb(var(--teal-deep-rgb)));
   box-shadow:
     0 16px 34px rgb(var(--depth-rgb) / 0.24),
     0 1px 0 rgb(var(--highlight-rgb) / 0.28) inset;
@@ -257,7 +257,7 @@
 }
 
 .crystallizer-search button:hover {
-  background: linear-gradient(135deg, rgb(var(--ink-abyss-rgb)), rgb(var(--marine-rgb)) 42%, rgb(var(--teal-deep-rgb)));
+  background: linear-gradient(135deg, rgb(var(--crystal-deep-rgb)), rgb(var(--marine-rgb)) 42%, rgb(var(--teal-deep-rgb)));
   box-shadow:
     0 20px 42px rgb(var(--depth-rgb) / 0.28),
     0 1px 0 rgb(var(--highlight-rgb) / 0.38) inset;
