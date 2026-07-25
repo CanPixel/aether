@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useRef, useState, type RefObject, type WheelEvent
 import {
   ChatResult,
   CollectionSummary,
+  ConversationTurn,
   SearchResult,
   SemanticTrailItem,
   SemanticTrailResult,
@@ -19,6 +20,8 @@ type IntelligencePanelProps = {
   chatBlocked: boolean
   // True when only the embedding model is installed: Ask returns passages, not prose.
   chatIsExtractive: boolean
+  // Persisted turns for the active thread, oldest first.
+  chatThread: ConversationTurn[]
   chatPrompt: string
   askCollectionId: string
   askCurrentPageOnly: boolean
@@ -51,6 +54,7 @@ type IntelligencePanelProps = {
   onAskCurrentPageOnlyChange: (value: boolean) => void
   onAskIncludeCurrentPageChange: (value: boolean) => void
   onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>
+  onClearHistory: () => void
   onOpenSemanticTrailItem: (item: SemanticTrailItem) => Promise<void>
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
 }
@@ -64,6 +68,7 @@ export function IntelligencePanel({
   busy,
   chatBlocked,
   chatIsExtractive,
+  chatThread,
   chatPrompt,
   askCollectionId,
   askCurrentPageOnly,
@@ -96,6 +101,7 @@ export function IntelligencePanel({
   onAskCurrentPageOnlyChange,
   onAskIncludeCurrentPageChange,
   onOpenCitation,
+  onClearHistory,
   onOpenSemanticTrailItem,
   onUpdateModels
 }: IntelligencePanelProps): React.JSX.Element {
@@ -125,6 +131,13 @@ export function IntelligencePanel({
       ? !semanticTrailResult.root.url && semanticTrailResult.query.trim() === normalizedTrailQuery
       : Boolean(semanticTrailResult.root.url))
   )
+  // The newest stored turn and chatResult are the same exchange; drop it here so the
+  // live answer card is not duplicated above itself.
+  const priorTurns =
+    chatResult && chatThread.length > 0 &&
+    chatThread[chatThread.length - 1].answer === chatResult.answer
+      ? chatThread.slice(0, -1)
+      : chatThread
   const footerStatus = busy ?? notice
   /*   const trailBlockReason = dashboardOpen || !canUseCurrentPage
     ? 'Open a web page first'
@@ -343,6 +356,33 @@ export function IntelligencePanel({
             </form>
           </div>
         </section>
+
+        {/* Earlier turns in this thread. Rendered above the live answer so the panel
+            reads top-to-bottom as a conversation. */}
+        {priorTurns.length > 0 && (
+          <section className="panel-section mode-section thread-section">
+            <div className="section-heading">
+              <h2>Earlier</h2>
+              <button className="thread-clear-button" onClick={onClearHistory} type="button">
+                Clear
+              </button>
+            </div>
+            {priorTurns.map((turn) => (
+              <article className="thread-turn" key={turn.id}>
+                <p className="thread-turn-prompt">{turn.prompt}</p>
+                <AnswerCard
+                  result={{
+                    answer: turn.answer,
+                    model: turn.model,
+                    citations: turn.citations,
+                    metrics: turn.metrics
+                  }}
+                  onOpenCitation={onOpenCitation}
+                />
+              </article>
+            ))}
+          </section>
+        )}
 
         {busy === 'Asking ÆTHER' &&
           (streamingAnswer ? (

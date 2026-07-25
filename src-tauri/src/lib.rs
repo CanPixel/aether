@@ -41,6 +41,17 @@ const CHUNKS_TABLE: &str = "chunks";
 const BACKUP_SUFFIX: &str = ".bak";
 const TEMP_WRITE_SUFFIX: &str = ".tmp";
 const LIBRARY_EXPORT_DIR: &str = "aether-backups";
+// Thread key for asks scoped to the open page rather than a hub.
+const CURRENT_PAGE_THREAD_KEY: &str = "current-page";
+// Turns kept per thread on disk. Enough to reread a session, bounded so the store
+// cannot grow without limit.
+const MAX_THREAD_TURNS: usize = 40;
+// Prior turns replayed into the prompt. Each one costs context that citations also
+// need, so this stays small deliberately.
+const PROMPT_HISTORY_TURNS: usize = 3;
+// Answers from earlier turns are summarised into the prompt, not replayed whole; a
+// long previous answer would otherwise crowd out the retrieved sources.
+const PROMPT_HISTORY_ANSWER_CHARS: usize = 480;
 #[cfg(desktop)]
 const SIDEBAR_WIDTH: f64 = 76.0;
 #[cfg(desktop)]
@@ -87,7 +98,10 @@ const AETHER_EMBED_BATCH_ENV: &str = "AETHER_EMBED_BATCH";
 const AETHER_EMBED_BATCH_TOKENS_ENV: &str = "AETHER_EMBED_BATCH_TOKENS";
 const AETHER_RELEASES_API_URL: &str =
     "https://api.github.com/repos/CanPixel/aether/releases/latest";
-const DEFAULT_CHAT_CONTEXT_TOKENS: u32 = 6144;
+// 8 citations of ~550 tokens plus a 900-token answer already filled the old 6144
+// window; replaying prior turns needs the extra headroom. Mobile keeps its smaller
+// window (see chat_context_tokens) because the KV cache there is the binding limit.
+const DEFAULT_CHAT_CONTEXT_TOKENS: u32 = 8192;
 const DEFAULT_CHAT_BATCH_TOKENS: usize = 2048;
 const DEFAULT_EMBEDDING_CONTEXT_TOKENS: u32 = 2048;
 const DEFAULT_EMBEDDING_BATCH_SIZE: usize = 8;
@@ -288,6 +302,7 @@ struct DataPaths {
     library_path: PathBuf,
     settings_path: PathBuf,
     icebergs_path: PathBuf,
+    conversations_path: PathBuf,
     air_exports_path: PathBuf,
     chunks_path: PathBuf,
     models_path: PathBuf,
@@ -1080,6 +1095,38 @@ struct PartialUpdateSettings {
     auto_check: Option<bool>,
 }
 
+// One completed exchange. Stored per thread so a research session survives quitting
+// the app, which is the whole point of keeping answers at all.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConversationTurn {
+    id: String,
+    prompt: String,
+    answer: String,
+    model: String,
+    asked_at: String,
+    citations: Vec<SearchResult>,
+    metrics: ChatMetrics,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConversationData {
+    version: u8,
+    // Keyed by hub id, or CURRENT_PAGE_THREAD_KEY for page-only asks.
+    #[serde(default)]
+    threads: HashMap<String, Vec<ConversationTurn>>,
+}
+
+impl Default for ConversationData {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            threads: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct LibraryExportResult {
@@ -1389,6 +1436,9 @@ impl Backend {
                 library_path: app_data_dir.join("aether-library").join("library.json"),
                 settings_path: app_data_dir.join("aether-settings").join("settings.json"),
                 icebergs_path: app_data_dir.join("aether-icebergs").join("icebergs.json"),
+                conversations_path: app_data_dir
+                    .join("aether-conversations")
+                    .join("conversations.json"),
                 air_exports_path: app_data_dir.join("aether-air"),
                 exports_path: app_data_dir.join(LIBRARY_EXPORT_DIR),
                 models_path,
@@ -2945,6 +2995,8 @@ pub fn run() {
             aether_air_reveal,
             aether_chat_ask,
             aether_chat_cancel,
+            aether_chat_history,
+            aether_chat_clear_history,
             aether_crystallizer_generate,
             aether_crystallizer_list_saved,
             aether_crystallizer_get_saved,
@@ -4101,7 +4153,59 @@ async fn aether_chat_ask(
         .into_iter()
         .take(chat_citation_limit())
         .collect::<Vec<_>>();
-    local_chat(&state, &settings, &prompt, citations, Some(stream)).await
+
+    // Only the most recent turns are replayed; older ones stay on disk for reading but
+    // would otherwise crowd the retrieved sources out of the context window.
+    let thread = conversation_thread(&state.paths, input.collection_id.as_deref()).await;
+    let history = thread
+        .iter()
+        .rev()
+        .take(PROMPT_HISTORY_TURNS)
+        .rev()
+        .cloned()
+        .collect::<Vec<_>>();
+
+    let result = local_chat(&state, &settings, &prompt, citations, &history, Some(stream)).await?;
+
+    // A failed write must not discard the answer the user is already reading.
+    if let Err(error) = append_conversation_turn(
+        &state.paths,
+        input.collection_id.as_deref(),
+        ConversationTurn {
+            id: uuid(),
+            prompt: prompt.clone(),
+            answer: result.answer.clone(),
+            model: result.model.clone(),
+            asked_at: now(),
+            citations: result.citations.clone(),
+            metrics: result.metrics.clone(),
+        },
+    )
+    .await
+    {
+        eprintln!("aether: could not save conversation turn: {error}");
+    }
+
+    Ok(result)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+async fn aether_chat_history(
+    state: State<'_, Backend>,
+    collection_id: Option<String>,
+) -> Cmd<Vec<ConversationTurn>> {
+    Ok(conversation_thread(&state.paths, collection_id.as_deref()).await)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+async fn aether_chat_clear_history(
+    state: State<'_, Backend>,
+    collection_id: Option<String>,
+) -> Cmd<()> {
+    let key = conversation_thread_key(collection_id.as_deref());
+    let mut data = load_conversations(&state.paths.conversations_path).await?;
+    data.threads.remove(&key);
+    save_json(&state.paths.conversations_path, &data).await
 }
 
 #[tauri::command]
@@ -4402,12 +4506,13 @@ async fn aether_system_export_library(
     // chunks.json holds only metadata; without the binary sidecar beside it the
     // export would restore a library whose sources cannot be searched.
     let chunks_vec_path = vector_data_path(&paths.chunks_path);
-    let sources: [(&PathBuf, &str); 5] = [
+    let sources: [(&PathBuf, &str); 6] = [
         (&paths.library_path, "library.json"),
         (&paths.chunks_path, "chunks.json"),
         (&chunks_vec_path, "chunks.vec"),
         (&paths.settings_path, "settings.json"),
         (&paths.icebergs_path, "icebergs.json"),
+        (&paths.conversations_path, "conversations.json"),
     ];
 
     let mut files = Vec::new();
@@ -5648,7 +5753,7 @@ async fn air_synthesize_sections(
         seed_answer.unwrap_or("None"),
         ice_map.unwrap_or("None")
     );
-    let result = local_chat(state, &settings, &prompt, citations, None).await?;
+    let result = local_chat(state, &settings, &prompt, citations, &[], None).await?;
     Ok((
         result.model,
         normalize_model_markdown_citations(&result.answer, sources.len()),
@@ -6471,6 +6576,43 @@ async fn load_icebergs(path: &Path) -> Cmd<IcebergData> {
     read_json_or_default(path).await
 }
 
+async fn load_conversations(path: &Path) -> Cmd<ConversationData> {
+    read_json_or_default(path).await
+}
+
+fn conversation_thread_key(collection_id: Option<&str>) -> String {
+    collection_id
+        .filter(|id| !id.is_empty())
+        .unwrap_or(CURRENT_PAGE_THREAD_KEY)
+        .to_string()
+}
+
+async fn conversation_thread(paths: &DataPaths, collection_id: Option<&str>) -> Vec<ConversationTurn> {
+    let key = conversation_thread_key(collection_id);
+    load_conversations(&paths.conversations_path)
+        .await
+        .unwrap_or_default()
+        .threads
+        .remove(&key)
+        .unwrap_or_default()
+}
+
+async fn append_conversation_turn(
+    paths: &DataPaths,
+    collection_id: Option<&str>,
+    turn: ConversationTurn,
+) -> Cmd<()> {
+    let key = conversation_thread_key(collection_id);
+    let mut data = load_conversations(&paths.conversations_path).await?;
+    let thread = data.threads.entry(key).or_default();
+    thread.push(turn);
+    if thread.len() > MAX_THREAD_TURNS {
+        let overflow = thread.len() - MAX_THREAD_TURNS;
+        thread.drain(0..overflow);
+    }
+    save_json(&paths.conversations_path, &data).await
+}
+
 async fn load_vectors(path: &Path) -> Cmd<VectorStoreData> {
     // A v1 store carries its vectors inline, so it must be detected before the v2
     // deserializer silently drops them (`vector` is #[serde(skip)] there).
@@ -6901,6 +7043,8 @@ async fn local_chat(
     settings: &UserSettings,
     prompt: &str,
     citations: Vec<SearchResult>,
+    // Prior turns for follow-up questions. Empty for one-shot callers such as AiR.
+    history: &[ConversationTurn],
     stream: Option<ChatStreamEmitter>,
 ) -> Cmd<ChatResult> {
     let started_at = Instant::now();
@@ -6923,7 +7067,7 @@ async fn local_chat(
     if let Some(stream) = &stream {
         stream.citations(&citations);
     }
-    let messages = build_chat_messages(prompt, &citations);
+    let messages = build_chat_messages(prompt, &citations, history);
     let runtime = Arc::clone(&state.native_runtime);
     let cancel = Arc::clone(&state.generation_cancelled);
     let model_label = model_label(&model_path);
@@ -8279,7 +8423,11 @@ fn chat_snippet_char_limit() -> usize {
     }
 }
 
-fn build_chat_messages(prompt: &str, citations: &[SearchResult]) -> Vec<ChatPromptMessage> {
+fn build_chat_messages(
+    prompt: &str,
+    citations: &[SearchResult],
+    history: &[ConversationTurn],
+) -> Vec<ChatPromptMessage> {
     let snippet_limit = chat_snippet_char_limit();
     let context_block = citations
         .iter()
@@ -8312,19 +8460,48 @@ fn build_chat_messages(prompt: &str, citations: &[SearchResult]) -> Vec<ChatProm
     } else {
         ""
     };
-    vec![
-        ChatPromptMessage {
-            role: "system",
-            content: format!(
-                "You are Æther, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources only with Æther source numbers [1] through [{}]. Do not copy bracketed reference numbers from webpage text.{brevity}",
-                citations.len().max(1)
-            ),
-        },
-        ChatPromptMessage {
+    let mut messages = vec![ChatPromptMessage {
+        role: "system",
+        content: format!(
+            "You are Æther, a private local research assistant. Answer only from the supplied local collection context. If the context is insufficient, say what is missing. Cite sources only with Æther source numbers [1] through [{}]. Do not copy bracketed reference numbers from webpage text.{brevity}",
+            citations.len().max(1)
+        ),
+    }];
+
+    // Prior turns come first so "what about that?" resolves, but each answer is
+    // condensed: the citations for *this* question must stay the dominant context.
+    for turn in history {
+        messages.push(ChatPromptMessage {
             role: "user",
-            content: format!("Local collection context:\n{context}\n\nQuestion: {prompt}"),
-        },
-    ]
+            content: turn.prompt.clone(),
+        });
+        messages.push(ChatPromptMessage {
+            role: "assistant",
+            content: condense_history_answer(&turn.answer),
+        });
+    }
+
+    messages.push(ChatPromptMessage {
+        role: "user",
+        content: format!("Local collection context:\n{context}\n\nQuestion: {prompt}"),
+    });
+    messages
+}
+
+// Strips citation markers and clips length. Replaying markers from an old answer
+// would let the model reuse source numbers that no longer refer to anything.
+fn condense_history_answer(answer: &str) -> String {
+    let cleaned = strip_numeric_bracket_markers(answer);
+    let trimmed = cleaned.trim();
+    if trimmed.chars().count() <= PROMPT_HISTORY_ANSWER_CHARS {
+        return trimmed.to_string();
+    }
+    let mut condensed = trimmed
+        .chars()
+        .take(PROMPT_HISTORY_ANSWER_CHARS)
+        .collect::<String>();
+    condensed.push('…');
+    condensed
 }
 
 fn render_model_chat_prompt(
@@ -9649,6 +9826,109 @@ mod tests {
         assert_eq!(marker_of(&seeded), None);
         assert!(path.exists(), "first read should create the store");
         assert_eq!(corrupt_count(&dir.0), 0);
+    }
+
+    fn turn(prompt: &str, answer: &str) -> ConversationTurn {
+        ConversationTurn {
+            id: uuid(),
+            prompt: prompt.to_string(),
+            answer: answer.to_string(),
+            model: "test".to_string(),
+            asked_at: "2026-07-01T00:00:00Z".to_string(),
+            citations: Vec::new(),
+            metrics: ChatMetrics {
+                generated_tokens: 0,
+                tokens_per_second: 0.0,
+                elapsed_seconds: 0.0,
+                chunks: 0,
+            },
+        }
+    }
+
+    // Follow-ups only work if prior turns actually reach the model, and the current
+    // question must still come last so it is what gets answered.
+    #[test]
+    fn chat_messages_replay_history_before_the_current_question() {
+        let history = vec![turn("Who was Augustus?", "The first Roman emperor.")];
+        let citations = vec![search_result("1", "https://example.com/a", "context text")];
+
+        let messages = build_chat_messages("What about Tiberius?", &citations, &history);
+
+        let roles = messages.iter().map(|m| m.role).collect::<Vec<_>>();
+        assert_eq!(roles, vec!["system", "user", "assistant", "user"]);
+        assert_eq!(messages[1].content, "Who was Augustus?");
+        assert_eq!(messages[2].content, "The first Roman emperor.");
+        assert!(messages[3].content.contains("What about Tiberius?"));
+        assert!(messages[3].content.contains("context text"));
+    }
+
+    #[test]
+    fn chat_messages_without_history_match_the_single_shot_shape() {
+        let messages = build_chat_messages("Question?", &[], &[]);
+
+        assert_eq!(
+            messages.iter().map(|m| m.role).collect::<Vec<_>>(),
+            vec!["system", "user"]
+        );
+        assert!(messages[1].content.contains("No stored context was retrieved."));
+    }
+
+    // Replaying old citation markers would let the model reuse source numbers that no
+    // longer point at anything in the current citation list.
+    #[test]
+    fn history_answers_are_stripped_of_stale_citation_markers_and_clipped() {
+        let condensed = condense_history_answer("Augustus won [1] and later reformed Rome [2].");
+        assert!(!condensed.contains("[1]"));
+        assert!(!condensed.contains("[2]"));
+        assert!(condensed.contains("Augustus won"));
+
+        let long = "x".repeat(PROMPT_HISTORY_ANSWER_CHARS + 200);
+        let clipped = condense_history_answer(&long);
+        assert_eq!(clipped.chars().count(), PROMPT_HISTORY_ANSWER_CHARS + 1);
+        assert!(clipped.ends_with('…'));
+    }
+
+    #[test]
+    fn conversation_thread_key_separates_hub_and_page_threads() {
+        assert_eq!(conversation_thread_key(Some("hub-1")), "hub-1");
+        assert_eq!(conversation_thread_key(None), CURRENT_PAGE_THREAD_KEY);
+        // An empty id is a page-only ask, not a hub called "".
+        assert_eq!(conversation_thread_key(Some("")), CURRENT_PAGE_THREAD_KEY);
+    }
+
+    #[test]
+    fn conversation_threads_persist_and_stay_bounded() {
+        let dir = TempDir::new();
+        let path = dir.path("conversations.json");
+        let paths = DataPaths {
+            db_path: dir.0.clone(),
+            library_path: dir.path("library.json"),
+            settings_path: dir.path("settings.json"),
+            icebergs_path: dir.path("icebergs.json"),
+            conversations_path: path.clone(),
+            air_exports_path: dir.0.clone(),
+            chunks_path: dir.path("chunks.json"),
+            models_path: dir.0.clone(),
+            exports_path: dir.0.clone(),
+        };
+
+        for index in 0..MAX_THREAD_TURNS + 5 {
+            block_on(append_conversation_turn(
+                &paths,
+                Some("hub-1"),
+                turn(&format!("q{index}"), &format!("a{index}")),
+            ))
+            .expect("append");
+        }
+
+        let thread = block_on(conversation_thread(&paths, Some("hub-1")));
+        assert_eq!(thread.len(), MAX_THREAD_TURNS, "old turns should be trimmed");
+        // The newest turns are the ones kept.
+        assert_eq!(thread.last().unwrap().prompt, format!("q{}", MAX_THREAD_TURNS + 4));
+        assert_eq!(thread.first().unwrap().prompt, "q5");
+
+        // Threads must not leak into each other.
+        assert!(block_on(conversation_thread(&paths, None)).is_empty());
     }
 
     // With no chat model the answer must be visibly a passage list, and must not claim

@@ -686,6 +686,60 @@
   gap: 8px;
 }
 
+/* Earlier turns in the active thread. Visually recessed so the newest answer stays
+   the focus while previous exchanges remain readable above it. */
+.thread-section {
+  display: grid;
+  gap: 10px;
+}
+
+.thread-turn {
+  display: grid;
+  gap: 6px;
+  padding-left: 9px;
+  border-left: 2px solid rgba(75, 163, 206, 0.28);
+}
+
+.thread-turn-prompt {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: rgba(30, 79, 112, 0.92);
+}
+
+/* Prior answers sit back a step: same card, lower emphasis. */
+.thread-turn .answer-card {
+  opacity: 0.86;
+}
+
+.thread-turn:hover .answer-card {
+  opacity: 1;
+}
+
+.thread-clear-button {
+  padding: 3px 10px;
+  border: 1px solid rgba(75, 163, 206, 0.32);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 680;
+  color: rgba(30, 79, 112, 0.86);
+  cursor: pointer;
+}
+
+.thread-clear-button:hover {
+  border-color: rgba(75, 163, 206, 0.6);
+  background: rgba(255, 255, 255, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thread-turn .answer-card {
+    transition: none;
+  }
+}
+
 /* Shown when only the embedding model is installed, so a list of passages is not
    read as a failed answer. */
 .chat-extractive-note {

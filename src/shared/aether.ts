@@ -250,6 +250,17 @@ export interface ChatMetrics {
   chunks: number
 }
 
+/** One completed exchange, persisted per hub (or per current-page thread). */
+export interface ConversationTurn {
+  id: string
+  prompt: string
+  answer: string
+  model: string
+  askedAt: string
+  citations: SearchResult[]
+  metrics: ChatMetrics
+}
+
 export type AirLensKind = 'topic' | 'flow' | 'hub' | 'answer' | 'iceberg'
 
 export interface AirDossierInput {
@@ -526,6 +537,9 @@ export interface AetherApi {
       requestId?: string
     }): Promise<ChatResult>
     cancel(): Promise<void>
+    // Omit collectionId for the current-page thread.
+    history(collectionId?: string): Promise<ConversationTurn[]>
+    clearHistory(collectionId?: string): Promise<void>
   }
   crystallizer: {
     generate(input: { keyword: string }): Promise<IcebergResult>

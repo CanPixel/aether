@@ -22,6 +22,7 @@ import {
   FlowGraphResult,
   HubShortcutSummary,
   IcebergItem,
+  ConversationTurn,
   IcebergResult,
   LibraryExportResult,
   LibrarySearchHit,
@@ -435,6 +436,7 @@ function App(): React.JSX.Element {
   const appliedAskContextRef = useRef<string | null>(null)
   const [askPanelOpen, setAskPanelOpen] = useState(true)
   const [chatResult, setChatResult] = useState<ChatResult | null>(null)
+  const [chatThread, setChatThread] = useState<ConversationTurn[]>([])
   const [streamingAnswer, setStreamingAnswer] = useState('')
   const [streamingCitations, setStreamingCitations] = useState<SearchResult[]>([])
   const [semanticTrailQuery, setSemanticTrailQuery] = useState('')
@@ -743,6 +745,41 @@ function App(): React.JSX.Element {
   )
 
   const clearSearch = useCallback((): void => setSearchResult(null), [])
+
+  // Thread key mirrors the backend: the selected hub, or the current-page thread when
+  // the ask is not scoped to a hub.
+  const activeThreadCollectionId = useMemo(
+    () => (askCurrentPageOnly ? undefined : askCollectionId || undefined),
+    [askCollectionId, askCurrentPageOnly]
+  )
+
+  const clearChatHistory = useCallback((): void => {
+    void (async () => {
+      try {
+        await window.aether.chat.clearHistory(activeThreadCollectionId)
+        setChatThread([])
+        setChatResult(null)
+      } catch (error) {
+        setNotice(getErrorMessage(error))
+      }
+    })()
+  }, [activeThreadCollectionId])
+
+  // Switching hub switches thread, so a stored session reappears where it was left.
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const thread = await window.aether.chat.history(activeThreadCollectionId)
+        if (!cancelled) setChatThread(thread)
+      } catch {
+        if (!cancelled) setChatThread([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeThreadCollectionId])
 
   const captureLink = useCallback(
     async (url: string, collectionId: string): Promise<void> => {
@@ -1492,6 +1529,8 @@ function App(): React.JSX.Element {
 
         setChatResult(result)
         setAskPanelOpen(false)
+        // The backend persisted this turn; reload so prior turns render as a thread.
+        setChatThread(await window.aether.chat.history(collectionId))
       } finally {
         askRequestIdRef.current = null
         if (streamFlushRef.current !== null) {
@@ -2484,6 +2523,8 @@ function App(): React.JSX.Element {
         busy={busy}
         chatBlocked={chatBlocked}
         chatIsExtractive={chatIsExtractive}
+        chatThread={chatThread}
+        onClearHistory={clearChatHistory}
         chatPrompt={chatPrompt}
         askCollectionId={askCollectionId}
         askCurrentPageOnly={askCurrentPageOnly}

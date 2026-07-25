@@ -274,6 +274,7 @@ Current storage paths:
 <appData>/aether-realms/chunks.vec
 <appData>/aether-settings/settings.json
 <appData>/aether-icebergs/icebergs.json
+<appData>/aether-conversations/conversations.json
 <appData>/aether-backups/aether-export-<timestamp>/
 ./aether-models/
 ```
@@ -315,6 +316,11 @@ dead slots behind; once they exceed half the file, the store compacts and renumb
 
 A v1 `chunks.json` (vectors inline) is migrated automatically on first load, and the
 original file is kept as `chunks.json.bak`.
+
+`conversations.json` stores the AiON thread per knowledge hub (plus one thread for
+current-page-only asks): prompt, answer, model, citations, and metrics for each turn.
+The most recent turns are replayed into the prompt so follow-up questions work, and
+each thread keeps its last 40 turns.
 
 `settings.json` stores app preferences such as the default search engine, Developer Mode, and selected local model paths.
 

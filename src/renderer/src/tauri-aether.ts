@@ -19,6 +19,7 @@ import {
   ChatResult,
   ChatStreamEvent,
   CollectionSummary,
+  ConversationTurn,
   FindResult,
   FlowGraphResult,
   HubShortcutSummary,
@@ -112,7 +113,10 @@ if (isTauri) {
     },
     chat: {
       ask: (input) => call<ChatResult>('aether_chat_ask', { input }),
-      cancel: () => call<void>('aether_chat_cancel')
+      cancel: () => call<void>('aether_chat_cancel'),
+      history: (collectionId) =>
+        call<ConversationTurn[]>('aether_chat_history', { collectionId }),
+      clearHistory: (collectionId) => call<void>('aether_chat_clear_history', { collectionId })
     },
     crystallizer: {
       generate: (input) => call<IcebergResult>('aether_crystallizer_generate', { input }),
