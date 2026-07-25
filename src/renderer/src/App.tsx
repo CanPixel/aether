@@ -1139,6 +1139,30 @@ function App(): React.JSX.Element {
     return unsubscribe
   }, [showToast])
 
+  // Webview downloads are otherwise invisible: the file lands in ~/Downloads with no
+  // sign anything happened.
+  useEffect(() => {
+    const unsubscribe = window.aether.events.onDownload((progress) => {
+      if (progress.status === 'started') {
+        showToast({ message: `Downloading ${progress.filename}…`, tone: 'info', durationMs: 4000 })
+        return
+      }
+      if (progress.status === 'failed') {
+        showToast({ message: `Download failed: ${progress.filename}`, tone: 'error' })
+        return
+      }
+      // Naming the folder matters: without it the user knows a file arrived but not
+      // where, which is barely better than silence.
+      const folder = progress.path?.replace(/[/\\][^/\\]+$/, '')
+      showToast({
+        message: folder ? `Saved ${progress.filename} to ${folder}` : `Saved ${progress.filename}`,
+        tone: 'success'
+      })
+    })
+
+    return unsubscribe
+  }, [showToast])
+
   useEffect(() => {
     const unsubscribe = window.aether.events.onModelDownloadProgress((progress) => {
       setModelDownloadProgress((current) => upsertModelProgress(current, progress))

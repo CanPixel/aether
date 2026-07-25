@@ -20,6 +20,7 @@ import {
   ChatStreamEvent,
   CollectionSummary,
   ConversationTurn,
+  DownloadProgress,
   FindResult,
   FlowGraphResult,
   HubShortcutSummary,
@@ -181,6 +182,15 @@ if (isTauri) {
       },
       onChatStream: (listener: (event: ChatStreamEvent) => void) => {
         const unlisten = listen<ChatStreamEvent>('aether:chat-stream', (event) =>
+          listener(event.payload)
+        )
+
+        return () => {
+          void unlisten.then((dispose) => dispose())
+        }
+      },
+      onDownload: (listener: (progress: DownloadProgress) => void) => {
+        const unlisten = listen<DownloadProgress>('aether:download', (event) =>
           listener(event.payload)
         )
 

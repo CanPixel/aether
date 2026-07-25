@@ -275,6 +275,7 @@ Current storage paths:
 <appData>/aether-settings/settings.json
 <appData>/aether-icebergs/icebergs.json
 <appData>/aether-conversations/conversations.json
+<appData>/aether-session/session.json
 <appData>/aether-backups/aether-export-<timestamp>/
 ./aether-models/
 ```
@@ -321,6 +322,11 @@ original file is kept as `chunks.json.bak`.
 current-page-only asks): prompt, answer, model, citations, and metrics for each turn.
 The most recent turns are replayed into the prompt so follow-up questions work, and
 each thread keeps its last 40 turns.
+
+`session.json` stores the open browser tabs, the active tab, and the window size and
+position, so quitting no longer discards them. It is written after every tab change
+rather than at exit, because the app force-exits on quit (see the llama.cpp Metal note)
+and never reaches a shutdown hook.
 
 `settings.json` stores app preferences such as the default search engine, Developer Mode, and selected local model paths.
 

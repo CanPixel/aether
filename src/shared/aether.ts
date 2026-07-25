@@ -307,6 +307,14 @@ export interface AirRecentFile extends AirRenderResult {
   lens: string
 }
 
+/** Emitted while a webview download starts, completes, or fails. */
+export interface DownloadProgress {
+  status: 'started' | 'finished' | 'failed'
+  filename: string
+  path?: string
+  url: string
+}
+
 export interface ChatStreamEvent {
   requestId: string
   status?: string
@@ -578,6 +586,7 @@ export interface AetherApi {
     onCaptureProgress(listener: (progress: CaptureProgress) => void): () => void
     onModelDownloadProgress(listener: (progress: ModelDownloadProgress) => void): () => void
     onChatStream(listener: (event: ChatStreamEvent) => void): () => void
+    onDownload(listener: (progress: DownloadProgress) => void): () => void
     onShortcut(listener: (shortcut: AetherShortcutId) => void): () => void
     onFindRequested(listener: () => void): () => void
     onFindResult(listener: (result: FindResult) => void): () => void

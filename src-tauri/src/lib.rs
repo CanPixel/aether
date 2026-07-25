@@ -25,7 +25,7 @@ use std::{
 #[cfg(desktop)]
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
-    webview::{NewWindowResponse, PageLoadEvent},
+    webview::{DownloadEvent, NewWindowResponse, PageLoadEvent},
     LogicalPosition, LogicalSize, Position, Rect, Size, Webview, WebviewBuilder, WebviewUrl,
     Window, WindowEvent,
 };
@@ -83,6 +83,7 @@ const AETHER_CAPTURE_PAGE_MENU_ID: &str = "aether-capture-page";
 const AETHER_FIND_REQUESTED_EVENT: &str = "aether:find-requested";
 const AETHER_FIND_RESULT_EVENT: &str = "aether:find-result";
 const AETHER_CHAT_STREAM_EVENT: &str = "aether:chat-stream";
+const AETHER_DOWNLOAD_EVENT: &str = "aether:download";
 const AETHER_MODEL_DOWNLOAD_PROGRESS_EVENT: &str = "aether:model-download-progress";
 const AETHER_MODEL_DIR_ENV: &str = "AETHER_MODEL_DIR";
 const AETHER_CHAT_MODEL_ENV: &str = "AETHER_CHAT_MODEL";
@@ -223,6 +224,13 @@ struct Backend {
     native_runtime: Arc<Mutex<NativeModelRuntime>>,
     vectors: tokio::sync::RwLock<Option<VectorStoreData>>,
     generation_cancelled: Arc<AtomicBool>,
+    // Throttle for window geometry writes; resize/move fire continuously.
+    #[cfg(desktop)]
+    window_geometry_saved_at: Mutex<Option<Instant>>,
+    // Destination chosen at request time, keyed by URL. macOS omits the path in the
+    // Finished event, so without this the completion toast has nothing to reveal.
+    #[cfg(desktop)]
+    pending_downloads: Mutex<HashMap<String, PathBuf>>,
 }
 
 #[cfg(desktop)]
@@ -306,6 +314,7 @@ struct DataPaths {
     settings_path: PathBuf,
     icebergs_path: PathBuf,
     conversations_path: PathBuf,
+    session_path: PathBuf,
     air_exports_path: PathBuf,
     chunks_path: PathBuf,
     models_path: PathBuf,
@@ -1098,6 +1107,60 @@ struct PartialUpdateSettings {
     auto_check: Option<bool>,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadProgress {
+    // "started" | "finished" | "failed"
+    status: String,
+    filename: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    url: String,
+}
+
+// Restored on launch so quitting no longer discards every open tab. Only what is
+// needed to reopen is stored: per-tab history stays in the webview.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionTab {
+    id: String,
+    url: String,
+    #[serde(default)]
+    title: String,
+}
+
+#[derive(Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionWindow {
+    width: f64,
+    height: f64,
+    x: f64,
+    y: f64,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionData {
+    version: u8,
+    #[serde(default)]
+    tabs: Vec<SessionTab>,
+    #[serde(default)]
+    active_tab_id: String,
+    #[serde(default)]
+    window: Option<SessionWindow>,
+}
+
+impl Default for SessionData {
+    fn default() -> Self {
+        Self {
+            version: 1,
+            tabs: Vec::new(),
+            active_tab_id: String::new(),
+            window: None,
+        }
+    }
+}
+
 // One completed exchange. Stored per thread so a research session survives quitting
 // the app, which is the whole point of keeping answers at all.
 #[derive(Clone, Serialize, Deserialize)]
@@ -1442,6 +1505,7 @@ impl Backend {
                 conversations_path: app_data_dir
                     .join("aether-conversations")
                     .join("conversations.json"),
+                session_path: app_data_dir.join("aether-session").join("session.json"),
                 air_exports_path: app_data_dir.join("aether-air"),
                 exports_path: app_data_dir.join(LIBRARY_EXPORT_DIR),
                 models_path,
@@ -1457,6 +1521,10 @@ impl Backend {
             native_runtime: Arc::new(Mutex::new(NativeModelRuntime::default())),
             vectors: tokio::sync::RwLock::new(None),
             generation_cancelled: Arc::new(AtomicBool::new(false)),
+            #[cfg(desktop)]
+            window_geometry_saved_at: Mutex::new(None),
+            #[cfg(desktop)]
+            pending_downloads: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -1693,6 +1761,7 @@ fn create_native_webview(
     let app_for_load = app.clone();
     let app_for_title = app.clone();
     let app_for_new_window = app.clone();
+    let app_for_download = app.clone();
     let url = Url::parse(&tab.url).map_err(|error| error.to_string())?;
 
     let builder = WebviewBuilder::new(label, WebviewUrl::External(url))
@@ -1714,6 +1783,8 @@ fn create_native_webview(
             );
             let _ = emit_state(&app_for_load, &state);
             if payload.event() == PageLoadEvent::Finished {
+                // Records the settled URL and title, which is what a restore needs.
+                schedule_session_save(&app_for_load);
                 let _ = webview.eval(NATIVE_WEBVIEW_SCROLLBAR_SCRIPT);
                 read_native_webview_metadata(
                     &webview,
@@ -1731,6 +1802,69 @@ fn create_native_webview(
             let state = app_for_new_window.state::<Backend>();
             let _ = create_native_tab_from_url(&app_for_new_window, &state, url.as_str());
             NewWindowResponse::Deny
+        })
+        // Without this hook the webview silently drops downloads: clicking a PDF or
+        // zip link did nothing at all, with no error and no file.
+        .on_download(move |_webview, event| match event {
+            DownloadEvent::Requested { url, destination } => {
+                match resolve_download_destination(&app_for_download, &url) {
+                    Some(target) => {
+                        let filename = file_name_of(&target);
+                        app_for_download
+                            .state::<Backend>()
+                            .pending_downloads
+                            .lock()
+                            .map(|mut pending| {
+                                pending.insert(url.to_string(), target.clone());
+                            })
+                            .ok();
+                        *destination = target;
+                        emit_download_event(
+                            &app_for_download,
+                            "started",
+                            &filename,
+                            None,
+                            url.as_str(),
+                        );
+                        true
+                    }
+                    None => {
+                        eprintln!("aether: no writable downloads directory; refusing download");
+                        emit_download_event(
+                            &app_for_download,
+                            "failed",
+                            &file_name_from_url(&url),
+                            None,
+                            url.as_str(),
+                        );
+                        false
+                    }
+                }
+            }
+            DownloadEvent::Finished { url, path, success } => {
+                // macOS never reports the path here, so fall back to the destination
+                // recorded at request time.
+                let recorded = app_for_download
+                    .state::<Backend>()
+                    .pending_downloads
+                    .lock()
+                    .ok()
+                    .and_then(|mut pending| pending.remove(&url.to_string()));
+                let resolved = path.or(recorded);
+                let filename = resolved
+                    .as_deref()
+                    .map(file_name_of)
+                    .unwrap_or_else(|| file_name_from_url(&url));
+                emit_download_event(
+                    &app_for_download,
+                    if success { "finished" } else { "failed" },
+                    &filename,
+                    resolved.as_deref(),
+                    url.as_str(),
+                );
+                true
+            }
+            _ => true,
         });
 
     let webview = window
@@ -2951,16 +3085,46 @@ pub fn run() {
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir().expect("app data dir");
             app.manage(Backend::new(app_data_dir));
+
+            // Restore the previous session before anything reads tab state or
+            // prewarms a webview, so the restored active tab is the one warmed.
+            #[cfg(desktop)]
+            let restored_window = {
+                let app_handle = app.handle().clone();
+                let state = app_handle.state::<Backend>();
+                match tauri::async_runtime::block_on(load_session(&state.paths.session_path)) {
+                    Ok(session) => {
+                        restore_session_tabs(&state, &session);
+                        session.window
+                    }
+                    Err(error) => {
+                        eprintln!("aether: could not read session: {error}");
+                        None
+                    }
+                }
+            };
+
             #[cfg(desktop)]
             if let Some(window) = app.get_window("main") {
+                if let Some(geometry) = restored_window {
+                    apply_session_window(&window, geometry);
+                }
+
                 let app_handle = app.handle().clone();
                 window.on_window_event(move |event| {
-                    if matches!(
-                        event,
-                        WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. }
-                    ) {
-                        let state = app_handle.state::<Backend>();
-                        let _ = resize_native_webviews(&app_handle, &state);
+                    match event {
+                        WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                            let state = app_handle.state::<Backend>();
+                            let _ = resize_native_webviews(&app_handle, &state);
+                            schedule_window_geometry_save(&app_handle);
+                        }
+                        WindowEvent::Moved(_) => schedule_window_geometry_save(&app_handle),
+                        // force_exit() follows a close, so this is the last chance to
+                        // capture the final geometry the throttle may have skipped.
+                        WindowEvent::CloseRequested { .. } | WindowEvent::Destroyed => {
+                            save_window_geometry_now(&app_handle)
+                        }
+                        _ => {}
                     }
                 });
             }
@@ -3185,6 +3349,7 @@ async fn aether_tabs_create(
     }
     ensure_native_webview(&app, &state, &tab_id)?;
     emit_state(&app, &state)?;
+    schedule_session_save(&app);
     Ok(summary)
 }
 
@@ -3200,7 +3365,9 @@ fn aether_tabs_activate(app: AppHandle, state: State<Backend>, tab_id: String) -
         tabs.dashboard_open = false;
     }
     ensure_native_webview(&app, &state, &tab_id)?;
-    emit_state(&app, &state)
+    emit_state(&app, &state)?;
+    schedule_session_save(&app);
+    Ok(())
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -3226,7 +3393,9 @@ fn aether_tabs_close(app: AppHandle, state: State<Backend>, tab_id: String) -> C
     } else {
         sync_native_webview_visibility(&app, &state)?;
     }
-    emit_state(&app, &state)
+    emit_state(&app, &state)?;
+    schedule_session_save(&app);
+    Ok(())
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -3251,7 +3420,9 @@ async fn aether_tabs_navigate(
         target_url
     };
     navigate_native_webview(&app, &state, &tab_id, &target_url)?;
-    emit_state(&app, &state)
+    emit_state(&app, &state)?;
+    schedule_session_save(&app);
+    Ok(())
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -4539,13 +4710,14 @@ async fn aether_system_export_library(
     // chunks.json holds only metadata; without the binary sidecar beside it the
     // export would restore a library whose sources cannot be searched.
     let chunks_vec_path = vector_data_path(&paths.chunks_path);
-    let sources: [(&PathBuf, &str); 6] = [
+    let sources: [(&PathBuf, &str); 7] = [
         (&paths.library_path, "library.json"),
         (&paths.chunks_path, "chunks.json"),
         (&chunks_vec_path, "chunks.vec"),
         (&paths.settings_path, "settings.json"),
         (&paths.icebergs_path, "icebergs.json"),
         (&paths.conversations_path, "conversations.json"),
+        (&paths.session_path, "session.json"),
     ];
 
     let mut files = Vec::new();
@@ -6634,6 +6806,259 @@ async fn load_icebergs(path: &Path) -> Cmd<IcebergData> {
 
 async fn load_conversations(path: &Path) -> Cmd<ConversationData> {
     read_json_or_default(path).await
+}
+
+async fn load_session(path: &Path) -> Cmd<SessionData> {
+    read_json_or_default(path).await
+}
+
+// Snapshots the open tabs. Called after any tab mutation rather than at exit, because
+// force_exit() hard-kills the process on quit and never gives a shutdown hook a turn.
+async fn persist_session_tabs(state: &State<'_, Backend>) -> Cmd<()> {
+    let (tabs, active_tab_id) = {
+        let guard = lock_tabs(state)?;
+        let tabs = guard
+            .tabs
+            .iter()
+            // A tab parked on the internal start page has nothing to reopen.
+            .filter(|tab| tab.url != START_PAGE_URL && !tab.url.starts_with("aether://"))
+            .map(|tab| SessionTab {
+                id: tab.id.clone(),
+                url: tab.url.clone(),
+                title: tab.title.clone(),
+            })
+            .collect::<Vec<_>>();
+        (tabs, guard.active_tab_id.clone())
+    };
+
+    let mut session = load_session(&state.paths.session_path).await?;
+    session.tabs = tabs;
+    session.active_tab_id = active_tab_id;
+    save_json(&state.paths.session_path, &session).await
+}
+
+// Fire-and-forget wrapper for the sync command paths. A failed session write must
+// never make a tab action fail.
+fn schedule_session_save(app: &AppHandle) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<Backend>();
+        if let Err(error) = persist_session_tabs(&state).await {
+            eprintln!("aether: could not save session: {error}");
+        }
+    });
+}
+
+async fn persist_session_window(paths: &DataPaths, window: SessionWindow) -> Cmd<()> {
+    let mut session = load_session(&paths.session_path).await?;
+    session.window = Some(window);
+    save_json(&paths.session_path, &session).await
+}
+
+#[cfg(desktop)]
+fn file_name_of(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "download".to_string())
+}
+
+// Derives a safe filename from a URL. Path separators and control characters are
+// stripped so a crafted URL cannot write outside the downloads directory.
+#[cfg(desktop)]
+fn file_name_from_url(url: &Url) -> String {
+    let raw = url
+        .path_segments()
+        .and_then(|segments| segments.filter(|segment| !segment.is_empty()).next_back())
+        .unwrap_or("download");
+    let decoded = percent_decode_download_name(raw);
+    let cleaned = decoded
+        .chars()
+        .filter(|character| {
+            !character.is_control() && !matches!(character, '/' | '\\' | ':' | '\0')
+        })
+        .collect::<String>();
+    let trimmed = cleaned.trim().trim_start_matches('.').to_string();
+    if trimmed.is_empty() {
+        "download".to_string()
+    } else {
+        trimmed.chars().take(180).collect()
+    }
+}
+
+#[cfg(desktop)]
+fn percent_decode_download_name(raw: &str) -> String {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(&raw[index + 1..index + 3], 16) {
+                out.push(byte);
+                index += 3;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).to_string()
+}
+
+// Never overwrite an existing file: a second download of the same name becomes
+// "name (2).ext" the way a browser does.
+#[cfg(desktop)]
+fn resolve_download_destination(app: &AppHandle, url: &Url) -> Option<PathBuf> {
+    let dir = app
+        .path()
+        .download_dir()
+        .ok()
+        .or_else(|| app.path().home_dir().ok().map(|home| home.join("Downloads")))?;
+    if fs::create_dir_all(&dir).is_err() {
+        return None;
+    }
+
+    let name = file_name_from_url(url);
+    let candidate = dir.join(&name);
+    if !candidate.exists() {
+        return Some(candidate);
+    }
+
+    let path = Path::new(&name);
+    let stem = path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().to_string())
+        .unwrap_or_else(|| "download".to_string());
+    let extension = path
+        .extension()
+        .map(|extension| format!(".{}", extension.to_string_lossy()))
+        .unwrap_or_default();
+    for index in 2..1000 {
+        let candidate = dir.join(format!("{stem} ({index}){extension}"));
+        if !candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+#[cfg(desktop)]
+fn emit_download_event(
+    app: &AppHandle,
+    status: &str,
+    filename: &str,
+    path: Option<&Path>,
+    url: &str,
+) {
+    let _ = app.emit(
+        AETHER_DOWNLOAD_EVENT,
+        DownloadProgress {
+            status: status.to_string(),
+            filename: filename.to_string(),
+            path: path.map(|path| path.display().to_string()),
+            url: url.to_string(),
+        },
+    );
+}
+
+#[cfg(desktop)]
+fn restore_session_tabs(state: &State<Backend>, session: &SessionData) {
+    if session.tabs.is_empty() {
+        return;
+    }
+    let Ok(mut tabs) = state.tabs.lock() else {
+        return;
+    };
+    let restored = session
+        .tabs
+        .iter()
+        .map(|tab| {
+            let mut managed = ManagedTab::new("browser", &tab.url);
+            // Keep the stored id so the saved active-tab id still resolves.
+            managed.id = tab.id.clone();
+            if !tab.title.is_empty() {
+                managed.title = tab.title.clone();
+            }
+            managed
+        })
+        .collect::<Vec<_>>();
+
+    let active = restored
+        .iter()
+        .any(|tab| tab.id == session.active_tab_id)
+        .then(|| session.active_tab_id.clone())
+        .unwrap_or_else(|| restored[0].id.clone());
+
+    tabs.active_tab_id = active;
+    tabs.tabs = restored;
+    // The dashboard is still the landing surface; restored tabs wait behind it.
+    tabs.dashboard_open = true;
+}
+
+#[cfg(desktop)]
+fn current_window_geometry(window: &Window) -> Option<SessionWindow> {
+    let scale = window.scale_factor().ok()?;
+    let size = window.inner_size().ok()?.to_logical::<f64>(scale);
+    let position = window.outer_position().ok()?.to_logical::<f64>(scale);
+    Some(SessionWindow {
+        width: size.width,
+        height: size.height,
+        x: position.x,
+        y: position.y,
+    })
+}
+
+#[cfg(desktop)]
+fn apply_session_window(window: &Window, geometry: SessionWindow) {
+    // Guard against a stored geometry that would open the window off-screen or too
+    // small to use (a display was unplugged, or the config was hand-edited).
+    if geometry.width < 480.0 || geometry.height < 360.0 {
+        return;
+    }
+    let _ = window.set_size(Size::Logical(LogicalSize::new(
+        geometry.width,
+        geometry.height,
+    )));
+    if geometry.x > -20_000.0 && geometry.y > -20_000.0 {
+        let _ = window.set_position(Position::Logical(LogicalPosition::new(
+            geometry.x, geometry.y,
+        )));
+    }
+}
+
+#[cfg(desktop)]
+fn save_window_geometry_now(app: &AppHandle) {
+    let Some(window) = app.get_window("main") else {
+        return;
+    };
+    let Some(geometry) = current_window_geometry(&window) else {
+        return;
+    };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<Backend>();
+        if let Err(error) = persist_session_window(&state.paths, geometry).await {
+            eprintln!("aether: could not save window geometry: {error}");
+        }
+    });
+}
+
+// Resize and move fire continuously while dragging, so throttle the writes. The
+// CloseRequested handler catches whatever the throttle skipped.
+#[cfg(desktop)]
+fn schedule_window_geometry_save(app: &AppHandle) {
+    let state = app.state::<Backend>();
+    {
+        let Ok(mut last) = state.window_geometry_saved_at.lock() else {
+            return;
+        };
+        if let Some(previous) = *last {
+            if previous.elapsed() < Duration::from_millis(500) {
+                return;
+            }
+        }
+        *last = Some(Instant::now());
+    }
+    save_window_geometry_now(app);
 }
 
 fn conversation_thread_key(collection_id: Option<&str>) -> String {
@@ -9962,6 +10387,7 @@ mod tests {
             settings_path: dir.path("settings.json"),
             icebergs_path: dir.path("icebergs.json"),
             conversations_path: path.clone(),
+            session_path: dir.path("session.json"),
             air_exports_path: dir.0.clone(),
             chunks_path: dir.path("chunks.json"),
             models_path: dir.0.clone(),
@@ -10176,6 +10602,90 @@ mod tests {
         assert_eq!(store.dim, 4);
         assert_eq!(store.chunks.len(), 1, "only the matching chunk is stored");
         assert_eq!(store.next_slot, 1);
+    }
+
+    // A download filename comes from a remote URL, so it is untrusted input that ends
+    // up as a filesystem path. Separators and traversal must not survive.
+    #[cfg(desktop)]
+    #[test]
+    fn download_filenames_cannot_escape_the_downloads_directory() {
+        let cases = [
+            ("https://example.com/a/../../etc/passwd", "passwd"),
+            ("https://example.com/%2e%2e%2fetc%2fpasswd", "etcpasswd"),
+            ("https://example.com/dir/", "dir"),
+            ("https://example.com/", "download"),
+            ("https://example.com/..", "download"),
+        ];
+        for (raw, expected) in cases {
+            let name = file_name_from_url(&Url::parse(raw).expect("url"));
+            assert_eq!(name, expected, "for {raw}");
+            assert!(!name.contains('/'), "{name} must not contain a separator");
+            assert!(!name.contains('\\'), "{name} must not contain a separator");
+            assert_ne!(name, "..");
+        }
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn download_filenames_decode_and_keep_extensions() {
+        let name =
+            file_name_from_url(&Url::parse("https://example.com/docs/My%20Report%202026.pdf").unwrap());
+        assert_eq!(name, "My Report 2026.pdf");
+
+        let stripped =
+            file_name_from_url(&Url::parse("https://example.com/a/b/paper.tar.gz?token=1").unwrap());
+        assert_eq!(stripped, "paper.tar.gz");
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn download_filenames_are_length_capped() {
+        let long = "x".repeat(400);
+        let name = file_name_from_url(&Url::parse(&format!("https://example.com/{long}.bin")).unwrap());
+        assert!(name.chars().count() <= 180, "got {} chars", name.chars().count());
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn restored_session_keeps_the_saved_active_tab() {
+        let session = SessionData {
+            version: 1,
+            tabs: vec![
+                SessionTab {
+                    id: "tab-a".to_string(),
+                    url: "https://example.com/a".to_string(),
+                    title: "A".to_string(),
+                },
+                SessionTab {
+                    id: "tab-b".to_string(),
+                    url: "https://example.com/b".to_string(),
+                    title: "B".to_string(),
+                },
+            ],
+            active_tab_id: "tab-b".to_string(),
+            window: None,
+        };
+        // Mirrors restore_session_tabs' selection rule without needing a Tauri app.
+        let ids = session.tabs.iter().map(|tab| tab.id.clone()).collect::<Vec<_>>();
+        let active = ids
+            .iter()
+            .any(|id| *id == session.active_tab_id)
+            .then(|| session.active_tab_id.clone())
+            .unwrap_or_else(|| ids[0].clone());
+        assert_eq!(active, "tab-b");
+
+        // A stale active id must fall back to the first tab, not to an empty string.
+        let stale = SessionData {
+            active_tab_id: "tab-gone".to_string(),
+            ..session
+        };
+        let ids = stale.tabs.iter().map(|tab| tab.id.clone()).collect::<Vec<_>>();
+        let active = ids
+            .iter()
+            .any(|id| *id == stale.active_tab_id)
+            .then(|| stale.active_tab_id.clone())
+            .unwrap_or_else(|| ids[0].clone());
+        assert_eq!(active, "tab-a");
     }
 
     // ---------------------------------------------------------------------------
