@@ -1,9 +1,16 @@
 {
   "name": "aether-browser",
-  "version": "1.0.28",
+  "version": "1.0.29",
   "productName": "ÆTHER",
   "description": "Local AI-powered browser and knowledge hub",
-  "keywords": ["knowledge", "ai", "local", "research", "browser", "rag"],
+  "keywords": [
+    "knowledge",
+    "ai",
+    "local",
+    "research",
+    "browser",
+    "rag"
+  ],
   "author": "canpixel.com",
   "homepage": "https://canpixel.com",
   "license": "PolyForm-Strict-1.0.0",
