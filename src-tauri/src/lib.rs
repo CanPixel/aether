@@ -40,6 +40,9 @@ const CHUNKS_TABLE: &str = "chunks";
 // beside it. See write_bytes_atomically / read_json_or_default.
 const BACKUP_SUFFIX: &str = ".bak";
 const TEMP_WRITE_SUFFIX: &str = ".tmp";
+// Distinct from BACKUP_SUFFIX so the one-generation `.bak` rotation can never
+// overwrite the only copy of a store in its pre-migration format.
+const PRE_MIGRATION_SUFFIX: &str = ".v1.json";
 const LIBRARY_EXPORT_DIR: &str = "aether-backups";
 // Thread key for asks scoped to the open page rather than a hub.
 const CURRENT_PAGE_THREAD_KEY: &str = "current-page";
@@ -1206,6 +1209,25 @@ struct LibraryExportResult {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct LibraryIndexStatus {
+    dim: usize,
+    embedded: usize,
+    pending_reembed: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LibraryReindexResult {
+    embedded: usize,
+    // Chunks the re-index could not embed. Non-zero means the model rejected them, so
+    // the number is worth showing rather than reporting a clean success.
+    still_pending: usize,
+    dim: usize,
+    reindexed_at: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct UpdateCheckResult {
     current_version: String,
     checked_at: String,
@@ -1380,6 +1402,13 @@ struct ChunkRecord {
     vector: Vec<f32>,
     #[serde(default)]
     vector_slot: u64,
+    // Set when the chunk's text is retained but its vector is not usable with the
+    // store's current width — typically because the embedding model changed. Such a
+    // chunk holds no sidecar slot and is invisible to semantic search until a
+    // re-index re-embeds it. Keeping the text is the whole point: re-embedding is
+    // local compute, whereas dropping the record would force a re-fetch of the page.
+    #[serde(default, skip_serializing_if = "is_false")]
+    needs_reembed: bool,
     text: String,
     collection_id: String,
     capture_id: String,
@@ -1390,17 +1419,26 @@ struct ChunkRecord {
     chunk_index: usize,
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 const VECTOR_STORE_VERSION: u8 = 2;
 // Reclaim dead slots only once they dominate the file, so routine deletes stay O(1)
 // instead of triggering a full rewrite each time.
 const VECTOR_COMPACTION_MIN_SLOTS: u64 = 512;
 const VECTOR_COMPACTION_DEAD_RATIO: f64 = 0.5;
+// Re-index batch size. Small enough that progress moves visibly on a large library
+// and peak memory stays bounded; large enough to keep the model's batching useful.
+const REINDEX_BATCH_SIZE: usize = 64;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct VectorStoreData {
     version: u8,
-    // Embedding width, learned from the first vector stored. Fixes the sidecar stride.
+    // Embedding width. Fixes the sidecar stride, so the store holds exactly one width
+    // at a time. A fresh store learns it from the first vector; a migrated store takes
+    // the width the most chunks already use; a re-index resets it to the loaded model's.
     #[serde(default)]
     dim: usize,
     // Monotonic slot allocator. Counts every slot ever handed out, including slots
@@ -1426,25 +1464,48 @@ impl VectorStoreData {
     // slot does not match its position in the sidecar.
     fn push_chunks(&mut self, records: impl IntoIterator<Item = ChunkRecord>) {
         for mut record in records {
-            if record.vector.is_empty() {
-                continue;
-            }
-            if self.dim == 0 {
+            if self.dim == 0 && !record.vector.is_empty() {
                 self.dim = record.vector.len();
             }
-            if record.vector.len() != self.dim {
-                eprintln!(
-                    "aether: skipping chunk {} with {} dims (store is {})",
-                    record.id,
-                    record.vector.len(),
-                    self.dim
-                );
+            // A chunk whose width does not match the store is parked, not discarded.
+            // Dropping it would throw away the text as well, turning a re-embeddable
+            // problem into one that needs the page fetched again.
+            if record.vector.is_empty() || record.vector.len() != self.dim {
+                if !record.vector.is_empty() {
+                    eprintln!(
+                        "aether: chunk {} has {} dims (store is {}); parked for re-indexing",
+                        record.id,
+                        record.vector.len(),
+                        self.dim
+                    );
+                }
+                record.vector.clear();
+                record.vector_slot = 0;
+                record.needs_reembed = true;
+                self.chunks.push(record);
                 continue;
             }
+            record.needs_reembed = false;
             record.vector_slot = self.next_slot;
             self.next_slot += 1;
             self.chunks.push(record);
         }
+    }
+
+    // Chunks holding a sidecar slot. Parked chunks are excluded, so this — not
+    // `chunks.len()` — is what the slot accounting must be measured against.
+    fn embedded_count(&self) -> u64 {
+        self.chunks
+            .iter()
+            .filter(|chunk| !chunk.needs_reembed)
+            .count() as u64
+    }
+
+    fn pending_reembed_count(&self) -> usize {
+        self.chunks
+            .iter()
+            .filter(|chunk| chunk.needs_reembed)
+            .count()
     }
 }
 
@@ -3204,6 +3265,8 @@ pub fn run() {
             aether_system_check_for_update,
             aether_system_download_models,
             aether_system_export_library,
+            aether_library_reindex,
+            aether_library_index_status,
             aether_system_open_external_url,
             aether_layout_set_panel_collapsed,
             aether_layout_set_modal_overlay_open,
@@ -4056,6 +4119,7 @@ async fn capture_page_into_collection(
             vector: embeddings[index].clone(),
             // Assigned by push_chunks when the store accepts the record.
             vector_slot: 0,
+            needs_reembed: false,
             text,
             collection_id: collection.id.clone(),
             capture_id: capture_id.clone(),
@@ -4709,6 +4773,11 @@ async fn aether_system_export_library(
 
     // chunks.json holds only metadata; without the binary sidecar beside it the
     // export would restore a library whose sources cannot be searched.
+    //
+    // `chunks.v1.json` is deliberately not exported. It holds only vectors from a
+    // superseded embedding model, and the text they belong to is already in
+    // chunks.json — so a restore plus a re-index reproduces everything it contains,
+    // for none of the ~5x size.
     let chunks_vec_path = vector_data_path(&paths.chunks_path);
     let sources: [(&PathBuf, &str); 7] = [
         (&paths.library_path, "library.json"),
@@ -4776,6 +4845,126 @@ async fn aether_system_export_library(
         capture_count,
         chunk_count,
         byte_size,
+    })
+}
+
+// Deliberately a separate command rather than a field on SystemStatus: answering it
+// forces the vector store to load, and SystemStatus runs at startup where that would
+// add a full parse of the metadata plus the sidecar to launch. Settings asks for this
+// only when opened, which is also the only place the re-index button lives.
+#[tauri::command]
+async fn aether_library_index_status(state: State<'_, Backend>) -> Cmd<LibraryIndexStatus> {
+    with_vectors_read(&state, |vectors| LibraryIndexStatus {
+        dim: vectors.dim,
+        embedded: vectors.embedded_count() as usize,
+        pending_reembed: vectors.pending_reembed_count(),
+    })
+    .await
+}
+
+// Re-embeds every retained chunk with the loaded embedding model. This is the only
+// way out of a store whose vectors came from a different model: the widths cannot be
+// compared, so those chunks are invisible to search until they are embedded again.
+// Chunk text is kept in the store, so this is local compute — no page is refetched.
+#[tauri::command]
+async fn aether_library_reindex(
+    app: AppHandle,
+    state: State<'_, Backend>,
+) -> Cmd<LibraryReindexResult> {
+    let settings = load_settings(&state.paths.settings_path).await?;
+
+    // Snapshot ids and text without holding the lock: embedding takes minutes on a
+    // large library, and blocking every capture for its duration is not acceptable.
+    let pending = with_vectors_read(&state, |vectors| {
+        vectors
+            .chunks
+            .iter()
+            .map(|chunk| (chunk.id.clone(), chunk.text.clone()))
+            .collect::<Vec<_>>()
+    })
+    .await?;
+
+    if pending.is_empty() {
+        return Err("There is nothing to re-index yet.".to_string());
+    }
+
+    let total = pending.len();
+    emit_capture_progress(&app, "Re-indexing library", Some(0), Some(total));
+
+    let mut vectors_by_id: HashMap<String, Vec<f32>> = HashMap::with_capacity(total);
+    // Batched so progress advances steadily and peak memory stays bounded, rather than
+    // handing the runtime every chunk in the library at once.
+    for (batch_index, batch) in pending.chunks(REINDEX_BATCH_SIZE).enumerate() {
+        let inputs = batch
+            .iter()
+            .map(|(_, text)| text.clone())
+            .collect::<Vec<_>>();
+        let embeddings = local_embed_with_progress(
+            &state,
+            &settings,
+            inputs,
+            Some(EmbeddingProgress {
+                app: app.clone(),
+                message: "Re-indexing library".to_string(),
+            }),
+        )
+        .await?;
+        if embeddings.len() != batch.len() {
+            return Err(
+                "Local embedding model returned an unexpected number of embeddings.".to_string(),
+            );
+        }
+        for ((id, _), vector) in batch.iter().zip(embeddings) {
+            vectors_by_id.insert(id.clone(), vector);
+        }
+        emit_capture_progress(
+            &app,
+            "Re-indexing library",
+            Some(((batch_index + 1) * REINDEX_BATCH_SIZE).min(total)),
+            Some(total),
+        );
+    }
+
+    let dim = vectors_by_id
+        .values()
+        .map(Vec::len)
+        .max()
+        .filter(|dim| *dim > 0)
+        .ok_or_else(|| "The embedding model returned no usable vectors.".to_string())?;
+
+    let mut guard = state.vectors.write().await;
+    if guard.is_none() {
+        *guard = Some(load_vectors(&state.paths.chunks_path).await?);
+    }
+    let data = guard.as_mut().expect("vector store cache");
+
+    // Rebuild rather than patch: the store's width is changing, so every slot has to
+    // be reassigned against the new stride.
+    data.dim = dim;
+    data.next_slot = 0;
+    let existing = std::mem::take(&mut data.chunks);
+    // Matched by id, so chunks captured while the embedding ran keep their own vectors
+    // instead of being matched to the wrong text by position.
+    data.push_chunks(existing.into_iter().map(|mut chunk| {
+        if let Some(vector) = vectors_by_id.remove(&chunk.id) {
+            chunk.vector = vector;
+        }
+        chunk.needs_reembed = false;
+        chunk
+    }));
+
+    let embedded = data.embedded_count() as usize;
+    let still_pending = data.pending_reembed_count();
+    write_vector_sidecar(&state.paths.chunks_path, data, 0).await?;
+    save_vector_metadata(&state.paths.chunks_path, data).await?;
+    drop(guard);
+
+    emit_capture_progress(&app, "Re-index complete", Some(total), Some(total));
+    Ok(LibraryReindexResult {
+        embedded,
+        still_pending,
+        dim,
+        reindexed_at: now(),
     })
 }
 
@@ -7141,8 +7330,13 @@ async fn hydrate_vectors(path: &Path, data: &mut VectorStoreData) -> Cmd<()> {
     let available = (bytes.len() / stride) as u64;
     let before = data.chunks.len();
 
-    data.chunks.retain(|chunk| chunk.vector_slot < available);
+    // Parked chunks hold no slot, so they survive regardless of what the sidecar has.
+    data.chunks
+        .retain(|chunk| chunk.needs_reembed || chunk.vector_slot < available);
     for chunk in &mut data.chunks {
+        if chunk.needs_reembed {
+            continue;
+        }
         let start = chunk.vector_slot as usize * stride;
         chunk.vector = bytes[start..start + stride]
             .chunks_exact(4)
@@ -7168,11 +7362,20 @@ async fn migrate_legacy_vectors(path: &Path, raw: &str) -> Cmd<VectorStoreData> 
         }
     };
 
-    let mut data = VectorStoreData::default();
+    // v1 imposed no single width, so a store written across an embedding-model change
+    // holds a mix. v2 has one stride, so the migration must pick one width and park the
+    // rest. Choosing the width the most chunks use preserves the most vectors; picking
+    // the first chunk's width would hand the store to whichever model happened to be
+    // written first, which on a real install was the *older* model.
+    let mut data = VectorStoreData {
+        dim: majority_vector_dim(&legacy.chunks),
+        ..VectorStoreData::default()
+    };
     data.push_chunks(legacy.chunks.into_iter().map(|chunk| ChunkRecord {
         id: chunk.id,
         vector: chunk.vector,
         vector_slot: 0,
+        needs_reembed: false,
         text: chunk.text,
         collection_id: chunk.collection_id,
         capture_id: chunk.capture_id,
@@ -7183,15 +7386,59 @@ async fn migrate_legacy_vectors(path: &Path, raw: &str) -> Cmd<VectorStoreData> 
         chunk_index: chunk.chunk_index,
     }));
 
+    let parked = data.pending_reembed_count();
     eprintln!(
-        "aether: migrating {} chunk(s) to the binary vector store",
-        data.chunks.len()
+        "aether: migrating {} chunk(s) to the binary vector store at {} dims{}",
+        data.chunks.len(),
+        data.dim,
+        if parked > 0 {
+            format!(", parking {parked} from another embedding model for re-indexing")
+        } else {
+            String::new()
+        }
     );
-    // Rewrite the sidecar from scratch; save_vectors rotates the v1 JSON to .bak, so
-    // the original file survives the migration.
+    // Keep the pre-migration file under a name no ordinary save touches. The `.bak`
+    // rotation is one generation deep, so the next capture would overwrite a v1 backup
+    // with a v2 copy and leave no way back to the original vectors.
+    archive_pre_migration_store(path, raw).await;
     write_vector_sidecar(path, &data, 0).await?;
     save_vector_metadata(path, &data).await?;
     Ok(data)
+}
+
+// The width the most chunks share, so the migration keeps the largest set of usable
+// vectors. Ties break toward the wider vector, which is the newer model in practice.
+fn majority_vector_dim(chunks: &[LegacyChunkRecord]) -> usize {
+    let mut counts: HashMap<usize, usize> = HashMap::new();
+    for chunk in chunks {
+        if !chunk.vector.is_empty() {
+            *counts.entry(chunk.vector.len()).or_insert(0) += 1;
+        }
+    }
+    counts
+        .into_iter()
+        .max_by_key(|(dim, count)| (*count, *dim))
+        .map(|(dim, _)| dim)
+        .unwrap_or(0)
+}
+
+// Writes the untouched v1 bytes alongside the store, once. A second migration must not
+// clobber the first archive: that copy is the only remaining source for any vector the
+// migration parked.
+async fn archive_pre_migration_store(path: &Path, raw: &str) {
+    let mut name = path.file_stem().unwrap_or_default().to_os_string();
+    name.push(PRE_MIGRATION_SUFFIX);
+    let target = path.with_file_name(name);
+    if tokio::fs::try_exists(&target).await.unwrap_or(false) {
+        return;
+    }
+    match write_bytes_atomically(&target, raw.as_bytes(), false).await {
+        Ok(()) => eprintln!(
+            "aether: archived the pre-migration vector store at {}",
+            target.display()
+        ),
+        Err(error) => eprintln!("aether: could not archive the pre-migration store: {error}"),
+    }
 }
 
 async fn with_vectors_read<T>(
@@ -7245,7 +7492,7 @@ async fn write_vector_sidecar(
     let mut pending = data
         .chunks
         .iter()
-        .filter(|chunk| chunk.vector_slot >= slots_present)
+        .filter(|chunk| !chunk.needs_reembed && chunk.vector_slot >= slots_present)
         .collect::<Vec<_>>();
     if pending.is_empty() && slots_present > 0 {
         return Ok(());
@@ -7289,7 +7536,9 @@ async fn sidecar_slots_present(path: &Path, dim: usize) -> u64 {
 // Deletes leave dead slots behind. Once they dominate the sidecar, renumber the live
 // chunks and rewrite it so the file cannot grow without bound.
 async fn compact_vectors_if_needed(path: &Path, data: &mut VectorStoreData) -> Cmd<bool> {
-    let live = data.chunks.len() as u64;
+    // Parked chunks hold no slot, so counting them as live would understate how much
+    // of the sidecar is dead and stop compaction from ever triggering.
+    let live = data.embedded_count();
     if data.next_slot < VECTOR_COMPACTION_MIN_SLOTS {
         return Ok(false);
     }
@@ -7298,9 +7547,17 @@ async fn compact_vectors_if_needed(path: &Path, data: &mut VectorStoreData) -> C
         return Ok(false);
     }
 
-    data.chunks.sort_by_key(|chunk| chunk.vector_slot);
-    for (index, chunk) in data.chunks.iter_mut().enumerate() {
-        chunk.vector_slot = index as u64;
+    // Embedded chunks first in slot order, parked ones after, so renumbering walks
+    // exactly the records that occupy the sidecar.
+    data.chunks
+        .sort_by_key(|chunk| (chunk.needs_reembed, chunk.vector_slot));
+    let mut next = 0_u64;
+    for chunk in data.chunks.iter_mut() {
+        if chunk.needs_reembed {
+            continue;
+        }
+        chunk.vector_slot = next;
+        next += 1;
     }
     data.next_slot = live;
     eprintln!("aether: compacted vector store, reclaimed {dead} dead slot(s)");
@@ -10444,6 +10701,7 @@ mod tests {
             id: uuid(),
             vector,
             vector_slot: 0,
+            needs_reembed: false,
             text: format!("text for {capture_id}"),
             collection_id: "hub-1".to_string(),
             capture_id: capture_id.to_string(),
@@ -10590,8 +10848,10 @@ mod tests {
         }
     }
 
+    // A width the store cannot hold must cost the vector, never the text: re-embedding
+    // is local compute, whereas dropping the record forces the page to be fetched again.
     #[test]
-    fn vector_store_rejects_chunks_with_mismatched_dimensions() {
+    fn vector_store_parks_mismatched_chunks_instead_of_discarding_them() {
         let mut store = VectorStoreData::default();
         store.push_chunks(vec![
             vector_chunk("a", vec![1.0, 2.0, 3.0, 4.0]),
@@ -10600,8 +10860,213 @@ mod tests {
         ]);
 
         assert_eq!(store.dim, 4);
-        assert_eq!(store.chunks.len(), 1, "only the matching chunk is stored");
-        assert_eq!(store.next_slot, 1);
+        assert_eq!(store.chunks.len(), 3, "no chunk is thrown away");
+        assert_eq!(store.embedded_count(), 1);
+        assert_eq!(store.pending_reembed_count(), 2);
+        assert_eq!(store.next_slot, 1, "only embedded chunks consume slots");
+
+        for chunk in store.chunks.iter().filter(|chunk| chunk.needs_reembed) {
+            assert!(chunk.vector.is_empty(), "parked chunks hold no vector");
+            assert!(!chunk.text.is_empty(), "parked chunks keep their text");
+        }
+    }
+
+    // Parked chunks must stay out of the sidecar entirely: giving one a slot would shift
+    // every later chunk against the fixed stride and silently mismatch vectors to text.
+    #[test]
+    fn parked_chunks_survive_a_save_without_taking_sidecar_slots() {
+        let dir = TempDir::new();
+        let path = dir.path("chunks.json");
+
+        let mut store = VectorStoreData::default();
+        store.push_chunks(vec![
+            vector_chunk("a", vec![1.0, 2.0, 3.0, 4.0]),
+            vector_chunk("b", vec![9.0, 9.0]),
+            vector_chunk("c", vec![5.0, 6.0, 7.0, 8.0]),
+        ]);
+        block_on(save_vectors(&path, &mut store)).expect("save");
+
+        // Two embedded chunks at 4 dims; the parked one contributes nothing.
+        let sidecar = fs::metadata(vector_data_path(&path)).expect("sidecar").len();
+        assert_eq!(sidecar, 2 * 4 * 4);
+
+        let loaded = block_on(load_vectors(&path)).expect("load");
+        assert_eq!(loaded.chunks.len(), 3);
+        assert_eq!(loaded.pending_reembed_count(), 1);
+        let embedded = loaded
+            .chunks
+            .iter()
+            .filter(|chunk| !chunk.needs_reembed)
+            .map(|chunk| chunk.vector.clone())
+            .collect::<Vec<_>>();
+        assert!(embedded.contains(&vec![1.0, 2.0, 3.0, 4.0]));
+        assert!(embedded.contains(&vec![5.0, 6.0, 7.0, 8.0]));
+    }
+
+    // The real regression: a v1 store written across an embedding-model change holds two
+    // widths. Anchoring on the first chunk handed the store to whichever model was
+    // written first, which on a real install was the older, unusable one.
+    #[test]
+    fn migration_keeps_the_majority_width_and_parks_the_rest() {
+        let dir = TempDir::new();
+        let path = dir.path("chunks.json");
+
+        let mut chunks = Vec::new();
+        // One older-model chunk first in file order, then a wider majority.
+        chunks.push(serde_json::json!({
+            "id": "old-1",
+            "vector": [0.1, 0.2],
+            "text": "older model chunk",
+            "collectionId": "hub-1",
+            "captureId": "capture-old",
+            "title": "Old",
+            "url": "https://example.com/old",
+            "appId": "browser",
+            "capturedAt": "2026-06-01T00:00:00Z",
+            "chunkIndex": 0
+        }));
+        for index in 0..3 {
+            chunks.push(serde_json::json!({
+                "id": format!("new-{index}"),
+                "vector": [0.5, 0.5, 0.5, 0.5],
+                "text": format!("current model chunk {index}"),
+                "collectionId": "hub-1",
+                "captureId": "capture-new",
+                "title": "New",
+                "url": "https://example.com/new",
+                "appId": "browser",
+                "capturedAt": "2026-07-01T00:00:00Z",
+                "chunkIndex": index
+            }));
+        }
+        fs::write(
+            &path,
+            serde_json::to_string(&serde_json::json!({"version": 1, "chunks": chunks})).unwrap(),
+        )
+        .expect("seed v1");
+
+        let migrated = block_on(load_vectors(&path)).expect("migrate");
+
+        assert_eq!(migrated.dim, 4, "the majority width wins, not the first one");
+        assert_eq!(migrated.chunks.len(), 4, "nothing is discarded");
+        assert_eq!(migrated.embedded_count(), 3);
+        assert_eq!(migrated.pending_reembed_count(), 1);
+
+        let parked = migrated
+            .chunks
+            .iter()
+            .find(|chunk| chunk.needs_reembed)
+            .expect("parked chunk");
+        assert_eq!(parked.id, "old-1");
+        assert_eq!(parked.text, "older model chunk", "text is re-embeddable");
+    }
+
+    // The `.bak` rotation is one generation deep, so an ordinary save after the upgrade
+    // would overwrite the v1 backup with a v2 copy. The archive must outlive that.
+    #[test]
+    fn pre_migration_archive_survives_later_saves() {
+        let dir = TempDir::new();
+        let path = dir.path("chunks.json");
+        let legacy = serde_json::json!({
+            "version": 1,
+            "chunks": [{
+                "id": "chunk-1",
+                "vector": [0.25, 0.5, 0.75, 1.0],
+                "text": "legacy text",
+                "collectionId": "hub-1",
+                "captureId": "capture-1",
+                "title": "Legacy source",
+                "url": "https://example.com/legacy",
+                "appId": "browser",
+                "capturedAt": "2026-06-01T00:00:00Z",
+                "chunkIndex": 0
+            }]
+        });
+        let raw = serde_json::to_string(&legacy).unwrap();
+        fs::write(&path, &raw).expect("seed v1");
+
+        let mut migrated = block_on(load_vectors(&path)).expect("migrate");
+        let archive = dir.path("chunks.v1.json");
+        assert!(archive.exists(), "migration should archive the v1 store");
+
+        // Two further saves: more than enough to cycle the single `.bak` generation.
+        for index in 0..2 {
+            migrated.push_chunks(vec![vector_chunk(
+                &format!("later-{index}"),
+                vec![1.0, 1.0, 1.0, 1.0],
+            )]);
+            block_on(save_vectors(&path, &mut migrated)).expect("later save");
+        }
+
+        let archived = fs::read_to_string(&archive).expect("archive readable");
+        assert_eq!(archived, raw, "archive must still be the original v1 bytes");
+        assert!(
+            archived.contains("0.75"),
+            "archived vectors are the only copy of anything the migration parked"
+        );
+    }
+
+    #[test]
+    fn majority_width_breaks_ties_toward_the_wider_vector() {
+        let chunk = |vector: Vec<f32>| LegacyChunkRecord {
+            id: uuid(),
+            vector,
+            text: String::new(),
+            collection_id: String::new(),
+            capture_id: String::new(),
+            title: String::new(),
+            url: String::new(),
+            app_id: String::new(),
+            captured_at: String::new(),
+            chunk_index: 0,
+        };
+
+        assert_eq!(majority_vector_dim(&[]), 0);
+        assert_eq!(majority_vector_dim(&[chunk(vec![]), chunk(vec![])]), 0);
+        // One each: the wider vector wins, since newer models are wider in practice.
+        assert_eq!(
+            majority_vector_dim(&[chunk(vec![0.0; 2]), chunk(vec![0.0; 8])]),
+            8
+        );
+        // Count beats width.
+        assert_eq!(
+            majority_vector_dim(&[chunk(vec![0.0; 2]), chunk(vec![0.0; 2]), chunk(vec![0.0; 8])]),
+            2
+        );
+    }
+
+    // Compaction measures dead slots against the sidecar, so counting parked chunks as
+    // live would understate the dead ratio and stop compaction from ever firing.
+    #[test]
+    fn compaction_ignores_parked_chunks_but_keeps_them() {
+        let dir = TempDir::new();
+        let path = dir.path("chunks.json");
+
+        let mut store = VectorStoreData::default();
+        let total = VECTOR_COMPACTION_MIN_SLOTS as usize + 8;
+        store.push_chunks(
+            (0..total)
+                .map(|index| vector_chunk(&format!("c{index}"), vec![index as f32, 0.0, 0.0, 0.0])),
+        );
+        store.push_chunks(vec![vector_chunk("parked", vec![1.0, 2.0])]);
+        block_on(save_vectors(&path, &mut store)).expect("save");
+
+        store.chunks
+            .retain(|chunk| chunk.needs_reembed || chunk.vector_slot % 8 == 0);
+        let survivors = store.embedded_count();
+        block_on(save_vectors(&path, &mut store)).expect("save after delete");
+
+        assert_eq!(store.next_slot, survivors, "slots renumber over embedded only");
+        let sidecar = fs::metadata(vector_data_path(&path)).expect("sidecar").len();
+        assert_eq!(sidecar, survivors * 4 * 4);
+
+        let loaded = block_on(load_vectors(&path)).expect("load");
+        assert_eq!(loaded.embedded_count(), survivors);
+        assert_eq!(loaded.pending_reembed_count(), 1, "parked chunk survives");
+        for chunk in loaded.chunks.iter().filter(|chunk| !chunk.needs_reembed) {
+            let expected: f32 = chunk.capture_id.trim_start_matches('c').parse().unwrap();
+            assert_eq!(chunk.vector[0], expected, "vectors stay matched to their text");
+        }
     }
 
     // A download filename comes from a remote URL, so it is untrusted input that ends
@@ -10777,6 +11242,7 @@ mod tests {
                 id: uuid(),
                 vector: eval_embed(&text),
                 vector_slot: 0,
+                needs_reembed: false,
                 text,
                 collection_id: "hub-eval".to_string(),
                 capture_id: doc.capture_id.to_string(),
@@ -10947,6 +11413,61 @@ mod tests {
         assert!(chunks.concat().contains("私は研究します"));
     }
 
+    // Opt-in migration check against a real pre-upgrade store. Synthetic fixtures cannot
+    // reproduce what a store looks like after an embedding model changed under it, which
+    // is exactly the case the migration got wrong. Run locally with:
+    //   AETHER_LEGACY_STORE=/path/to/chunks.json cargo test --lib legacy_store -- --ignored
+    #[test]
+    #[ignore = "requires AETHER_LEGACY_STORE; not available in CI"]
+    fn migration_of_a_real_legacy_store_loses_nothing() {
+        let Ok(source) = std::env::var("AETHER_LEGACY_STORE") else {
+            panic!("set AETHER_LEGACY_STORE to a v1 chunks.json");
+        };
+        let raw = fs::read_to_string(&source).expect("read legacy store");
+        let legacy: LegacyVectorStoreData = serde_json::from_str(&raw).expect("parse legacy store");
+        let before = legacy.chunks.len();
+        let widths = legacy
+            .chunks
+            .iter()
+            .map(|chunk| chunk.vector.len())
+            .collect::<std::collections::BTreeSet<_>>();
+
+        // Copy so the real store is never the thing under test.
+        let dir = TempDir::new();
+        let path = dir.path("chunks.json");
+        fs::write(&path, &raw).expect("seed copy");
+
+        let migrated = block_on(load_vectors(&path)).expect("migrate");
+
+        eprintln!(
+            "legacy store: {before} chunks, widths {widths:?} -> dim {}, {} embedded, {} parked",
+            migrated.dim,
+            migrated.embedded_count(),
+            migrated.pending_reembed_count()
+        );
+        assert_eq!(
+            migrated.chunks.len(),
+            before,
+            "migration must not drop any chunk"
+        );
+        assert!(
+            dir.path("chunks.v1.json").exists(),
+            "the pre-migration store must be archived"
+        );
+        for chunk in &migrated.chunks {
+            if chunk.needs_reembed {
+                assert!(!chunk.text.is_empty(), "parked chunks must keep their text");
+            } else {
+                assert_eq!(chunk.vector.len(), migrated.dim);
+            }
+        }
+
+        // Reloading must take the v2 path and preserve the same shape.
+        let reloaded = block_on(load_vectors(&path)).expect("reload");
+        assert_eq!(reloaded.chunks.len(), before);
+        assert_eq!(reloaded.embedded_count(), migrated.embedded_count());
+    }
+
     // Opt-in eval against the real embedding model. Run locally with:
     //   AETHER_EMBEDDING_MODEL=/path/to/model.gguf cargo test --lib real_model -- --ignored
     // Kept out of CI because the model is a 640 MB download.
@@ -10966,6 +11487,7 @@ mod tests {
             id: uuid(),
             vector: vec![0.0; 4],
             vector_slot: 0,
+            needs_reembed: false,
             text: text.to_string(),
             collection_id: "hub-1".to_string(),
             capture_id: capture_id.to_string(),
@@ -11375,6 +11897,7 @@ mod tests {
                 id: uuid(),
                 vector: vec![1.0, 0.0],
                 vector_slot: 0,
+                needs_reembed: false,
                 text: text.to_string(),
                 collection_id: "collection".to_string(),
                 capture_id: "capture".to_string(),

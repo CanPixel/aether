@@ -399,6 +399,21 @@ export interface LibraryExportResult {
   byteSize: number
 }
 
+export interface LibraryIndexStatus {
+  /** Embedding width the store is built around. 0 before anything is indexed. */
+  dim: number
+  embedded: number
+  /** Chunks whose text is kept but whose vector is unusable until a re-index. */
+  pendingReembed: number
+}
+
+export interface LibraryReindexResult {
+  embedded: number
+  stillPending: number
+  dim: number
+  reindexedAt: string
+}
+
 export interface UpdateCheckResult {
   currentVersion: string
   checkedAt: string
@@ -565,6 +580,11 @@ export interface AetherApi {
     checkForUpdate(): Promise<UpdateCheckResult>
     // Snapshots every local store into a timestamped folder and reveals it.
     exportLibrary(): Promise<LibraryExportResult>
+    // Loads the vector store, so Settings asks for this on open rather than at startup.
+    indexStatus(): Promise<LibraryIndexStatus>
+    // Re-embeds retained chunk text with the loaded model. The only way to recover
+    // chunks embedded by a previous model, whose widths cannot be compared.
+    reindexLibrary(): Promise<LibraryReindexResult>
     openExternalUrl(url: string): Promise<void>
     downloadModels(input: {
       chatModels: ModelDownloadChoice[]

@@ -26,6 +26,8 @@ import {
   HubShortcutSummary,
   IcebergResult,
   LibraryExportResult,
+  LibraryIndexStatus,
+  LibraryReindexResult,
   LibrarySearchResult,
   MOBILE_TAB_SCROLL_EVENT,
   ModelDownloadProgress,
@@ -135,6 +137,8 @@ if (isTauri) {
       updateModels: (input) => call<SystemStatus>('aether_system_update_models', { input }),
       checkForUpdate: () => call<UpdateCheckResult>('aether_system_check_for_update'),
       exportLibrary: () => call<LibraryExportResult>('aether_system_export_library'),
+      indexStatus: () => call<LibraryIndexStatus>('aether_library_index_status'),
+      reindexLibrary: () => call<LibraryReindexResult>('aether_library_reindex'),
       openExternalUrl: (url) => call<void>('aether_system_open_external_url', { url }),
       downloadModels: (input) => call<SystemStatus>('aether_system_download_models', { input })
     },

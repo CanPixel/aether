@@ -1007,6 +1007,28 @@
   line-height: 1.35;
 }
 
+/* An attention state, not an error: the library still works, it is just smaller than
+   it should be until the re-index runs. Scoped rather than a global token, since the
+   palette-wide tokenization is a separate piece of work. */
+.settings-reindex-field {
+  --warning-strong: #b4690e;
+  border: 1px solid rgba(180, 105, 14, 0.28);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: rgba(180, 105, 14, 0.06);
+}
+
+.settings-reindex-field .settings-model-setup-copy svg {
+  color: var(--warning-strong);
+}
+
+/* The explanatory copy is longer than the sibling rows', which squeezes the button
+   until its label wraps. The label is the action, so the text reflows instead. */
+.settings-reindex-field .model-setup-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .settings-update-field {
   display: grid;
   gap: 12px;

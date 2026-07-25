@@ -299,6 +299,7 @@ under `aether-backups/`.
 
 - `id`
 - `vectorSlot` — index into `chunks.vec`
+- `needsReembed` — set when the chunk's text is kept but its vector is unusable
 - `text`
 - `collectionId`
 - `captureId`
@@ -315,8 +316,22 @@ importantly — the sidecar is **append-only**, so capturing a page writes only 
 vectors instead of re-serializing every vector in the library. Deleting sources leaves
 dead slots behind; once they exceed half the file, the store compacts and renumbers.
 
-A v1 `chunks.json` (vectors inline) is migrated automatically on first load, and the
-original file is kept as `chunks.json.bak`.
+A v1 `chunks.json` (vectors inline) is migrated automatically on first load. The
+untouched original is archived as `chunks.v1.json` — a name no ordinary save touches,
+unlike `.bak`, which is one generation deep and would be recycled by the next capture.
+
+### Changing the embedding model
+
+The store holds exactly one embedding width, because the sidecar has a fixed stride.
+A v1 store written across a model change therefore holds vectors that cannot all fit:
+the migration keeps the width the most chunks use and **parks** the rest — their text
+is retained and `needsReembed` is set, so they are simply invisible to semantic search
+rather than deleted.
+
+Vectors from different models cannot be compared at all (cosine distance is undefined
+across widths), so parked chunks — and any chunk embedded by a superseded model — are
+recovered by **Settings → Re-index Library**. Because chunk text lives in the store,
+re-indexing is local compute: no page is fetched again.
 
 `conversations.json` stores the AiON thread per knowledge hub (plus one thread for
 current-page-only asks): prompt, answer, model, citations, and metrics for each turn.

@@ -34,6 +34,7 @@ import {
   ConversationTurn,
   IcebergResult,
   LibraryExportResult,
+  LibraryIndexStatus,
   LibrarySearchHit,
   LibrarySearchResult,
   ModelDownloadChoice,
@@ -75,6 +76,7 @@ import {
   ChevronDown,
   ChevronUp,
   HardDriveDownload,
+  RefreshCw,
   SearchIcon,
   Snowflake,
   Waves,
@@ -451,6 +453,8 @@ function App(): React.JSX.Element {
   const [searchResult, setSearchResult] = useState<LibrarySearchResult | null>(null)
   const [exportingLibrary, setExportingLibrary] = useState(false)
   const [libraryExport, setLibraryExport] = useState<LibraryExportResult | null>(null)
+  const [reindexing, setReindexing] = useState(false)
+  const [indexStatus, setIndexStatus] = useState<LibraryIndexStatus | null>(null)
   const [dashboardOpen, setDashboardOpen] = useState(true)
   const [workspaceMode, setWorkspaceMode] = useState<'dashboard' | 'crystallizer' | 'flow' | 'air'>(
     'dashboard'
@@ -916,6 +920,36 @@ function App(): React.JSX.Element {
       setExportingLibrary(false)
     }
   }, [])
+
+  // Asked for on open rather than at startup: answering it loads the whole vector
+  // store, which is work launch should not pay for.
+  const refreshIndexStatus = useCallback(async (): Promise<void> => {
+    try {
+      setIndexStatus(await window.aether.system.indexStatus())
+    } catch {
+      // A library that will not load is already reported elsewhere; the re-index
+      // panel simply stays hidden rather than showing a second error.
+      setIndexStatus(null)
+    }
+  }, [])
+
+  const reindexLibrary = useCallback(async (): Promise<void> => {
+    setReindexing(true)
+    setNotice(null)
+    try {
+      const result = await window.aether.system.reindexLibrary()
+      setNotice(
+        result.stillPending > 0
+          ? `Re-indexed ${result.embedded} passages at ${result.dim} dims — ${result.stillPending} could not be embedded.`
+          : `Re-indexed ${result.embedded} passages at ${result.dim} dims.`
+      )
+      await refreshIndexStatus()
+    } catch (error) {
+      setNotice(getErrorMessage(error))
+    } finally {
+      setReindexing(false)
+    }
+  }, [refreshIndexStatus])
 
   useEffect(() => {
     if (!settings.updates.autoCheck || autoUpdateCheckStartedRef.current) return undefined
@@ -2042,6 +2076,8 @@ function App(): React.JSX.Element {
 
   async function openSettings(): Promise<void> {
     setSettingsOpen(true)
+    // Not awaited: this loads the vector store, and the panel should open immediately.
+    void refreshIndexStatus()
     await window.aether.layout.setModalOverlayOpen(true)
   }
 
@@ -2295,6 +2331,9 @@ function App(): React.JSX.Element {
           busy={busy}
           exportingLibrary={exportingLibrary}
           libraryExport={libraryExport}
+          reindexing={reindexing}
+          indexStatus={indexStatus}
+          onReindexLibrary={reindexLibrary}
           settings={settings}
           updateCheck={updateCheck}
           updateChecking={updateChecking}
@@ -2824,6 +2863,9 @@ function SettingsModal({
   busy,
   exportingLibrary,
   libraryExport,
+  reindexing,
+  indexStatus,
+  onReindexLibrary,
   settings,
   updateCheck,
   updateChecking,
@@ -2839,6 +2881,9 @@ function SettingsModal({
   busy: string | null
   exportingLibrary: boolean
   libraryExport: LibraryExportResult | null
+  reindexing: boolean
+  indexStatus: LibraryIndexStatus | null
+  onReindexLibrary: () => Promise<void>
   settings: AppSettings
   updateCheck: UpdateCheckResult | null
   updateChecking: boolean
@@ -3001,6 +3046,32 @@ function SettingsModal({
               {exportingLibrary ? 'Exporting…' : 'Export Library'}
             </button>
           </div>
+
+          {indexStatus && indexStatus.pendingReembed > 0 && (
+            <div className="settings-field settings-model-setup-field settings-reindex-field">
+              <div className="settings-model-setup-copy">
+                <RefreshCw size={28} style={{ color: 'var(--warning-strong, #b4690e)' }} />
+                <span>
+                  <strong>{indexStatus.pendingReembed} passages need re-indexing</strong>
+                  <small>
+                    These were embedded by a different model, so search cannot compare them.
+                    Their text is kept, so re-indexing runs locally without refetching any
+                    page.
+                  </small>
+                </span>
+              </div>
+              <button
+                className="model-setup-button"
+                disabled={Boolean(busy) || reindexing}
+                onClick={() => {
+                  void onReindexLibrary()
+                }}
+                type="button"
+              >
+                {reindexing ? 'Re-indexing…' : 'Re-index Library'}
+              </button>
+            </div>
+          )}
 
           <div className="settings-field settings-update-field">
             <div className="settings-update-head">
