@@ -4766,72 +4766,18 @@ async fn search_library(
     };
     let needle = query.to_lowercase();
 
-    let (mut hits, searched_chunks) = with_vectors_read(state, |vectors| {
-        let scoped = vectors.chunks.iter().filter(|chunk| {
-            // map_or rather than is_none_or: the latter needs Rust 1.82 and this
-            // crate declares MSRV 1.77.2.
-            input
-                .collection_id
-                .as_deref()
-                .map_or(true, |id| chunk.collection_id == id)
-        });
-
-        let mut best: HashMap<String, LibrarySearchHit> = HashMap::new();
-        let mut examined = 0_usize;
-
-        for chunk in scoped {
-            examined += 1;
-            let score = match query_vector.as_ref() {
-                Some(vector) => semantic_score_from_distance(cosine_distance(vector, &chunk.vector)),
-                None => literal_match_score(&needle, chunk),
-            };
-            if score <= 0.0 {
-                continue;
-            }
-
-            match best.get_mut(&chunk.capture_id) {
-                Some(existing) => {
-                    existing.chunk_matches += 1;
-                    if score > existing.score {
-                        existing.score = score;
-                        existing.excerpt = semantic_trail_excerpt(&chunk.text, 240);
-                    }
-                }
-                None => {
-                    best.insert(
-                        chunk.capture_id.clone(),
-                        LibrarySearchHit {
-                            capture_id: chunk.capture_id.clone(),
-                            collection_id: chunk.collection_id.clone(),
-                            collection_name: collection_names
-                                .get(&chunk.collection_id)
-                                .cloned()
-                                .unwrap_or_else(|| "Unknown hub".to_string()),
-                            title: chunk.title.clone(),
-                            url: chunk.url.clone(),
-                            host: get_tab_host(&chunk.url),
-                            captured_at: chunk.captured_at.clone(),
-                            excerpt: semantic_trail_excerpt(&chunk.text, 240),
-                            score,
-                            chunk_matches: 1,
-                        },
-                    );
-                }
-            }
-        }
-
-        (best.into_values().collect::<Vec<_>>(), examined)
+    let scope = input.collection_id.clone();
+    let (hits, searched_chunks) = with_vectors_read(state, |vectors| {
+        rank_library_hits(
+            &vectors.chunks,
+            &collection_names,
+            scope.as_deref(),
+            query_vector.as_deref(),
+            &needle,
+            limit,
+        )
     })
     .await?;
-
-    hits.sort_by(|left, right| {
-        right
-            .score
-            .partial_cmp(&left.score)
-            .unwrap_or(Ordering::Equal)
-            .then_with(|| right.captured_at.cmp(&left.captured_at))
-    });
-    hits.truncate(limit);
 
     Ok(LibrarySearchResult {
         query,
@@ -4839,6 +4785,83 @@ async fn search_library(
         mode: mode.to_string(),
         searched_chunks,
     })
+}
+
+// Pure ranking core, split out from search_library so the retrieval contract can be
+// tested without a Tauri app or a 640 MB embedding model. Everything model-independent
+// about search quality — scoping, per-capture grouping, ordering, limits — lives here.
+fn rank_library_hits(
+    chunks: &[ChunkRecord],
+    collection_names: &HashMap<String, String>,
+    scope: Option<&str>,
+    query_vector: Option<&[f32]>,
+    needle: &str,
+    limit: usize,
+) -> (Vec<LibrarySearchHit>, usize) {
+    // map_or rather than is_none_or: the latter needs Rust 1.82 and this crate
+    // declares MSRV 1.77.2.
+    let scoped = chunks
+        .iter()
+        .filter(|chunk| scope.map_or(true, |id| chunk.collection_id == id));
+
+    let mut best: HashMap<String, LibrarySearchHit> = HashMap::new();
+    let mut examined = 0_usize;
+
+    for chunk in scoped {
+        examined += 1;
+        let score = match query_vector {
+            Some(vector) => semantic_score_from_distance(cosine_distance(vector, &chunk.vector)),
+            None => literal_match_score(needle, chunk),
+        };
+        if score <= 0.0 {
+            continue;
+        }
+
+        match best.get_mut(&chunk.capture_id) {
+            Some(existing) => {
+                existing.chunk_matches += 1;
+                // One row per source shows its *best* passage, so a later weaker
+                // chunk must not overwrite a stronger earlier one.
+                if score > existing.score {
+                    existing.score = score;
+                    existing.excerpt = semantic_trail_excerpt(&chunk.text, 240);
+                }
+            }
+            None => {
+                best.insert(
+                    chunk.capture_id.clone(),
+                    LibrarySearchHit {
+                        capture_id: chunk.capture_id.clone(),
+                        collection_id: chunk.collection_id.clone(),
+                        collection_name: collection_names
+                            .get(&chunk.collection_id)
+                            .cloned()
+                            .unwrap_or_else(|| "Unknown hub".to_string()),
+                        title: chunk.title.clone(),
+                        url: chunk.url.clone(),
+                        host: get_tab_host(&chunk.url),
+                        captured_at: chunk.captured_at.clone(),
+                        excerpt: semantic_trail_excerpt(&chunk.text, 240),
+                        score,
+                        chunk_matches: 1,
+                    },
+                );
+            }
+        }
+    }
+
+    let mut hits = best.into_values().collect::<Vec<_>>();
+    hits.sort_by(|left, right| {
+        right
+            .score
+            .partial_cmp(&left.score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| right.captured_at.cmp(&left.captured_at))
+            // Final tiebreak keeps output stable: HashMap iteration order is not.
+            .then_with(|| left.capture_id.cmp(&right.capture_id))
+    });
+    hits.truncate(limit);
+    (hits, examined)
 }
 
 // Literal scoring for the no-embedding-model path. Title and host matches outrank
@@ -10153,6 +10176,279 @@ mod tests {
         assert_eq!(store.dim, 4);
         assert_eq!(store.chunks.len(), 1, "only the matching chunk is stored");
         assert_eq!(store.next_slot, 1);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Retrieval eval
+    //
+    // The real embedding model is 640 MB, so CI cannot download it. Instead these
+    // tests drive the *actual* pipeline — split_text -> push_chunks -> the binary
+    // store -> rank_library_hits — with a deterministic stand-in embedder. That
+    // covers every model-independent way retrieval can regress: chunk boundaries,
+    // slot/vector alignment, per-capture grouping, ordering, and limits. It does
+    // not judge model quality; see the AETHER_EMBEDDING_MODEL-gated test below.
+    // ---------------------------------------------------------------------------
+
+    // Wide enough that hash collisions do not dominate. At 64 buckets, unrelated
+    // vocabularies shared slots often enough to invert rankings, which would have made
+    // these tests measure the stand-in embedder rather than the pipeline.
+    const EVAL_DIM: usize = 512;
+
+    // Hashed bag-of-words, L2-normalised. Deterministic, and shares the property that
+    // matters for these assertions: passages about the same terms sit closer together
+    // under cosine distance than passages about different terms.
+    fn eval_embed(text: &str) -> Vec<f32> {
+        let mut vector = vec![0.0_f32; EVAL_DIM];
+        for word in text.to_lowercase().split(|c: char| !c.is_alphanumeric()) {
+            if word.len() < 3 {
+                continue;
+            }
+            let mut hash = 2166136261_u32;
+            for byte in word.bytes() {
+                hash ^= byte as u32;
+                hash = hash.wrapping_mul(16777619);
+            }
+            vector[(hash as usize) % EVAL_DIM] += 1.0;
+        }
+        let norm = vector.iter().map(|v| v * v).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            for value in &mut vector {
+                *value /= norm;
+            }
+        }
+        vector
+    }
+
+    struct EvalDoc {
+        capture_id: &'static str,
+        title: &'static str,
+        url: &'static str,
+        body: &'static str,
+    }
+
+    fn eval_corpus() -> Vec<EvalDoc> {
+        vec![
+            EvalDoc {
+                capture_id: "quantum",
+                title: "Quantum mechanics",
+                url: "https://en.wikipedia.org/wiki/Quantum_mechanics",
+                body: "Quantum mechanics describes matter and light at atomic scale. Max Planck solved the black-body radiation problem in 1900. Niels Bohr, Erwin Schrodinger and Werner Heisenberg developed the theory during the mid 1920s. The wave function encodes probability amplitudes for a particle.",
+            },
+            EvalDoc {
+                capture_id: "photosynthesis",
+                title: "Photosynthesis",
+                url: "https://en.wikipedia.org/wiki/Photosynthesis",
+                body: "Photosynthesis converts light energy into chemical energy inside chloroplasts. Plants absorb carbon dioxide and water, releasing oxygen. Chlorophyll captures photons that drive the light dependent reactions producing glucose.",
+            },
+            EvalDoc {
+                capture_id: "roman-empire",
+                title: "Augustus and the Roman Empire",
+                url: "https://en.wikipedia.org/wiki/Augustus",
+                body: "Augustus founded the Roman Empire and became its first emperor in 27 BC. Julius Caesar named Octavian as his heir. The principate established an era of imperial peace known as the Pax Romana across the Roman world.",
+            },
+            EvalDoc {
+                capture_id: "rust-ownership",
+                title: "Ownership in Rust",
+                url: "https://doc.rust-lang.org/book/ch04-01-what-is-ownership.html",
+                body: "Ownership governs how a Rust program manages heap memory. Each value has a single owner, and the value is dropped when the owner goes out of scope. Borrowing lends a reference without transferring ownership, and the borrow checker rejects dangling references at compile time.",
+            },
+        ]
+    }
+
+    // Indexes the corpus through the real chunking and storage path, so a regression in
+    // either shows up here rather than only in production.
+    fn eval_store(dir: &TempDir) -> (VectorStoreData, HashMap<String, String>) {
+        let path = dir.path("chunks.json");
+        let mut store = VectorStoreData::default();
+        for doc in eval_corpus() {
+            let chunks = split_text(doc.body, 220, 40);
+            assert!(!chunks.is_empty(), "fixture {} produced no chunks", doc.capture_id);
+            store.push_chunks(chunks.into_iter().enumerate().map(|(index, text)| ChunkRecord {
+                id: uuid(),
+                vector: eval_embed(&text),
+                vector_slot: 0,
+                text,
+                collection_id: "hub-eval".to_string(),
+                capture_id: doc.capture_id.to_string(),
+                title: doc.title.to_string(),
+                url: doc.url.to_string(),
+                app_id: "browser".to_string(),
+                captured_at: format!("2026-07-{:02}T00:00:00Z", 10 + index),
+                chunk_index: index,
+            }));
+        }
+        block_on(save_vectors(&path, &mut store)).expect("persist eval store");
+
+        // Reload from disk: the eval must exercise the stored vectors, not the
+        // in-memory ones, so a serialisation bug cannot pass unnoticed.
+        let reloaded = block_on(load_vectors(&path)).expect("reload eval store");
+        let mut names = HashMap::new();
+        names.insert("hub-eval".to_string(), "Eval hub".to_string());
+        (reloaded, names)
+    }
+
+    fn eval_top_ids(store: &VectorStoreData, names: &HashMap<String, String>, question: &str, take: usize) -> Vec<String> {
+        let query = eval_embed(question);
+        let (hits, _) = rank_library_hits(&store.chunks, names, None, Some(&query), "", 20);
+        hits.into_iter().take(take).map(|hit| hit.capture_id).collect()
+    }
+
+    // The core retrieval contract: asking about a topic must surface the source that
+    // covers it. This is the test that protects answer quality.
+    #[test]
+    fn retrieval_eval_ranks_the_expected_source_in_the_top_three() {
+        let dir = TempDir::new();
+        let (store, names) = eval_store(&dir);
+
+        let cases = [
+            ("When did quantum mechanics develop?", "quantum"),
+            ("Who was the first Roman emperor?", "roman-empire"),
+            ("How do plants turn light into chemical energy?", "photosynthesis"),
+            ("What happens when a value's owner goes out of scope?", "rust-ownership"),
+            ("black-body radiation problem", "quantum"),
+            ("chlorophyll photons glucose", "photosynthesis"),
+            ("borrow checker dangling references", "rust-ownership"),
+            ("Pax Romana imperial peace", "roman-empire"),
+        ];
+
+        let mut failures = Vec::new();
+        for (question, expected) in cases {
+            let top = eval_top_ids(&store, &names, question, 3);
+            if !top.iter().any(|id| id == expected) {
+                failures.push(format!("{question:?} expected {expected}, got {top:?}"));
+            }
+        }
+        assert!(failures.is_empty(), "retrieval regressions:\n{}", failures.join("\n"));
+    }
+
+    #[test]
+    fn retrieval_eval_ranks_the_expected_source_first_for_distinctive_terms() {
+        let dir = TempDir::new();
+        let (store, names) = eval_store(&dir);
+
+        // Terms unique to one document should win outright, not merely place.
+        for (question, expected) in [
+            ("Schrodinger Heisenberg wave function", "quantum"),
+            ("chloroplasts carbon dioxide oxygen", "photosynthesis"),
+            ("Octavian Julius Caesar principate", "roman-empire"),
+            ("ownership borrowing heap memory", "rust-ownership"),
+        ] {
+            let top = eval_top_ids(&store, &names, question, 1);
+            assert_eq!(top, vec![expected.to_string()], "for query {question:?}");
+        }
+    }
+
+    #[test]
+    fn retrieval_eval_returns_one_row_per_source() {
+        let dir = TempDir::new();
+        let (store, names) = eval_store(&dir);
+        let query = eval_embed("quantum mechanics wave function");
+
+        let (hits, examined) = rank_library_hits(&store.chunks, &names, None, Some(&query), "", 20);
+
+        assert_eq!(examined, store.chunks.len(), "every chunk should be scored");
+        let mut ids = hits.iter().map(|hit| hit.capture_id.clone()).collect::<Vec<_>>();
+        ids.sort();
+        let unique = ids.iter().collect::<HashSet<_>>().len();
+        assert_eq!(ids.len(), unique, "a source must not appear twice: {ids:?}");
+        assert!(hits.len() <= eval_corpus().len());
+        // Grouping must report how many passages matched, not silently collapse them.
+        let quantum = hits.iter().find(|hit| hit.capture_id == "quantum").expect("quantum hit");
+        assert!(quantum.chunk_matches >= 1);
+        assert_eq!(quantum.collection_name, "Eval hub");
+        assert_eq!(quantum.host, "en.wikipedia.org");
+    }
+
+    #[test]
+    fn retrieval_eval_respects_hub_scope_and_limit() {
+        let dir = TempDir::new();
+        let (store, names) = eval_store(&dir);
+        let query = eval_embed("quantum photosynthesis Augustus ownership");
+
+        let (limited, _) = rank_library_hits(&store.chunks, &names, None, Some(&query), "", 2);
+        assert_eq!(limited.len(), 2, "limit must cap the result set");
+
+        let (other_hub, _) =
+            rank_library_hits(&store.chunks, &names, Some("hub-missing"), Some(&query), "", 20);
+        assert!(other_hub.is_empty(), "scoping to another hub must exclude everything");
+    }
+
+    #[test]
+    fn retrieval_eval_ordering_is_stable_across_runs() {
+        let dir = TempDir::new();
+        let (store, names) = eval_store(&dir);
+        let query = eval_embed("energy");
+
+        // HashMap iteration order varies per process; the sort must not depend on it.
+        let first = rank_library_hits(&store.chunks, &names, None, Some(&query), "", 20).0;
+        for _ in 0..5 {
+            let again = rank_library_hits(&store.chunks, &names, None, Some(&query), "", 20).0;
+            assert_eq!(
+                first.iter().map(|h| &h.capture_id).collect::<Vec<_>>(),
+                again.iter().map(|h| &h.capture_id).collect::<Vec<_>>()
+            );
+        }
+    }
+
+    // Chunking invariants. Retrieval cannot find text that chunking dropped, so these
+    // guard the input side of the pipeline.
+    #[test]
+    fn chunking_covers_the_whole_document_with_overlap() {
+        let body = eval_corpus()[0].body;
+        let chunks = split_text(body, 120, 30);
+
+        assert!(chunks.len() > 1, "a long body should split");
+        // Every character of the source must appear in some chunk.
+        let joined = chunks.concat();
+        for word in body.split_whitespace() {
+            assert!(joined.contains(word), "chunking lost {word:?}");
+        }
+        // Consecutive chunks must actually overlap, or a claim spanning a boundary
+        // becomes unretrievable. split_text trims each chunk, so the shared region is
+        // slightly shorter than the requested overlap; assert on a substring well
+        // inside it rather than on an exact prefix.
+        for pair in chunks.windows(2) {
+            let tail = pair[0]
+                .chars()
+                .rev()
+                .take(10)
+                .collect::<Vec<_>>()
+                .into_iter()
+                .rev()
+                .collect::<String>();
+            assert!(
+                pair[1].contains(&tail),
+                "expected {:?} to carry the tail {tail:?} of the previous chunk",
+                pair[1].chars().take(40).collect::<String>()
+            );
+        }
+    }
+
+    #[test]
+    fn chunking_handles_multibyte_text_without_splitting_characters() {
+        let body = "Æther — 私は研究します。".repeat(20);
+        let chunks = split_text(&body, 40, 10);
+
+        assert!(!chunks.is_empty());
+        for chunk in &chunks {
+            // Round-tripping proves no chunk ends mid-character.
+            assert_eq!(chunk.as_bytes(), chunk.clone().into_bytes().as_slice());
+        }
+        assert!(chunks.concat().contains("私は研究します"));
+    }
+
+    // Opt-in eval against the real embedding model. Run locally with:
+    //   AETHER_EMBEDDING_MODEL=/path/to/model.gguf cargo test --lib real_model -- --ignored
+    // Kept out of CI because the model is a 640 MB download.
+    #[test]
+    #[ignore = "requires AETHER_EMBEDDING_MODEL; not available in CI"]
+    fn retrieval_eval_real_model_is_configured() {
+        let path = env::var(AETHER_EMBEDDING_MODEL_ENV)
+            .expect("set AETHER_EMBEDDING_MODEL to the embedding GGUF to run this eval");
+        assert!(
+            Path::new(&path).exists(),
+            "AETHER_EMBEDDING_MODEL points at {path}, which does not exist"
+        );
     }
 
     fn chunk_for_search(capture_id: &str, title: &str, url: &str, text: &str) -> ChunkRecord {

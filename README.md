@@ -428,6 +428,30 @@ Renderer responsibilities:
 
 ---
 
+## Tests
+
+```bash
+bun run test
+```
+
+Runs the Rust unit suite (also run in CI on the Linux job). Alongside the usual unit
+tests it includes a **retrieval eval**: fixture documents are pushed through the real
+pipeline — `split_text` → `push_chunks` → the binary vector store → `rank_library_hits`
+— and each question must surface its expected source in the top three, with a stricter
+top-one assertion for distinctive terms.
+
+The eval substitutes a deterministic hashed bag-of-words embedder for the real model,
+because the embedding model is a ~640 MB download that CI cannot fetch. That still
+covers every model-independent way retrieval regresses — chunk boundaries and overlap,
+vector/slot alignment in the sidecar, per-capture grouping, ordering stability, scoping
+and limits — but it does **not** judge model quality.
+
+To check the real model is wired up locally:
+
+```bash
+AETHER_EMBEDDING_MODEL=/path/to/embedding.gguf cargo test --manifest-path src-tauri/Cargo.toml --lib real_model -- --ignored
+```
+
 ## Development Prerequisites
 
 Required:
