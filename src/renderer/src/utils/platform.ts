@@ -7,3 +7,7 @@
 export const IS_ANDROID = /\bandroid\b/i.test(navigator.userAgent)
 
 export const HAS_NATIVE_TAB_WEBVIEWS = !IS_ANDROID
+
+// WKWebsiteDataStore has no equivalent wired up on the other platforms yet, so
+// the Clear Browsing Data control would be a button that does nothing there.
+export const IS_MACOS = !IS_ANDROID && /\bMacintosh\b/i.test(navigator.userAgent)

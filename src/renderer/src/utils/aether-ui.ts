@@ -1,5 +1,6 @@
 import {
   BrowserTabSummary,
+  ContentBlockingStatus,
   IcebergItem,
   SavedIcebergSummary,
   UpdateInstallProgress
@@ -299,4 +300,24 @@ export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {
   }
 
   return baseActions
+}
+
+// One sentence describing the protection this build actually has, built from what
+// the backend reports rather than from the user agent.
+//
+// The Windows wording is the point of the whole thing. Blocking there is per
+// request against a host list, and WebView2 has no equivalent of the rule that
+// stops third-party cookies — so a tracker that is not on the list still sets
+// them. Saying "tracker blocking is on" and stopping there would be true and
+// misleading at the same time.
+export function describeContentBlocking(status: ContentBlockingStatus): string {
+  if (!status.available) {
+    return 'Not available on this platform. Requests are not filtered.'
+  }
+
+  const blocked = `Blocks ${countLabel(status.blockedHostCount, 'known tracker domain')} using ${status.engine}.`
+
+  return status.blocksThirdPartyCookies
+    ? `${blocked} Third-party cookies are blocked too.`
+    : `${blocked} Third-party cookies are not blocked on this platform, so a tracker that is not on the list can still set them.`
 }

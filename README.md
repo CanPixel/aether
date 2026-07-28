@@ -37,12 +37,12 @@
 Download the latest build for your platform from
 **[Releases](https://github.com/CanPixel/aether/releases/latest)**:
 
-| Platform | File |
-|---|---|
-| macOS (Apple Silicon, 11+) | `AETHER_macOS.dmg` |
-| Windows (x86_64) | `AETHER_x64-setup.exe` |
-| Linux (x86_64) | `AETHER_amd64.deb` · `AETHER_amd64.AppImage` |
-| Linux (ARM64) | `AETHER_arm64.deb` |
+| Platform                   | File                                         |
+| -------------------------- | -------------------------------------------- |
+| macOS (Apple Silicon, 11+) | `AETHER_macOS.dmg`                           |
+| Windows (x86_64)           | `AETHER_x64-setup.exe`                       |
+| Linux (x86_64)             | `AETHER_amd64.deb` · `AETHER_amd64.AppImage` |
+| Linux (ARM64)              | `AETHER_arm64.deb`                           |
 
 > [!NOTE]
 > **Intel Macs are not supported.** Releases are built `arm64` only, and Rosetta
@@ -58,17 +58,17 @@ Download the latest build for your platform from
 > is in [docs/SIGNING.md](docs/SIGNING.md).
 
 **macOS.** The `.dmg` is unsigned and un-notarized, so macOS quarantines it and
-reports *"ÆTHER is damaged and can't be opened"*. It is not damaged. Drag the app to
+reports _"ÆTHER is damaged and can't be opened"_. It is not damaged. Drag the app to
 `/Applications`, then clear the quarantine flag:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/ÆTHER.app
 ```
 
-Then open it normally. (Right-click → *Open* alone does not work for un-notarized
+Then open it normally. (Right-click → _Open_ alone does not work for un-notarized
 apps on current macOS.)
 
-**Windows.** SmartScreen shows *"Windows protected your PC"*. Click **More info**,
+**Windows.** SmartScreen shows _"Windows protected your PC"_. Click **More info**,
 then **Run anyway**.
 
 **Linux.** No workaround needed.
@@ -134,11 +134,11 @@ The privacy boundary applies to ÆTHER's indexing and intelligence pipeline, not
 
 Fresh installs use **AiON Launch**, the in-app setup flow for downloading local models into the app-data model directory. The same setup flow is available later from Settings for repair or manual installation.
 
-| Model         | Role                                                          | Official source                       |     Size |
-| ------------- | ------------------------------------------------------------- | ------------------------------------- | -------: |
-| **AiON MiST** | Required embedding model for search, capture, and retrieval   | `Qwen/Qwen3-Embedding-0.6B-GGUF`      | ~0.64 GB |
-| **AiON LiTE** | Optional chat model for everyday answers and summaries        | `google/gemma-4-E2B-it-qat-q4_0-gguf` | ~3.35 GB |
-| **AiON WiSE** | Optional chat model for richer synthesis and iCE maps         | `google/gemma-4-E4B-it-qat-q4_0-gguf` | ~5.15 GB |
+| Model         | Role                                                        | Official source                       |     Size |
+| ------------- | ----------------------------------------------------------- | ------------------------------------- | -------: |
+| **AiON MiST** | Required embedding model for search, capture, and retrieval | `Qwen/Qwen3-Embedding-0.6B-GGUF`      | ~0.64 GB |
+| **AiON LiTE** | Optional chat model for everyday answers and summaries      | `google/gemma-4-E2B-it-qat-q4_0-gguf` | ~3.35 GB |
+| **AiON WiSE** | Optional chat model for richer synthesis and iCE maps       | `google/gemma-4-E4B-it-qat-q4_0-gguf` | ~5.15 GB |
 
 Install choices:
 

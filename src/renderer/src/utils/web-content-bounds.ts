@@ -8,7 +8,10 @@ import { useLayoutEffect, type RefObject } from 'react'
 // Native webviews always paint above the DOM. Measure the bottom of the visible
 // browser chrome as well as the slot, so an overflowing chrome row can never be
 // covered by a live page.
-export function useWebContentBounds(ref: RefObject<HTMLElement | null>, deps: unknown[] = []): void {
+export function useWebContentBounds(
+  ref: RefObject<HTMLElement | null>,
+  deps: unknown[] = []
+): void {
   useLayoutEffect(() => {
     const host = ref.current
     if (!host) return
@@ -18,7 +21,9 @@ export function useWebContentBounds(ref: RefObject<HTMLElement | null>, deps: un
       const rect = host.getBoundingClientRect()
       const quickActions = document.querySelector<HTMLElement>('.quick-action-row')
       const browserChrome = document.querySelector<HTMLElement>('.browser-chrome')
-      const chromeBottom = quickActions?.getBoundingClientRect().bottom ?? browserChrome?.getBoundingClientRect().bottom
+      const chromeBottom =
+        quickActions?.getBoundingClientRect().bottom ??
+        browserChrome?.getBoundingClientRect().bottom
       const top = Math.max(rect.top, chromeBottom ?? rect.top)
       const height = Math.max(0, rect.bottom - top)
       // Skip identical rects: the observer fires on every layout pass, and each

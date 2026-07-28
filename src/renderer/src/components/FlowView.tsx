@@ -1,4 +1,5 @@
 import {
+  memo,
   CSSProperties,
   FormEvent,
   PointerEvent as ReactPointerEvent,
@@ -74,7 +75,7 @@ type FlowViewProps = {
   onSelectedNodeChange: (nodeId: string | null) => void
 }
 
-export function FlowView({
+function FlowViewComponent({
   busy,
   collections,
   query,
@@ -832,3 +833,11 @@ function shortenNodeTitle(title: string): string {
   if (title.length <= 18) return title
   return `${title.slice(0, 17)}…`
 }
+
+// Wrapped in memo because App owns almost all of this app's state: a keystroke in
+// the address bar, a status toast, a streaming token — each re-renders App, and
+// without this every one of them re-renders this panel too. The handlers App
+// passes down go through useStableHandler so those props stay equal between
+// renders; without that this wrapper would compare unequal every time and do
+// nothing.
+export const FlowView = memo(FlowViewComponent)

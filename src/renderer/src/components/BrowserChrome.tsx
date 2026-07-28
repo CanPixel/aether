@@ -1,17 +1,24 @@
-import { CSSProperties, DragEvent, FormEvent, MouseEvent, useEffect, useState } from 'react'
+import { CSSProperties, DragEvent, MouseEvent, useEffect, useState } from 'react'
 import { BrowserTabSummary, CaptureResult, CollectionSummary } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
 import { countLabel, getTabTint } from '../utils/aether-ui'
+import { useSiteFavicon } from '../utils/site-favicon'
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
   CloseIcon,
   GlobeIcon,
+  IncognitoIcon,
   PlusIcon,
   SpinnerIcon
 } from './icons'
 
 const CREATE_COLLECTION_VALUE = '__create_collection__'
+
+// Fixed set on purpose. Container tabs are worth having for the isolation; a
+// rename/create/delete surface for them is a settings feature in its own right,
+// and these four cover the cases people actually separate.
+const TAB_CONTAINERS = ['Personal', 'Work', 'Shopping', 'Banking'] as const
 const DASHBOARD_ADDRESSES = new Set([
   'æther://dashboard',
   'ice://crystallizer',
@@ -21,7 +28,10 @@ const DASHBOARD_ADDRESSES = new Set([
 
 type BrowserChromeProps = {
   activeTab?: BrowserTabSummary
-  addressDraft: string
+  // What the address bar shows when it is not being edited. The text the user
+  // is typing lives in this component, not in App: it changes on every keystroke,
+  // and holding it up there made each one re-render the whole application.
+  displayAddress: string
   addressInputRef: React.RefObject<HTMLInputElement | null>
   busy: string | null
   capturesBlocked: boolean
@@ -36,20 +46,21 @@ type BrowserChromeProps = {
   selectedCollection?: CollectionSummary
   selectedCollectionId: string
   tabs: BrowserTabSummary[]
-  onAddressBlur: () => void
-  onAddressChange: (value: string) => void
-  onAddressFocus: () => void
   onBack: () => Promise<void>
   onCloseAllTabs: () => Promise<void>
   onCloseOtherTabs: (tabId: string) => Promise<void>
   onCloseTab: (tabId: string) => Promise<void>
   onCreateTab: () => void
+  onCreatePrivateTab: () => void
+  onCreateContainerTab: (url: string, container: string) => void
   onCapture: () => Promise<void>
   onCaptureIntent?: () => void | Promise<void>
   onCaptureSelectBlur?: () => void
   onCreateCollection: () => void
   onForward: () => Promise<void>
-  onNavigate: (event: FormEvent<HTMLFormElement>) => Promise<void>
+  // Takes the typed string rather than the submit event, because App no longer
+  // holds the draft and has nothing to read it from.
+  onNavigate: (target: string) => Promise<void>
   onQuickAction: (action: QuickAction) => Promise<void>
   onReorderTabs: (ids: string[]) => Promise<void>
   onSavePortal: () => Promise<void>
@@ -61,7 +72,7 @@ type BrowserChromeProps = {
 
 export function BrowserChrome({
   activeTab,
-  addressDraft,
+  displayAddress,
   addressInputRef,
   busy,
   capturesBlocked,
@@ -76,14 +87,13 @@ export function BrowserChrome({
   /* selectedCollection, */
   selectedCollectionId,
   tabs,
-  onAddressBlur,
-  onAddressChange,
-  onAddressFocus,
   onBack,
   onCloseAllTabs,
   onCloseOtherTabs,
   onCloseTab,
   onCreateTab,
+  onCreatePrivateTab,
+  onCreateContainerTab,
   onCapture,
   onCaptureIntent,
   onCaptureSelectBlur,
@@ -99,7 +109,19 @@ export function BrowserChrome({
   onTabMenuOpen
 }: BrowserChromeProps): React.JSX.Element {
   const startPageActive = activeTab?.url === 'aether://start'
-  const trimmedAddress = addressDraft.trim().toLowerCase()
+
+  // The typed text, and whether the user is typing. Local because a keystroke
+  // should repaint the address bar and nothing else; when this lived in App every
+  // character re-rendered the dashboard, the intelligence panel and the rest.
+  //
+  // `draft` is only meaningful while focused — the moment focus leaves, the bar
+  // goes back to showing `displayAddress`, which App derives from the active tab
+  // and the current workspace.
+  const [draft, setDraft] = useState('')
+  const [focused, setFocused] = useState(false)
+  const addressValue = focused ? draft : displayAddress
+
+  const trimmedAddress = addressValue.trim().toLowerCase()
   const dashboardAddress = dashboardOpen && DASHBOARD_ADDRESSES.has(trimmedAddress)
   const addressSubmittable = Boolean(activeTab && trimmedAddress && !dashboardAddress)
   const [tabMenu, setTabMenu] = useState<{ tabId: string; x: number; y: number } | null>(null)
@@ -171,7 +193,13 @@ export function BrowserChrome({
 
   return (
     <div className={`browser-chrome ${dashboardOpen ? 'dashboard-open' : ''}`}>
-      <form className="address-bar" onSubmit={onNavigate}>
+      <form
+        className="address-bar"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void onNavigate(addressValue)
+        }}
+      >
         <div className="history-controls" aria-label="Browser history controls">
           <button
             aria-label="Go back"
@@ -208,13 +236,30 @@ export function BrowserChrome({
           ref={addressInputRef}
           aria-label="Address or search"
           disabled={!activeTab}
-          value={addressDraft}
-          onBlur={onAddressBlur}
-          onChange={(event) => onAddressChange(event.target.value)}
-          onFocus={onAddressFocus}
+          value={addressValue}
+          onBlur={() => setFocused(false)}
+          onChange={(event) => setDraft(event.target.value)}
+          onFocus={() => {
+            // Focusing on the dashboard starts empty rather than seeding the
+            // pseudo-address (aether://dashboard and friends), which is a label
+            // rather than something worth editing or navigating to.
+            setDraft(dashboardOpen ? '' : displayAddress)
+            setFocused(true)
+            // After the state lands, so the selection applies to the seeded text
+            // rather than to whatever was in the field a moment earlier.
+            window.setTimeout(() => addressInputRef.current?.select(), 0)
+          }}
           placeholder="Search or enter website"
         />
-        <button type="submit" disabled={!addressSubmittable}>
+        <button
+          type="submit"
+          disabled={!addressSubmittable}
+          // Without this, pressing the button blurs the input first: `focused`
+          // flips false, the bar reverts to `displayAddress`, and the submit that
+          // follows navigates to the current page instead of what was typed.
+          // Keeping focus through the press means submit sees the draft.
+          onMouseDown={(event) => event.preventDefault()}
+        >
           Go
         </button>
       </form>
@@ -229,7 +274,7 @@ export function BrowserChrome({
           <button
             className={`tab-chip ${tabs.length > 1 ? 'closable' : 'frozen-tab'} ${
               tab.isActive && !dashboardOpen ? 'active' : ''
-            }`}
+            } ${tab.isPrivate ? 'private' : ''} ${tab.container ? 'contained' : ''}`}
             key={tab.id}
             draggable={Boolean(tab.url)}
             onDragStart={(event) => {
@@ -261,7 +306,8 @@ export function BrowserChrome({
               event.stopPropagation()
               const sourceId = event.dataTransfer.getData('application/x-aether-tab-reorder')
               const midpoint =
-                event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2
+                event.currentTarget.getBoundingClientRect().left +
+                event.currentTarget.offsetWidth / 2
               const ids = reorderTabIds(sourceId, tab.id, event.clientX > midpoint)
               setDraggedTabId(null)
               setTabDropTarget(null)
@@ -278,11 +324,22 @@ export function BrowserChrome({
             <span className="tab-status" aria-hidden="true">
               {tab.isLoading ? (
                 <SpinnerIcon />
+              ) : tab.isPrivate ? (
+                // The favicon would say which site; the point of the marker is
+                // that the tab reads as private at a glance instead.
+                <IncognitoIcon />
               ) : (
                 <PageFavicon key={`${tab.id}-${tab.favicon ?? ''}`} icon={tab.favicon} />
               )}
             </span>
-            <span className="tab-title">{tab.title || tab.host || 'New Tab'}</span>
+            <span className="tab-title">
+              {tab.container && (
+                <span className="tab-container-badge" title={`${tab.container} container`}>
+                  {tab.container.charAt(0)}
+                </span>
+              )}
+              {tab.title || tab.host || 'New Tab'}
+            </span>
             {tabs.length > 1 && (
               <span
                 className="tab-close"
@@ -306,6 +363,15 @@ export function BrowserChrome({
         )}
         <button className="new-tab-button" onClick={onCreateTab} title="New Tab" type="button">
           <PlusIcon />
+        </button>
+        <button
+          className="new-tab-button new-private-tab-button"
+          onClick={onCreatePrivateTab}
+          title="New Private Tab — not saved to your session, and not capturable"
+          aria-label="New private tab"
+          type="button"
+        >
+          <IncognitoIcon />
         </button>
       </div>
       {tabMenu && menuTab && (
@@ -336,6 +402,28 @@ export function BrowserChrome({
           <button type="button" role="menuitem" onClick={() => runTabMenuAction(onCloseAllTabs)}>
             Close All
           </button>
+          <div className="tab-context-menu-separator" role="separator" />
+          {/* Presets rather than a container manager: naming and editing
+              containers is a whole settings surface, and the value is in the
+              isolation, not in the bookkeeping. */}
+          <div className="tab-context-menu-title">Open this page in</div>
+          {TAB_CONTAINERS.map((container) => (
+            <button
+              key={container}
+              type="button"
+              role="menuitem"
+              disabled={menuTab.container === container || menuTab.isPrivate}
+              title={`Isolated cookies and site storage, kept between restarts`}
+              onClick={() =>
+                runTabMenuAction(async () => {
+                  onCreateContainerTab(menuTab.url, container)
+                })
+              }
+            >
+              {container}
+              {menuTab.container === container ? ' (current)' : ''}
+            </button>
+          ))}
         </div>
       )}
       {!dashboardOpen && (
@@ -420,12 +508,15 @@ function getTabStyle(tab: BrowserTabSummary): CSSProperties {
 
 function PageFavicon({ icon }: { icon?: string }): React.JSX.Element {
   const [failed, setFailed] = useState(false)
+  // `icon` is the site's favicon URL, used only as a lookup key; the src below is
+  // always a data: URI produced in Rust. See utils/site-favicon.ts.
+  const dataUri = useSiteFavicon(icon)
 
-  if (!icon || failed) return <GlobeIcon />
+  if (!dataUri || failed) return <GlobeIcon />
 
   return (
     <img
-      src={icon}
+      src={dataUri}
       alt=""
       onError={() => {
         setFailed(true)

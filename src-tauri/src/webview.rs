@@ -104,8 +104,28 @@ pub(crate) fn create_native_webview(
     let app_for_download = app.clone();
     let url = Url::parse(&tab.url).map_err(|error| error.to_string())?;
 
-    let builder = WebviewBuilder::new(label, WebviewUrl::External(url))
-        .user_agent(DESKTOP_BROWSER_USER_AGENT)
+    let builder = WebviewBuilder::new(label, WebviewUrl::External(url));
+
+    // Container tabs get their own persistent store. wry's availability check is
+    // at *runtime* (macOS 14+) and falls back to the default store below that, so
+    // this costs nothing on older systems and needs no deployment-target bump —
+    // but it does mean a container silently shares the default jar on macOS 13
+    // and earlier, and on every other platform, where the option is unsupported.
+    #[cfg(target_os = "macos")]
+    let builder = match tab.container.as_deref() {
+        Some(container) if !tab.private => {
+            builder.data_store_identifier(container_data_store_id(container))
+        }
+        _ => builder,
+    };
+
+    let builder = builder
+        .user_agent(BROWSER_USER_AGENT)
+        // macOS/iOS: a nonPersistent WKWebsiteDataStore. Linux: an ephemeral
+        // WebContext. Windows: needs WebView2 runtime 101+, and does nothing on
+        // older ones — which is why the tab is also barred from capture and from
+        // the session file rather than relying on the engine alone.
+        .incognito(tab.private)
         .on_navigation(move |url| {
             let state = app_for_navigation.state::<Backend>();
             update_tab_navigation_state(&state, &tab_id_for_navigation, url.as_str(), true);
@@ -210,6 +230,8 @@ pub(crate) fn create_native_webview(
     let webview = window
         .add_child(builder, bounds.position, bounds.size)
         .map_err(|error| error.to_string())?;
+    // Before the first paint, so no tracker request escapes an unblocked tab.
+    content_blocking::apply_to_webview(&webview);
     webview.hide().map_err(|error| error.to_string())?;
     Ok(webview)
 }

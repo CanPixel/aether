@@ -15,6 +15,32 @@ export function CloudIcon(): React.JSX.Element {
   )
 }
 
+// Hat and spectacles: the established visual shorthand for a private window, so
+// it reads without a label at tab-strip size.
+export function IncognitoIcon(): React.JSX.Element {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 28 28">
+      <path
+        d="M8 12.5 9.9 7.2a1.8 1.8 0 0 1 2.2-1.1l1.9.5 1.9-.5a1.8 1.8 0 0 1 2.2 1.1L20 12.5M5 12.5h18"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <circle cx="9.6" cy="18" r="3.1" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="18.4" cy="18" r="3.1" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M12.7 17.6a2.4 2.4 0 0 1 2.6 0"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeWidth="1.8"
+      />
+    </svg>
+  )
+}
+
 export function GlobeIcon(): React.JSX.Element {
   return (
     <svg aria-hidden="true" viewBox="0 0 28 28">

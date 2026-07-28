@@ -73,9 +73,6 @@ pub(crate) async fn local_embed_with_progress(
     })?;
     let runtime = Arc::clone(&state.native_runtime);
     task::spawn_blocking(move || {
-        let mut runtime = runtime
-            .lock()
-            .map_err(|_| "Local model runtime is unavailable.".to_string())?;
         match progress {
             Some(progress) => runtime.embed_with_progress(&model_path, inputs, Some(progress)),
             None => runtime.embed(&model_path, inputs),
@@ -122,9 +119,6 @@ pub(crate) async fn local_chat(
     let cancel = Arc::clone(&state.generation_cancelled);
     let model_label = model_label(&model_path);
     let completion = task::spawn_blocking(move || {
-        let mut runtime = runtime
-            .lock()
-            .map_err(|_| "Local model runtime is unavailable.".to_string())?;
         let token_stream = stream.clone();
         let token: Option<TokenSink> = token_stream
             .map(|stream| Box::new(move |delta: &str| stream.delta(delta)) as TokenSink);
@@ -253,9 +247,6 @@ async fn complete_iceberg_attempt(
     let runtime = Arc::clone(&state.native_runtime);
     let cancel = Arc::clone(&state.generation_cancelled);
     let completion = task::spawn_blocking(move || {
-        let mut runtime = runtime
-            .lock()
-            .map_err(|_| "Local model runtime is unavailable.".to_string())?;
         runtime.complete_chat(
             &model_path,
             messages,
@@ -275,34 +266,51 @@ async fn complete_iceberg_attempt(
 }
 
 impl NativeModelRuntime {
-    pub(crate) fn ensure_backend(&mut self) -> Cmd<()> {
-        if self.backend.is_some() {
-            return Ok(());
+    /// The process-wide llama.cpp init token, created on first use.
+    ///
+    /// The `backend_init` lock covers only the initialization itself, not any
+    /// later use: once the `OnceLock` is populated every caller reads it without
+    /// blocking, which is what lets chat and embedding run at the same time.
+    pub(crate) fn backend(&self) -> Cmd<&LlamaBackend> {
+        if let Some(backend) = self.backend.get() {
+            return Ok(backend);
+        }
+
+        let _init = self
+            .backend_init
+            .lock()
+            .map_err(|_| "Local model backend is unavailable.".to_string())?;
+        // Re-check: another thread may have finished while this one waited.
+        if let Some(backend) = self.backend.get() {
+            return Ok(backend);
         }
 
         let mut backend = LlamaBackend::init().map_err(|error| error.to_string())?;
         backend.void_logs();
-        self.backend = Some(backend);
-        Ok(())
+        let _ = self.backend.set(backend);
+        self.backend
+            .get()
+            .ok_or_else(|| "Local model backend is not initialized.".to_string())
     }
 
-    pub(crate) fn ensure_model(&mut self, kind: NativeModelKind, path: &Path) -> Cmd<()> {
+    /// Loads `path` into `slot` unless it is already the model held there.
+    ///
+    /// Takes the caller's existing guard rather than locking again: every caller
+    /// goes on to use the model under that same guard, and re-locking here would
+    /// leave a window in which another thread could swap the model out between
+    /// the load and the use.
+    pub(crate) fn ensure_model_in(
+        &self,
+        slot: &mut Option<LoadedNativeModel>,
+        kind: NativeModelKind,
+        path: &Path,
+    ) -> Cmd<()> {
         let path = canonical_model_path(path);
-        let current_path = match kind {
-            NativeModelKind::Chat => self.chat.as_ref().map(|loaded| loaded.path.as_path()),
-            NativeModelKind::Embedding => {
-                self.embedding.as_ref().map(|loaded| loaded.path.as_path())
-            }
-        };
-        if current_path == Some(path.as_path()) {
+        if slot.as_ref().map(|loaded| loaded.path.as_path()) == Some(path.as_path()) {
             return Ok(());
         }
 
-        self.ensure_backend()?;
-        let backend = self
-            .backend
-            .as_ref()
-            .ok_or_else(|| "Local model backend is not initialized.".to_string())?;
+        let backend = self.backend()?;
         // Mobile: load weights into anonymous memory instead of mmapping the
         // GGUF. Mmapped weight pages are ordinary page cache, and Android
         // evicts them under the memory pressure the native tab WebViews
@@ -329,20 +337,16 @@ impl NativeModelRuntime {
         let model = LlamaModel::load_from_file(backend, &path, &params).map_err(|error| {
             format!("Failed to load local model {}: {error}", model_label(&path))
         })?;
-        let loaded = LoadedNativeModel { path, model };
-        match kind {
-            NativeModelKind::Chat => self.chat = Some(loaded),
-            NativeModelKind::Embedding => self.embedding = Some(loaded),
-        }
+        *slot = Some(LoadedNativeModel { path, model });
         Ok(())
     }
 
-    pub(crate) fn embed(&mut self, model_path: &Path, inputs: Vec<String>) -> Cmd<Vec<Vec<f32>>> {
+    pub(crate) fn embed(&self, model_path: &Path, inputs: Vec<String>) -> Cmd<Vec<Vec<f32>>> {
         self.embed_with_progress(model_path, inputs, None)
     }
 
     pub(crate) fn embed_with_progress(
-        &mut self,
+        &self,
         model_path: &Path,
         inputs: Vec<String>,
         progress: Option<EmbeddingProgress>,
@@ -351,13 +355,15 @@ impl NativeModelRuntime {
             return Ok(Vec::new());
         }
 
-        self.ensure_model(NativeModelKind::Embedding, model_path)?;
-        let backend = self
-            .backend
-            .as_ref()
-            .ok_or_else(|| "Local model backend is not initialized.".to_string())?;
-        let model = &self
+        // Only the embedding slot is locked, so a chat generation already running
+        // on the other model does not block this and is not blocked by it.
+        let mut slot = self
             .embedding
+            .lock()
+            .map_err(|_| "Local embedding model is unavailable.".to_string())?;
+        self.ensure_model_in(&mut slot, NativeModelKind::Embedding, model_path)?;
+        let backend = self.backend()?;
+        let model = &slot
             .as_ref()
             .ok_or_else(|| "Local embedding model is not loaded.".to_string())?
             .model;
@@ -486,12 +492,25 @@ impl NativeModelRuntime {
     }
 
     #[cfg(desktop)]
-    pub(crate) fn warm_embedding_model(&mut self, model_path: &Path) -> Cmd<()> {
-        self.ensure_model(NativeModelKind::Embedding, model_path)
+    pub(crate) fn warm_embedding_model(&self, model_path: &Path) -> Cmd<()> {
+        let mut slot = self
+            .embedding
+            .lock()
+            .map_err(|_| "Local embedding model is unavailable.".to_string())?;
+        self.ensure_model_in(&mut slot, NativeModelKind::Embedding, model_path)
+    }
+
+    #[cfg(desktop)]
+    pub(crate) fn warm_chat_model(&self, model_path: &Path) -> Cmd<()> {
+        let mut slot = self
+            .chat
+            .lock()
+            .map_err(|_| "Local chat model is unavailable.".to_string())?;
+        self.ensure_model_in(&mut slot, NativeModelKind::Chat, model_path)
     }
 
     pub(crate) fn complete_chat(
-        &mut self,
+        &self,
         model_path: &Path,
         messages: Vec<ChatPromptMessage>,
         max_tokens: usize,
@@ -499,10 +518,17 @@ impl NativeModelRuntime {
         cancel: &AtomicBool,
         mut sinks: ChatSinks,
     ) -> Cmd<ChatCompletion> {
+        // Held for the whole generation, which is the point: two answers at once
+        // would share one model and one KV cache. Embedding is a separate lock, so
+        // search and the Flow graph stay responsive while this runs.
+        let mut slot = self
+            .chat
+            .lock()
+            .map_err(|_| "Local chat model is unavailable.".to_string())?;
+
         // The first ask pays for the multi-GB model load; on phone-class
         // storage that is long enough to read as a hang without a status.
-        let needs_load = self
-            .chat
+        let needs_load = slot
             .as_ref()
             .map(|loaded| loaded.path != canonical_model_path(model_path))
             .unwrap_or(true);
@@ -514,16 +540,14 @@ impl NativeModelRuntime {
                 ));
             }
         }
-        self.ensure_model(NativeModelKind::Chat, model_path)?;
-        let rendered = {
-            let model = &self
-                .chat
-                .as_ref()
-                .ok_or_else(|| "Local chat model is not loaded.".to_string())?
-                .model;
-            render_model_chat_prompt(model, &messages)?
-        };
+        self.ensure_model_in(&mut slot, NativeModelKind::Chat, model_path)?;
+        let model = &slot
+            .as_ref()
+            .ok_or_else(|| "Local chat model is not loaded.".to_string())?
+            .model;
+        let rendered = render_model_chat_prompt(model, &messages)?;
         self.complete_loaded_prompt(
+            model,
             &rendered.prompt,
             max_tokens,
             temperature,
@@ -533,9 +557,12 @@ impl NativeModelRuntime {
         )
     }
 
+    // Takes the model by reference rather than reaching for `self.chat`, so the
+    // caller's lock guard is the only thing that decides which model this runs on.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn complete_loaded_prompt(
-        &mut self,
+        &self,
+        model: &LlamaModel,
         prompt: &str,
         max_tokens: usize,
         temperature: f32,
@@ -543,15 +570,7 @@ impl NativeModelRuntime {
         cancel: &AtomicBool,
         mut sinks: ChatSinks,
     ) -> Cmd<ChatCompletion> {
-        let backend = self
-            .backend
-            .as_ref()
-            .ok_or_else(|| "Local model backend is not initialized.".to_string())?;
-        let model = &self
-            .chat
-            .as_ref()
-            .ok_or_else(|| "Local chat model is not loaded.".to_string())?
-            .model;
+        let backend = self.backend()?;
         let mut tokens = model
             .str_to_token(prompt, add_bos)
             .map_err(|error| error.to_string())?;

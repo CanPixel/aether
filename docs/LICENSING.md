@@ -12,8 +12,8 @@ These are true today and worth fixing **whatever licence is chosen**.
 
 ### 1. Even local modification is not permitted
 
-PolyForm Strict grants everything *"other than distributing the software **or making
-changes or new works based on the software**."*
+PolyForm Strict grants everything _"other than distributing the software **or making
+changes or new works based on the software**."_
 
 That second clause is stricter than it usually reads. It means:
 
@@ -85,7 +85,7 @@ it ships.
 
 Real OSI open source, with a commercial licence sold to anyone who cannot comply.
 
-- Weak here. The copyleft trigger is *conveying* or *network use*; a local desktop
+- Weak here. The copyleft trigger is _conveying_ or _network use_; a local desktop
   app with no server rarely trips either, so the commercial pressure that makes
   dual-licensing work mostly is not there.
 - A competitor could fork commercially provided they publish source.
@@ -108,8 +108,8 @@ contact.
 
 ## A correction to the audit that prompted this
 
-The audit said the current setup has *"the costs of proprietary and the revenue of
-open source."* That is unfair as written. PolyForm Strict **does** establish the
+The audit said the current setup has _"the costs of proprietary and the revenue of
+open source."_ That is unfair as written. PolyForm Strict **does** establish the
 legal basis for a commercial story — every commercial right is retained. What is
 missing is everything on the other side of it: no price, no tier, no contact. Gap 3
 above is the real finding; the licence family is a secondary question.

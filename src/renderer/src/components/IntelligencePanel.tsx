@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState, type RefObject, type WheelEvent } from 'react'
+import { memo, FormEvent, useEffect, useRef, useState, type RefObject, type WheelEvent } from 'react'
 import {
   ChatResult,
   CollectionSummary,
@@ -65,7 +65,7 @@ function modelOptionsWithSelected(models: string[], selected?: string | null): s
   return [selected, ...models]
 }
 
-export function IntelligencePanel({
+function IntelligencePanelComponent({
   busy,
   chatBlocked,
   chatIsExtractive,
@@ -136,7 +136,8 @@ export function IntelligencePanel({
   // The newest stored turn and chatResult are the same exchange; drop it here so the
   // live answer card is not duplicated above itself.
   const priorTurns =
-    chatResult && chatThread.length > 0 &&
+    chatResult &&
+    chatThread.length > 0 &&
     chatThread[chatThread.length - 1].answer === chatResult.answer
       ? chatThread.slice(0, -1)
       : chatThread
@@ -351,8 +352,8 @@ export function IntelligencePanel({
                   read as a failed answer. */}
               {chatIsExtractive && (
                 <p className="chat-extractive-note">
-                  No chat model installed — AiON will return the best matching passages
-                  from your sources instead of a written answer.
+                  No chat model installed — AiON will return the best matching passages from your
+                  sources instead of a written answer.
                 </p>
               )}
             </form>
@@ -903,7 +904,9 @@ function LocalModelSettings({
       <div className="model-heading">
         <div>
           <h2>Built-in Models</h2>
-          <p>{status?.runtimeReady ? countLabel(models.length, 'local model') : 'No local model'}</p>
+          <p>
+            {status?.runtimeReady ? countLabel(models.length, 'local model') : 'No local model'}
+          </p>
         </div>
         <span>{modelLabel}</span>
       </div>
@@ -1034,7 +1037,6 @@ function AnswerCard({
   )
 }
 
-
 function StatusPill({ status }: { status: SystemStatus | null }): React.JSX.Element {
   if (!status) {
     return <span className="status-pill neutral">Checking</span>
@@ -1049,3 +1051,11 @@ function StatusPill({ status }: { status: SystemStatus | null }): React.JSX.Elem
     </span>
   )
 }
+
+// Wrapped in memo because App owns almost all of this app's state: a keystroke in
+// the address bar, a status toast, a streaming token — each re-renders App, and
+// without this every one of them re-renders this panel too. The handlers App
+// passes down go through useStableHandler so those props stay equal between
+// renders; without that this wrapper would compare unequal every time and do
+// nothing.
+export const IntelligencePanel = memo(IntelligencePanelComponent)

@@ -23,6 +23,13 @@ export interface BrowserTabSummary {
   canGoForward: boolean
   favicon?: string
   themeColor?: string
+  // Non-persistent webview data store, never written to the session, and barred
+  // from capture and from AiON's current-page context.
+  isPrivate: boolean
+  // Opt-in storage partition. Cookies and local storage are isolated from the
+  // default jar and from every other container, and persist across restarts.
+  // macOS 14+ only; elsewhere the tab shares the default store.
+  container?: string
 }
 
 export interface HubShortcutSummary {
@@ -391,7 +398,23 @@ export interface SystemStatus {
   dbPath: string
   libraryPath: string
   collections: CollectionSummary[]
+  contentBlocking: ContentBlockingStatus
   error?: string
+}
+
+// Reported by the backend rather than inferred from the user agent: the three
+// platforms block genuinely different things, and a claim hardcoded here would
+// keep asserting cookie blocking on Windows long after anyone remembered that
+// WebView2 has no equivalent for it.
+export interface ContentBlockingStatus {
+  // Human-readable name of the engine doing the blocking, e.g. "WebKit content
+  // rules". Empty when there is none.
+  engine: string
+  blockedHostCount: number
+  // False on Windows. A tracker that is not on the host list still sets
+  // third-party cookies there.
+  blocksThirdPartyCookies: boolean
+  available: boolean
 }
 
 export interface LibraryExportResult {
@@ -517,7 +540,11 @@ export interface AetherApi {
   }
   tabs: {
     list(): Promise<BrowserTabSummary[]>
-    create(input?: { url?: string }): Promise<BrowserTabSummary>
+    create(input?: {
+      url?: string
+      private?: boolean
+      container?: string
+    }): Promise<BrowserTabSummary>
     activate(tabId: string): Promise<void>
     close(tabId: string): Promise<void>
     reorder(ids: string[]): Promise<BrowserTabSummary[]>
@@ -528,6 +555,14 @@ export interface AetherApi {
     goForward(tabId: string): Promise<void>
     // Android-only tab-grid preview (data-URI JPEG); resolves null on desktop.
     thumbnail(tabId: string): Promise<string | null>
+    // Site icon as a data URI, fetched in Rust. The privileged window must not
+    // request one directly: that is an outbound call to every visited host from
+    // the context that holds the IPC bridge. Resolves null when there is none.
+    favicon(url: string): Promise<string | null>
+    // Clears the shared webview data store: cookies, caches, local storage.
+    // Touches nothing ÆTHER stores itself. macOS only for now — see
+    // docs/SECURITY.md for why the other platforms have no equivalent yet.
+    clearBrowsingData(): Promise<void>
   }
   dashboard: {
     open(): Promise<void>

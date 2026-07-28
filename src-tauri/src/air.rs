@@ -196,38 +196,53 @@ pub(crate) async fn air_sources_for_hub(
     collection_id: Option<&str>,
     limit: usize,
 ) -> Cmd<Vec<AirDossierSource>> {
-    let library = load_library(&state.paths.library_path).await?;
-    let collection_names = library
-        .collections
-        .iter()
-        .map(|collection| (collection.id.clone(), collection.name.clone()))
-        .collect::<HashMap<_, _>>();
-    let vectors = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
-    let mut chunks_by_capture = HashMap::<String, Vec<ChunkRecord>>::new();
-    for chunk in vectors {
-        chunks_by_capture
-            .entry(chunk.capture_id.clone())
-            .or_default()
-            .push(chunk);
-    }
-    let mut captures = library
-        .captures
-        .into_iter()
-        .filter(|capture| {
-            collection_id
-                .map(|id| capture.collection_id == id)
-                .unwrap_or(true)
-        })
-        .collect::<Vec<_>>();
+    let collection_names = collection_names(state).await?;
+    let mut captures = with_library_read(state, |library| {
+        library
+            .captures
+            .iter()
+            .filter(|capture| {
+                collection_id
+                    .map(|id| capture.collection_id == id)
+                    .unwrap_or(true)
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+    })
+    .await?;
     captures.sort_by(|left, right| right.captured_at.cmp(&left.captured_at));
+    captures.truncate(limit);
+
+    // One excerpt per capture, for at most `limit` captures. Derived under the
+    // read lock so the chunk store is not cloned to produce it.
+    let excerpts = with_vectors_read(state, |vectors| {
+        let mut longest = HashMap::<&str, &ChunkRecord>::new();
+        for chunk in &vectors.chunks {
+            let entry = longest.entry(chunk.capture_id.as_str()).or_insert(chunk);
+            if chunk.text.chars().count() > entry.text.chars().count() {
+                *entry = chunk;
+            }
+        }
+        captures
+            .iter()
+            .filter_map(|capture| {
+                longest.get(capture.id.as_str()).map(|chunk| {
+                    (
+                        capture.id.clone(),
+                        semantic_trail_excerpt(&chunk.text, 700),
+                    )
+                })
+            })
+            .collect::<HashMap<_, _>>()
+    })
+    .await?;
+
     Ok(captures
         .into_iter()
-        .take(limit)
         .map(|capture| {
-            let excerpt = chunks_by_capture
+            let excerpt = excerpts
                 .get(&capture.id)
-                .and_then(|chunks| chunks.iter().max_by_key(|chunk| chunk.text.chars().count()))
-                .map(|chunk| semantic_trail_excerpt(&chunk.text, 700))
+                .cloned()
                 .or_else(|| {
                     capture
                         .metadata
@@ -253,17 +268,15 @@ pub(crate) async fn air_sources_for_capture(
     state: &State<'_, Backend>,
     capture_id: &str,
 ) -> Cmd<Vec<AirDossierSource>> {
-    let library = load_library(&state.paths.library_path).await?;
-    let collection_names = library
-        .collections
-        .iter()
-        .map(|collection| (collection.id.clone(), collection.name.clone()))
-        .collect::<HashMap<_, _>>();
-    let Some(capture) = library
-        .captures
-        .iter()
-        .find(|capture| capture.id == capture_id)
-        .cloned()
+    let collection_names = collection_names(state).await?;
+    let Some(capture) = with_library_read(state, |library| {
+        library
+            .captures
+            .iter()
+            .find(|capture| capture.id == capture_id)
+            .cloned()
+    })
+    .await?
     else {
         return Ok(Vec::new());
     };
@@ -302,41 +315,43 @@ pub(crate) async fn air_sources_for_topic(
     lens: &str,
     limit: usize,
 ) -> Cmd<Vec<AirDossierSource>> {
-    let library = load_library(&state.paths.library_path).await?;
-    let collection_names = library
-        .collections
-        .iter()
-        .map(|collection| (collection.id.clone(), collection.name.clone()))
-        .collect::<HashMap<_, _>>();
-    let vectors = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
-    if vectors.is_empty() {
+    let collection_names = collection_names(state).await?;
+    if with_vectors_read(state, |vectors| vectors.chunks.is_empty()).await? {
         return Ok(Vec::new());
     }
 
+    // Both branches select a bounded slice of chunks and clone only that. Sorting
+    // and scoring happen against borrowed records inside the read lock; the
+    // previous shape cloned the whole store and then discarded all but `limit * 3`.
     let results = if lens.trim().is_empty() || lens == "Current Flow lens" {
-        let mut chunks = vectors;
-        chunks.sort_by(|left, right| right.captured_at.cmp(&left.captured_at));
-        chunks
-            .into_iter()
-            .take(limit * 2)
-            .map(|chunk| SearchResult {
-                score: 0.0,
-                id: chunk.id,
-                collection_id: chunk.collection_id,
-                capture_id: chunk.capture_id,
-                app_id: chunk.app_id,
-                title: chunk.title,
-                url: chunk.url,
-                captured_at: chunk.captured_at,
-                chunk_index: chunk.chunk_index,
-                text: chunk.text,
-            })
-            .collect::<Vec<_>>()
+        with_vectors_read(state, |vectors| {
+            let mut recent = vectors.chunks.iter().collect::<Vec<_>>();
+            recent.sort_by(|left, right| right.captured_at.cmp(&left.captured_at));
+            recent
+                .into_iter()
+                .take(limit * 2)
+                .map(|chunk| SearchResult {
+                    score: 0.0,
+                    id: chunk.id.clone(),
+                    collection_id: chunk.collection_id.clone(),
+                    capture_id: chunk.capture_id.clone(),
+                    app_id: chunk.app_id.clone(),
+                    title: chunk.title.clone(),
+                    url: chunk.url.clone(),
+                    captured_at: chunk.captured_at.clone(),
+                    chunk_index: chunk.chunk_index,
+                    text: chunk.text.clone(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .await?
     } else {
         let settings = load_settings(&state.paths.settings_path).await?;
         let query_vector = local_embed_query(state, &settings, lens.to_string()).await?;
+        with_vectors_read(state, |vectors| {
         let mut scored = vectors
-            .into_iter()
+            .chunks
+            .iter()
             .filter_map(|chunk| {
                 let distance = cosine_distance(&query_vector, &chunk.vector);
                 if !distance.is_finite() {
@@ -351,17 +366,19 @@ pub(crate) async fn air_sources_for_topic(
             .take(limit * 3)
             .map(|(score, chunk)| SearchResult {
                 score,
-                id: chunk.id,
-                collection_id: chunk.collection_id,
-                capture_id: chunk.capture_id,
-                app_id: chunk.app_id,
-                title: chunk.title,
-                url: chunk.url,
-                captured_at: chunk.captured_at,
+                id: chunk.id.clone(),
+                collection_id: chunk.collection_id.clone(),
+                capture_id: chunk.capture_id.clone(),
+                app_id: chunk.app_id.clone(),
+                title: chunk.title.clone(),
+                url: chunk.url.clone(),
+                captured_at: chunk.captured_at.clone(),
                 chunk_index: chunk.chunk_index,
-                text: chunk.text,
+                text: chunk.text.clone(),
             })
             .collect::<Vec<_>>()
+        })
+        .await?
     };
     Ok(search_results_to_air_sources(
         dedupe_citations(results).into_iter().take(limit).collect(),

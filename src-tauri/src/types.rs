@@ -15,8 +15,19 @@ pub(crate) struct Backend {
     // precedence over the SIDEBAR_WIDTH/BROWSER_VIEW_TOP/PANEL_WIDTH constants.
     pub(crate) web_content_bounds: Mutex<WebContentBounds>,
     pub(crate) client: Client,
-    pub(crate) native_runtime: Arc<Mutex<NativeModelRuntime>>,
+    // Session-scoped favicon cache, origin -> data URI, with None recording a host
+    // that has no usable icon so it is not refetched. Memory only on purpose: see
+    // the module comment in favicon.rs.
+    pub(crate) favicon_cache: Mutex<HashMap<String, Option<String>>>,
+    pub(crate) native_runtime: Arc<NativeModelRuntime>,
     pub(crate) vectors: tokio::sync::RwLock<Option<VectorStoreData>>,
+    // Collections, captures and shortcuts, cached the same way as the vectors.
+    // Two reasons, and the second is the load-bearing one: every command used to
+    // re-read and re-parse library.json from disk, and — because a mutation was a
+    // bare load/modify/save with no lock held across the pair — two commands in
+    // flight could interleave and silently drop one of the writes. The lock is
+    // what makes a read-modify-write atomic; the caching is the side benefit.
+    pub(crate) library: tokio::sync::RwLock<Option<LibraryData>>,
     pub(crate) generation_cancelled: Arc<AtomicBool>,
     // Throttle for window geometry writes; resize/move fire continuously.
     #[cfg(desktop)]
@@ -45,11 +56,34 @@ pub(crate) struct WebContentBounds {
     pub(crate) height: f64,
 }
 
+/// The loaded llama.cpp models, with chat and embedding locked separately.
+///
+/// One lock over all of it used to be held for the entire duration of a chat
+/// generation, so a search, a Flow graph or an AiR lens — all of which need to
+/// embed a query — blocked until the answer finished streaming. That is tens of
+/// seconds of a frozen library for something that shares no state with the chat
+/// model: the two are already independent `LlamaModel`s.
+///
+/// `LlamaBackend` is a zero-sized proof-of-initialization token that can only be
+/// created once per process, and neither `load_from_file` nor `new_context`
+/// retains the reference it is given, so it is shared rather than locked. The
+/// `backend_init` mutex exists only to make the one-time init a single winner;
+/// `LlamaBackend::init()` returns `BackendAlreadyInitialized` to the loser, which
+/// on the second model load would be a spurious failure.
+///
+/// The cost of the split, worth knowing before tuning anything here: a chat and an
+/// embedding context can now be live at the same time, so peak memory is both KV
+/// caches rather than the larger one, and both size their thread pools from
+/// `auto_thread_count()` independently. On desktop that is the trade this is meant
+/// to make. On mobile — where weights are already malloc'd rather than mmapped for
+/// exactly these pressure reasons — it is the first thing to suspect if capture
+/// during generation starts thrashing.
 #[derive(Default)]
 pub(crate) struct NativeModelRuntime {
-    pub(crate) backend: Option<LlamaBackend>,
-    pub(crate) chat: Option<LoadedNativeModel>,
-    pub(crate) embedding: Option<LoadedNativeModel>,
+    pub(crate) backend: OnceLock<LlamaBackend>,
+    pub(crate) backend_init: Mutex<()>,
+    pub(crate) chat: Mutex<Option<LoadedNativeModel>>,
+    pub(crate) embedding: Mutex<Option<LoadedNativeModel>>,
 }
 
 pub(crate) struct LoadedNativeModel {
@@ -152,6 +186,21 @@ pub(crate) struct ManagedTab {
     // the WebView never saw — most notably the aether://start page.
     pub(crate) native_can_go_back: Option<bool>,
     pub(crate) native_can_go_forward: Option<bool>,
+    // A private tab gets a non-persistent webview data store, is never written to
+    // the session, and cannot be captured. The last of those is the one that is
+    // easy to forget: ÆTHER's whole point is a durable local index of what you
+    // read, and that is precisely what a private tab must not produce.
+    pub(crate) private: bool,
+    // Opt-in storage partition. `None` shares the default store with every other
+    // ordinary tab; `Some(name)` gets its own persistent cookie jar and local
+    // storage, isolated from the default and from every other container.
+    //
+    // Chosen over always-on per-site isolation because navigation reuses the
+    // webview (see navigate_native_webview): the data store is fixed when the
+    // webview is built, so a tab that started on one site and navigated to
+    // another would file the second site's cookies under the first. Same site,
+    // two jars, depending on how you arrived — worse than not partitioning.
+    pub(crate) container: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -185,6 +234,9 @@ pub(crate) struct BrowserTabSummary {
     pub(crate) favicon: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) theme_color: Option<String>,
+    pub(crate) is_private: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) container: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -678,14 +730,35 @@ pub(crate) struct SystemStatus {
     pub(crate) db_path: String,
     pub(crate) library_path: String,
     pub(crate) collections: Vec<CollectionSummary>,
+    pub(crate) content_blocking: ContentBlockingStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
+}
+
+/// What tracker blocking this build provides, reported rather than assumed.
+///
+/// `blocks_third_party_cookies` is the one that matters: macOS and Linux get it
+/// from the `block-cookies` rule the WebKit engine evaluates, and Windows has no
+/// WebView2 equivalent — a request either happens or does not, so a tracker that
+/// is not on the host list still sets cookies there. That is the largest
+/// behavioural difference between the platforms and the user should be told.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ContentBlockingStatus {
+    pub(crate) engine: String,
+    pub(crate) blocked_host_count: usize,
+    pub(crate) blocks_third_party_cookies: bool,
+    pub(crate) available: bool,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CreateTabInput {
     pub(crate) url: Option<String>,
+    #[serde(default)]
+    pub(crate) private: bool,
+    #[serde(default)]
+    pub(crate) container: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1212,7 +1285,9 @@ pub(crate) struct LocalModelSettings {
 impl Default for BrowserSettings {
     fn default() -> Self {
         Self {
-            default_search_engine: "google".to_string(),
+            // Existing installs keep whatever is already in settings.json; this
+            // only changes where a fresh profile starts. See search_engine_prefix.
+            default_search_engine: DEFAULT_SEARCH_ENGINE.to_string(),
         }
     }
 }

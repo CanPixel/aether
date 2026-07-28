@@ -41,13 +41,86 @@ pub(crate) fn normalize_captured_text(text: &str) -> String {
         .to_string()
 }
 
+/// Click identifiers, matched exactly. Each one exists to join a visit to an ad
+/// impression or a mail send; none is load-bearing for rendering the page.
+const TRACKING_PARAMS: [&str; 22] = [
+    "fbclid",
+    "gclid",
+    "gclsrc",
+    "dclid",
+    "gbraid",
+    "wbraid",
+    "msclkid",
+    "twclid",
+    "ttclid",
+    "igshid",
+    "yclid",
+    "li_fat_id",
+    "mkt_tok",
+    "mc_cid",
+    "mc_eid",
+    "s_kwcid",
+    "ef_id",
+    "epik",
+    "irclickid",
+    "rb_clickid",
+    "vero_id",
+    "oly_enc_id",
+];
+
+/// Whole families of analytics parameters. Kept narrow on purpose: a prefix that
+/// is too greedy silently breaks real navigation, which is a worse failure than
+/// leaking a campaign id, because the user cannot see it happen.
+const TRACKING_PARAM_PREFIXES: [&str; 5] = ["utm_", "pk_", "_hsenc", "_hsmi", "hsa_"];
+
+fn is_tracking_param(key: &str) -> bool {
+    let lowered = key.to_ascii_lowercase();
+    TRACKING_PARAMS.contains(&lowered.as_str())
+        || TRACKING_PARAM_PREFIXES
+            .iter()
+            .any(|prefix| lowered.starts_with(prefix))
+}
+
+/// Removes click identifiers from an http(s) URL, leaving everything else byte
+/// for byte. Returns the input unchanged when nothing matched, so ordinary
+/// navigation never pays a URL-reserialisation round trip.
+///
+/// This runs on navigation *and* on capture, which matters twice over: the site
+/// never receives the identifier, and it never reaches the local index either —
+/// otherwise a captured URL would keep the ad attribution forever.
+pub(crate) fn strip_tracking_params(url: &str) -> String {
+    let Ok(parsed) = Url::parse(url) else {
+        return url.to_string();
+    };
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.query().is_none() {
+        return url.to_string();
+    }
+
+    let kept = parsed
+        .query_pairs()
+        .filter(|(key, _)| !is_tracking_param(key))
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect::<Vec<_>>();
+    if kept.len() == parsed.query_pairs().count() {
+        return url.to_string();
+    }
+
+    let mut cleaned = parsed.clone();
+    if kept.is_empty() {
+        cleaned.set_query(None);
+    } else {
+        cleaned.query_pairs_mut().clear().extend_pairs(kept);
+    }
+    cleaned.to_string()
+}
+
 pub(crate) fn normalize_url(raw_url: &str, search_engine: &str) -> String {
     let trimmed = raw_url.trim();
     if trimmed.is_empty() {
-        return "https://www.google.com".to_string();
+        return search_engine_home(search_engine).to_string();
     }
     if Url::parse(trimmed).is_ok() {
-        return trimmed.to_string();
+        return strip_tracking_params(trimmed);
     }
     if trimmed.contains(char::is_whitespace) || !trimmed.contains(['.', ':']) {
         return format!(
@@ -65,20 +138,34 @@ pub(crate) fn normalize_url(raw_url: &str, search_engine: &str) -> String {
     format!("https://{trimmed}")
 }
 
+// DuckDuckGo is the fallback rather than Google in all three functions below.
+// The default search engine is the single highest-traffic privacy decision the
+// app makes — it sees every query typed into the address bar — so an unset or
+// unrecognised value should land on the option that does not build a profile.
 pub(crate) fn search_engine_prefix(id: &str) -> &'static str {
     match id {
+        "google" => "https://www.google.com/search?q=",
         "bing" => "https://www.bing.com/search?q=",
         "yahoo" => "https://search.yahoo.com/search?p=",
         "ecosia" => "https://www.ecosia.org/search?q=",
-        "duckduckgo" => "https://duckduckgo.com/?q=",
-        _ => "https://www.google.com/search?q=",
+        _ => "https://duckduckgo.com/?q=",
+    }
+}
+
+pub(crate) fn search_engine_home(id: &str) -> &'static str {
+    match id {
+        "google" => "https://www.google.com",
+        "bing" => "https://www.bing.com",
+        "yahoo" => "https://search.yahoo.com",
+        "ecosia" => "https://www.ecosia.org",
+        _ => "https://duckduckgo.com",
     }
 }
 
 pub(crate) fn normalize_search_engine_id(value: &str) -> String {
     match value {
         "google" | "bing" | "yahoo" | "ecosia" | "duckduckgo" => value.to_string(),
-        _ => "google".to_string(),
+        _ => "duckduckgo".to_string(),
     }
 }
 
@@ -143,6 +230,24 @@ pub(crate) fn title_from_url(url: &str) -> String {
     } else {
         host
     }
+}
+
+/// Stable 16-byte data-store identifier for a container name.
+///
+/// macOS-only because `data_store_identifier` is: Windows, Linux and Android
+/// have no equivalent, so a container tab there shares the default store and the
+/// isolation is nominal. See docs/SECURITY.md.
+///
+/// UUIDv5 because it is a *deterministic* hash of the name: the same container
+/// must resolve to the same WKWebsiteDataStore on every launch, or its cookies
+/// are orphaned on disk and the user is silently logged out each restart.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn container_data_store_id(container: &str) -> [u8; 16] {
+    const NAMESPACE: uuid::Uuid = uuid::Uuid::from_bytes([
+        0x41, 0x45, 0x54, 0x48, 0x45, 0x52, 0x43, 0x54, 0x52, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x01,
+    ]);
+    *uuid::Uuid::new_v5(&NAMESPACE, container.trim().to_lowercase().as_bytes()).as_bytes()
 }
 
 pub(crate) fn favicon_for_url(url: &str) -> Option<String> {

@@ -58,9 +58,21 @@ pub(crate) async fn extract_readable_page_from_webview(
         .get(&active_tab.id)
         .cloned()
         .ok_or_else(|| "Active browser webview is not ready.".to_string())?;
+    // Consent dialogs are first-party, visible DOM, so content blocking does not
+    // touch them and innerText picks them up in full. "We use cookies to improve
+    // your experience. Accept All. Reject." then gets embedded on every capture,
+    // which is noise in every retrieval that follows.
+    //
+    // Named CMP containers only — no `[class*="cookie"]` guesswork. These five
+    // cover the overwhelming majority of banners, and a wrong match here silently
+    // deletes real content from a capture, which is far worse than a leftover
+    // banner. Extend it with specific roots, never with substring heuristics.
     let script = r#"(() => {
       const clone = document.documentElement.cloneNode(true);
       clone.querySelectorAll('script, style, noscript, iframe, form, nav, footer, svg').forEach((node) => node.remove());
+      clone.querySelectorAll(
+        '#onetrust-consent-sdk, #CybotCookiebotDialog, .fc-consent-root, #usercentrics-root, [id^="sp_message_container"]'
+      ).forEach((node) => node.remove());
       return {
         html: '<!doctype html>' + clone.outerHTML,
         url: location.href,
@@ -132,12 +144,29 @@ pub(crate) fn snapshot_to_captured_page(
             .and_then(|document| select_meta_content(document, "description"))
             .unwrap_or_default()
     });
-    let body_text = snapshot.body_text.unwrap_or_else(|| {
-        parsed_document
-            .as_ref()
-            .map(select_body_text)
-            .unwrap_or_default()
-    });
+    // The cleaned clone wins over the raw `innerText`, and the order matters.
+    //
+    // The injected script strips nav, footer, script and friends from a *clone*
+    // and sends that as `html`, but `body_text` is `document.body.innerText` from
+    // the untouched live DOM. Preferring `body_text` — which is what this did —
+    // meant the stripping never applied to the text that actually gets embedded,
+    // and every capture carried the site's navigation and footer into the index.
+    //
+    // `innerText` remains the fallback because it is the better answer when the
+    // clone is missing or unparseable, and because it respects `display: none`
+    // where the clone's text does not.
+    // Deliberately a "the clone yielded essentially nothing" threshold, not
+    // MIN_CAPTURE_TEXT_LENGTH. Falling back at the capture threshold would mean a
+    // page with a little genuine content gets topped up with its own navigation
+    // until it passes — the capture should honestly fail instead.
+    const CLONE_TEXT_FLOOR: usize = 32;
+
+    let body_text = parsed_document
+        .as_ref()
+        .map(select_body_text)
+        .filter(|text| text.len() >= CLONE_TEXT_FLOOR)
+        .or(snapshot.body_text)
+        .unwrap_or_default();
     let text = normalize_captured_text(&format!("{title}\n\n{description}\n\n{body_text}"));
 
     if text.len() < MIN_CAPTURE_TEXT_LENGTH {
@@ -196,13 +225,40 @@ pub(crate) fn select_meta_content(document: &Html, name: &str) -> Option<String>
         .map(|value| value.trim().to_string())
 }
 
+/// Elements whose text is never page content. Deliberately the same list the
+/// injected snapshot script removes, so the webview path and the HTTP fallback
+/// path agree on what a page says — otherwise the same URL yields different
+/// embeddings depending on which path captured it.
+///
+/// `script` is the one that actually bit: `scraper`'s `.text()` walks every
+/// descendant text node, and a `<script>` body *is* a text node, so inline
+/// JavaScript source was being embedded and indexed as prose.
+const NON_CONTENT_ELEMENTS: [&str; 8] = [
+    "script", "style", "noscript", "iframe", "form", "nav", "footer", "svg",
+];
+
+fn collect_content_text(element: ElementRef, out: &mut Vec<String>) {
+    for child in element.children() {
+        if let Some(text) = child.value().as_text() {
+            let text = text.trim();
+            if !text.is_empty() {
+                out.push(text.to_string());
+            }
+        } else if let Some(child) = ElementRef::wrap(child) {
+            // Skipping the whole subtree, not just this node's own text.
+            if NON_CONTENT_ELEMENTS.contains(&child.value().name()) {
+                continue;
+            }
+            collect_content_text(child, out);
+        }
+    }
+}
+
 pub(crate) fn select_body_text(document: &Html) -> String {
     let selector = Selector::parse("body").expect("body selector");
-    document
-        .select(&selector)
-        .flat_map(|node| node.text())
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut out = Vec::new();
+    for body in document.select(&selector) {
+        collect_content_text(body, &mut out);
+    }
+    out.join(" ")
 }

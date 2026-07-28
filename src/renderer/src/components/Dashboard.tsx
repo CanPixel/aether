@@ -1,4 +1,4 @@
-import { CSSProperties, DragEvent, useRef, useState, type ComponentType } from 'react'
+import { memo, CSSProperties, DragEvent, useRef, useState, type ComponentType } from 'react'
 import {
   Atom,
   BookOpen,
@@ -30,7 +30,15 @@ import {
   SavedIcebergSummary
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
-import { cleanTitle, countLabel, formatDate, getCaptureHost, getPortalTint, getRootDomainLetter, inferIcebergIcon } from '../utils/aether-ui'
+import {
+  cleanTitle,
+  countLabel,
+  formatDate,
+  getCaptureHost,
+  getPortalTint,
+  getRootDomainLetter,
+  inferIcebergIcon
+} from '../utils/aether-ui'
 import { ChevronRightIcon, AetherSigilIcon, CloseIcon, CubeIcon } from './icons'
 import { SquarePen, Trash2 as TrashIcon } from 'lucide-react'
 import { portals } from '../constants/Features'
@@ -96,7 +104,7 @@ type DashboardProps = {
   selectCollection: (value: string) => Promise<void>
 }
 
-export function Dashboard({
+function DashboardComponent({
   busy,
   searchResult,
   searching,
@@ -500,8 +508,7 @@ export function Dashboard({
                       mistaken for an empty library. */}
                   {searchResult.mode === 'literal' && (
                     <span className="library-search-mode">
-                      name matching only — install an embedding model for meaning-based
-                      search
+                      name matching only — install an embedding model for meaning-based search
                     </span>
                   )}
                 </p>
@@ -698,9 +705,7 @@ export function Dashboard({
                         </small>
                       </span>
                       <span className="collection-meta">
-                        <strong>
-                          {countLabel(collection.captureCount, 'capture')}
-                        </strong>
+                        <strong>{countLabel(collection.captureCount, 'capture')}</strong>
                       </span>
                       <ChevronRightIcon />
                     </button>
@@ -902,3 +907,11 @@ function IcebergFlairIcon({ icon }: { icon: string }): React.JSX.Element {
 
   return <Icon size={20} strokeWidth={1.9} />
 }
+
+// Wrapped in memo because App owns almost all of this app's state: a keystroke in
+// the address bar, a status toast, a streaming token — each re-renders App, and
+// without this every one of them re-renders this panel too. The handlers App
+// passes down go through useStableHandler so those props stay equal between
+// renders; without that this wrapper would compare unequal every time and do
+// nothing.
+export const Dashboard = memo(DashboardComponent)

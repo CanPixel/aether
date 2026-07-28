@@ -1,4 +1,5 @@
 import {
+  memo,
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
@@ -173,9 +174,7 @@ function formatCoverage(coverage: TopicCoverage | undefined): string | null {
   if (coverage.status === 'loading') return 'Checking your library'
   if (coverage.status === 'error') return null
   if (coverage.hits === 0) return 'Nothing in your library yet'
-  const count = coverage.capped
-    ? `${coverage.hits}+ sources`
-    : countLabel(coverage.hits, 'source')
+  const count = coverage.capped ? `${coverage.hits}+ sources` : countLabel(coverage.hits, 'source')
   // Naming the mode matters: with no embedding model installed this is a keyword
   // match, not a semantic one, and the number means something weaker.
   return coverage.mode === 'literal'
@@ -230,7 +229,7 @@ function positionTopics(items: IcebergItem[]): PositionedTopic[] {
   })
 }
 
-export function Crystallizer({
+function CrystallizerComponent({
   busy,
   openedIceberg,
   savedIcebergs,
@@ -997,9 +996,7 @@ export function Crystallizer({
                   {formatDepthScore(activeSelectedItem) && (
                     <strong>{formatDepthScore(activeSelectedItem)}</strong>
                   )}
-                  {formatCoverage(activeCoverage) && (
-                    <span>{formatCoverage(activeCoverage)}</span>
-                  )}
+                  {formatCoverage(activeCoverage) && <span>{formatCoverage(activeCoverage)}</span>}
                 </div>
               )}
               <small style={{ fontSize: '10px' }}>{activeSelectedItem.description}</small>
@@ -1115,14 +1112,20 @@ export function Crystallizer({
         </aside>
       </section>
 
-      <div className="crystallizer-floor-note" style={{ position: 'absolute', bottom: '10px', left: '12px' }}>
+      <div
+        className="crystallizer-floor-note"
+        style={{ position: 'absolute', bottom: '10px', left: '12px' }}
+      >
         <span className="atlas-heading">
           <Compass size={15} />
           Semantic Cartography
         </span>
       </div>
 
-      <div className="crystallizer-floor-note" style={{ position: 'absolute', bottom: '10px', right: '330px' }}>
+      <div
+        className="crystallizer-floor-note"
+        style={{ position: 'absolute', bottom: '10px', right: '330px' }}
+      >
         <span className="atlas-heading">
           <Move size={15} />
           Pan
@@ -1131,3 +1134,11 @@ export function Crystallizer({
     </div>
   )
 }
+
+// Wrapped in memo because App owns almost all of this app's state: a keystroke in
+// the address bar, a status toast, a streaming token — each re-renders App, and
+// without this every one of them re-renders this panel too. The handlers App
+// passes down go through useStableHandler so those props stay equal between
+// renders; without that this wrapper would compare unequal every time and do
+// nothing.
+export const Crystallizer = memo(CrystallizerComponent)
