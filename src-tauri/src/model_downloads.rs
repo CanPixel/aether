@@ -69,7 +69,7 @@ pub(crate) async fn download_managed_models(
 
         match download_model_file(
             app,
-            &state.client,
+            &state.http_client(),
             spec,
             overall_downloaded,
             overall_total,

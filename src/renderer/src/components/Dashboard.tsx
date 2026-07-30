@@ -251,7 +251,7 @@ function DashboardComponent({
       <header className="dashboard-hero">
         <div className="hero-copy">
           <h1>ÆTHER</h1>
-          <p>Your browser, your knowledge.</p>
+          <p>Your browser and your knowledge.</p>
         </div>
         <div className="hero-orb" aria-hidden="true">
           <span className="hero-orb-aura" />
@@ -866,6 +866,14 @@ function CaptureCard({
         <div className="data-badges">
           <time>{formatDate(capture.capturedAt)}</time>
           <span>{countLabel(capture.chunkCount, 'chunk')}</span>
+          {/* Library hygiene, not a privacy marker — capture writes locally and
+              emits nothing. It exists so private-session research stays findable
+              afterwards instead of blending into every other source. */}
+          {capture.fromPrivateTab && (
+            <span className="private-origin-badge" title="Saved from a private tab">
+              Private
+            </span>
+          )}
         </div>
       </div>
       <div className="capture-hub-row">

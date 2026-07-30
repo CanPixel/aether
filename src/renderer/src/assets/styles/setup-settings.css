@@ -1491,6 +1491,38 @@
   line-height: 1.4;
 }
 
+/* Indented under the checkbox it belongs to, aligned with the label text rather
+   than the checkbox, so the address reads as part of that setting. */
+.settings-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 10px;
+  margin-left: 28px;
+  max-width: calc(100% - 28px);
+  padding: 8px 12px;
+  border: 1px solid rgb(var(--accent-mid-rgb) / 0.3);
+  border-radius: 10px;
+  background: rgb(var(--surface-rgb) / 0.92);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong, rgb(var(--ink-deep-rgb)));
+}
+
+.settings-input::placeholder {
+  color: rgb(var(--text-ocean-rgb) / 0.62);
+}
+
+.settings-input:focus-visible {
+  outline: 2px solid rgb(var(--accent-strong-rgb) / 0.55);
+  outline-offset: 1px;
+}
+
+.settings-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .settings-engine-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

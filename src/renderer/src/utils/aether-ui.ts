@@ -4,7 +4,9 @@ import {
   ContentBlockingStatus,
   IcebergItem,
   ModelDownloadChoice,
+  ProxyStatus,
   SavedIcebergSummary,
+  TimezonePinStatus,
   UpdateInstallProgress
 } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
@@ -431,4 +433,50 @@ export function describeAiFreeSearch(status: AiFreeSearchStatus, engineName: str
   return status.enabled
     ? `Searches ask ${engineName} for results without AI-generated answers, using its ${status.mechanism}.`
     : `Off. ${engineName} can suppress AI-generated answers via its ${status.mechanism} when enabled.`
+}
+
+// Deliberately never says "anonymous". A proxy hides the IP address and nothing
+// else: the browser still presents the same fingerprint to every site, so two
+// visits are still joinable to each other even when neither is joinable to a
+// location. Overstating that here is how someone ends up trusting this with
+// something it was never built to carry. See docs/PRINCIPLES.md.
+export function describeProxy(status: ProxyStatus): string {
+  if (!status.available) {
+    return status.unsupportedReason ?? 'Proxy support is unavailable on this platform.'
+  }
+  if (!status.enabled) {
+    return 'Off. Web traffic goes directly from your own IP address.'
+  }
+  if (!status.active) {
+    return 'On, but the address is not usable — traffic is not being proxied. Check the endpoint below.'
+  }
+  return `Web traffic and the app's own fetches both route through ${status.url}. This hides your IP address from sites; it does not hide your browser fingerprint.`
+}
+
+// Says what it removes and what it does not, because the gap is where someone
+// would otherwise assume too much: two bits of entropy is a real improvement and
+// nothing like anonymity. See docs/SECURITY.md.
+export function describeTimezonePin(status: TimezonePinStatus): string {
+  if (!status.available) {
+    return status.unsupportedReason ?? 'Timezone pinning is unavailable on this platform.'
+  }
+  return status.active
+    ? 'Pages are told UTC and en-US instead of your own timezone and language, removing two of the bits sites use to recognise a browser. Local times on sites will read wrong.'
+    : 'Off. Pages can read your exact timezone and language, which together narrow down who you are. Turning this on reports UTC instead — at the cost of wrong local times.'
+}
+
+export function timezonePinChangeNotice(enabled: boolean): string {
+  return enabled
+    ? 'Timezone pinning enabled. Tabs opened from now on report UTC; reload existing tabs to apply it.'
+    : 'Timezone pinning disabled. Tabs opened from now on report your real timezone.'
+}
+
+// Open tabs keep whatever routing they were created with, because a webview's
+// proxy is fixed when it is built. Worth saying plainly at the moment of change:
+// a user who flips this on and watches an already-open tab keep loading has been
+// told something true, rather than left to assume the switch failed.
+export function proxyChangeNotice(enabled: boolean): string {
+  return enabled
+    ? 'Proxy enabled. Tabs opened from now on will use it; reload existing tabs to move them across.'
+    : 'Proxy disabled. Tabs opened from now on will connect directly.'
 }

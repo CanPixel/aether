@@ -65,16 +65,24 @@ Outbound requests, all from Rust:
 No analytics, no crash reporting, no phone-home. Captured text, embeddings,
 answers, and iCE atlases never leave the machine.
 
+When the proxy is on, **every one of those requests goes through it**, model
+downloads included. See [Proxy](#proxy) for why nothing is exempted.
+
 ## What visited sites can see
 
 The honest boundary, because "local AI" and "anonymous browsing" are different
 claims and only the first is ours.
 
 Tabs are ordinary system webviews (WKWebView, WebView2, WebKitGTK). Sites see the
-real IP address, the real TLS fingerprint, cookies, and the usual canvas, WebGL,
-font and timezone fingerprinting surface. **ÆTHER does not defend against any of
-that, and cannot without patching an engine it does not ship.** Anyone who needs
-anonymity wants Tor Browser, not this.
+real TLS fingerprint, cookies, and the usual canvas, WebGL, font and timezone
+fingerprinting surface. **ÆTHER does not defend against any of that, and cannot
+without patching an engine it does not ship.** Anyone who needs anonymity wants
+Tor Browser, not this.
+
+The IP address is the one exception, and only when the [proxy](#proxy) is
+switched on. That changes *where* a site thinks you are; it does not change how
+recognisable you are once you get there. The two are independent, and a proxy
+without fingerprint defences still leaves every visit joinable to every other.
 
 What is defended:
 
@@ -90,6 +98,7 @@ What is defended:
 | Favicons never fetched from the privileged window       | `src-tauri/src/favicon.rs`                         |
 | Default search engine that does not build a profile     | `search_engine_prefix`, `src-tauri/src/util.rs`    |
 | AI-generated answers declined where the engine allows   | `search_url`, `src-tauri/src/util.rs`              |
+| IP address hidden behind a SOCKS5/HTTP proxy, opt-in    | macOS 14+, Linux, Windows — **not Android**        |
 
 ### AI-free search
 
@@ -175,23 +184,135 @@ The unit tests only check the shape against what the documentation claims.
 Every blocking rule is scoped to `third-party` loads. A first-party block would
 break the site the user actually asked for.
 
+### Proxy
+
+Off by default. When on, tabs and the app's own fetches both route through one
+SOCKS5 or HTTP CONNECT endpoint, prefilled with Tor's `socks5://127.0.0.1:9050`.
+
+**It covers everything, deliberately.** Sending multi-gigabyte model downloads
+over Tor is slow and a poor use of the network, and exempting them was the
+obvious alternative. It was rejected: a silent exemption is the same class of bug
+as a leaking favicon fetch — traffic the user believes is proxied that quietly
+is not. A slow or refused download is a failure the user can see and act on.
+
+Two details do real work:
+
+- **One source of routing.** `util::active_proxy_url` decides, `Backend::network`
+  holds the answer, and both the webview builder and the reqwest client read it
+  from there. Tabs and favicon fetches cannot diverge, and a divergence is exactly
+  the correlation leak the feature exists to close: one favicon request per
+  visited origin, from the real IP, would undo the whole thing.
+- **`socks5` becomes `socks5h` for reqwest.** Under plain `socks5`, reqwest
+  resolves hostnames locally and the network operator still sees a DNS query for
+  every host — the address hidden, the destination not. `socks5h` hands the name
+  to the proxy. The rewrite is internal because Tauri's proxy parser accepts only
+  `socks5` and would reject `socks5h` when a tab is created.
+
+Accepted schemes are exactly `http` and `socks5`, matching Tauri's own parser.
+`https` and `socks5h` are refused at the Settings screen rather than at the first
+tab, which is where the failure would otherwise land.
+
+Limits worth stating:
+
+- **macOS 14+.** wry sets `proxyConfigurations` on the data store through KVC with
+  no version check of its own; the key does not exist on macOS 13, and
+  `setValue:forKey:` against a missing key raises rather than degrades. ÆTHER
+  supports back to 10.15, so `util::proxy_platform_support` gates it and Settings
+  reports the reason. **Not available on Android at all** — wry has no support.
+- **Open tabs keep their old routing.** A webview's proxy is fixed when it is
+  built, so toggling this affects tabs opened afterwards. The UI says so.
+- **It is not anonymity.** Same fingerprint, same TLS handshake, same cookies. A
+  proxy changes where a site thinks you are, not whether it recognises you — and
+  using Tor with a unique fingerprint can be worse than not using it, because the
+  fingerprint links sessions the exit node was supposed to separate.
+
 ### Private tabs
 
 `WebviewBuilder::incognito(true)`, which wry maps to a non-persistent
 `WKWebsiteDataStore` on macOS and an ephemeral `WebContext` on Linux. Windows
 needs WebView2 runtime 101+ and silently does nothing on older ones.
 
-Because that last case fails open, the engine is not the only defence. A private
-tab is also:
+Because that last case fails open, the engine is not the only defence: a private
+tab is **never written to the session file** (`persist_session_tabs`).
 
-- **never written to the session file** (`persist_session_tabs`), and
-- **barred from capture**, both directly and through AiON's "current page"
-  context — answers and citations are persisted to the conversation store, which
-  would otherwise be a second route onto disk.
+**Capture is not gated, and the reasoning matters.** It used to be refused
+outright, on the argument that a private tab promises to leave no trace and a
+capture is the most durable trace the app makes. That conflates the two halves of
+browser privacy. One is *outward* — the IP, fingerprint, cookies and referrers a
+site can read, which is where being recognised actually happens. The other is
+*inward* — what persists on your own disk. Capture is purely inward: on desktop it
+reads the DOM already in memory (`extract_readable_page_from_webview`, with a
+re-fetch only as fallback), so in the normal path it makes no network request at
+all. Nothing is emitted, nothing is asserted, nobody is told anything.
 
-That second point is the one to keep in mind when adding any new feature that
-reads the active tab: ÆTHER's entire purpose is a durable local index of what you
-read, and a private tab is a promise not to build one.
+What remains is a local write, and a local index of what you read is what this
+app is for. Pressing Capture is the decision — the same way saving a bookmark or
+a download from a private window is the decision, neither of which any browser
+prompts about. A confirmation step there was ceremony over a choice already made,
+and confirmation dialogs people click through reflexively devalue the ones that
+carry information.
+
+The stored record still carries `fromPrivateTab`, shown as a badge in the
+library. That is **library hygiene, not protection**: it keeps a private session's
+sources findable so they can be purged as a group, instead of blending into every
+other source the moment they land.
+
+**AiON's "current page" context reads private tabs too**, for the same reason.
+Answers and citations do land in the conversation store, but that is another
+local write on the user's own disk, not something leaving the machine. It used to
+be refused, which meant asking about the page in front of you and getting an
+answer that silently pretended not to see it — a worse outcome than the one the
+refusal was avoiding.
+
+The thing to keep in mind when adding any feature that reads the active tab is
+the outward/inward split, not a blanket ban: a private tab is a promise about
+what leaves the machine and what survives on it *by default*, not a prohibition
+on the user deliberately keeping something.
+
+### Timezone and locale pinning
+
+Off by default. When on, every tab is built with a document-start script
+(`TIMEZONE_PIN_SCRIPT`, injected via `initialization_script_for_all_frames`) that
+reports UTC and `en-US` in place of the machine's own timezone and language.
+
+**Why this and not canvas noise.** Timezone is among the highest-entropy bits a
+page reads for free, and pinning it is *uniformity* rather than randomisation:
+UTC is a large crowd that already exists, so the user becomes commoner. Randomised
+canvas or audio fingerprints do the opposite — "the browser whose canvas hash
+changes every read" is a very small set, and the shim is detectable besides. ÆTHER
+does not have the user base to hide a randomiser in. It does not ship one.
+
+Both halves of the injection are load-bearing. On page load is too late: a
+fingerprinting script has read the real values long before then, which is why the
+existing `NATIVE_WEBVIEW_SCROLLBAR_SCRIPT` hook was not reusable. Main-frame-only
+would leave any embedded tracker iframe reading the true values anyway.
+
+Coverage is `Date.prototype.getTimezoneOffset`, the `Date` string and
+`toLocale*` methods — the engine formats those from its own internal zone, not
+from `getTimezoneOffset`, so patching the offset alone leaves the real zone in
+`String(new Date())` — `resolvedOptions().timeZone` on the `Intl` constructors,
+which is where a modern script actually looks because it yields the IANA name
+rather than an offset, and `navigator.language` / `languages`.
+
+Limits, and they are real:
+
+- **It is a JavaScript shim.** The overrides report `[native code]` from
+  `toString`, but a page that creates a blank same-origin iframe can read pristine
+  copies out of the fresh realm before the script runs there.
+- **`Accept-Language` on the wire is not covered.** The engine sets it, below
+  where any injected script can reach. A UTC clock next to a `nl-NL` request
+  header is itself a signal.
+- **Off by default on purpose.** Tracker blocking defaults on because it costs
+  nothing visible. This makes every web calendar, booking form and "posted 2 hours
+  ago" read wrong, in ordinary use, for a benefit the user cannot see. That is a
+  trade to offer, not one to make on someone's behalf.
+- **Desktop only.** The Android shell drives its WebViews through `android_tabs`,
+  which has no document-start hook; `timezone_pin_platform_support` says so and
+  Settings reports it rather than showing a toggle that does nothing.
+
+It removes two easy bits from casual fingerprinting. It is not anonymity, and
+pairing it with the proxy is where it earns its keep — a hidden IP next to a
+precise local timezone gives most of the location back.
 
 ### Verifying the platform code
 
@@ -325,15 +446,23 @@ capability.
 - **No HTTPS-only mode.** Bare hostnames typed into the address bar resolve to
   `https://`, but an explicit `http://` URL is left alone. Upgrading it needs an
   interstitial with a way back down, or http-only sites break with no explanation.
-- **No encrypted DNS.** Hostnames go to the OS resolver, so the network operator
-  sees every site visited regardless of anything above. This is not fixable at the
-  app level on macOS or Windows — it wants a system DNS profile or a proxy that
-  carries DNS, which is a different project (routing traffic through Tor or a VPN)
-  rather than a setting we can flip.
+- **No encrypted DNS by default.** Hostnames go to the OS resolver, so the network
+  operator sees every site visited regardless of anything above. Turning the
+  [proxy](#proxy) on covers this for the app's own fetches, which use `socks5h`
+  and let the proxy resolve. Whether the *webviews* resolve locally or at the
+  proxy is the engine's decision and is not something ÆTHER can force — so with
+  the proxy on, assume tab DNS may still be visible until measured per platform.
+  Encrypted DNS without a proxy still wants a system DNS profile and is not
+  fixable at the app level on macOS or Windows.
 - **No referrer trimming.** Neither wry nor WebKit's rule engine can rewrite
   request headers; content rules can block or upgrade a request, not modify it.
   WebView2's `WebResourceRequested` could on Windows, which would make this the
   one defence that exists there and not on macOS.
 - **None of this is fingerprinting resistance.** Canvas, WebGL, fonts, timezone
   and the TLS handshake are all untouched and all still identify the machine. See
-  the boundary note above: blocking trackers is not anonymity.
+  the boundary note above: blocking trackers is not anonymity, and neither is
+  hiding an IP address.
+- **The proxy has never been exercised against a live Tor daemon.** The routing,
+  validation and platform gating are unit-tested and the whole path compiles, but
+  nobody has yet watched a page load through `127.0.0.1:9050` and confirmed the
+  exit IP. Treat the end-to-end behaviour as unverified until someone does.

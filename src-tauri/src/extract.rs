@@ -22,7 +22,7 @@ pub(crate) async fn extract_readable_active_page(
         }
     }
 
-    extract_readable_page(&state.client, &active_tab.url).await
+    extract_readable_page(&state.http_client(), &active_tab.url).await
 }
 
 // Android counterpart of extract_readable_page_from_webview: the Kotlin

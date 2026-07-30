@@ -23,8 +23,9 @@ export interface BrowserTabSummary {
   canGoForward: boolean
   favicon?: string
   themeColor?: string
-  // Non-persistent webview data store, never written to the session, and barred
-  // from capture and from AiON's current-page context.
+  // Non-persistent webview data store, never written to the session. Capture and
+  // AiON both read these normally — they are local writes, not emissions — and a
+  // capture from one is marked with `fromPrivateTab` so it stays findable.
   isPrivate: boolean
   // Opt-in storage partition. Cookies and local storage are isolated from the
   // default jar and from every other container, and persist across restarts.
@@ -50,6 +51,18 @@ export interface BrowserSettings {
   // turned off, including for settings files written before the field existed.
   // What it actually sends depends on the engine — see SystemStatus.aiFreeSearch.
   aiFreeSearch: boolean
+  proxy: ProxySettings
+  // Report UTC and a fixed locale to pages. Off by default: the cost (wrong local
+  // times in web calendars) is visible in ordinary use and the benefit is not.
+  pinTimezone: boolean
+}
+
+// Off by default, unlike aiFreeSearch: a proxy pointing at a daemon that isn't
+// running fails every request, so it waits to be asked for.
+export interface ProxySettings {
+  enabled: boolean
+  // socks5://host:port, or http://host:port for an HTTP CONNECT proxy.
+  url: string
 }
 
 export interface UpdateSettings {
@@ -72,8 +85,11 @@ export interface AppSettings {
 // group is optional. `Partial<AppSettings>` was not the same thing: it makes the
 // groups optional but each group whole, so sending one field of `browser` only
 // type-checked while BrowserSettings happened to have exactly one field.
+// `browser.proxy` needs the same treatment one level down: Partial<BrowserSettings>
+// would make `proxy` optional but whole, so toggling `enabled` alone would force
+// the caller to resend `url`. PartialProxySettings mirrors the Rust type instead.
 export interface UpdateSettingsInput {
-  browser?: Partial<BrowserSettings>
+  browser?: Omit<Partial<BrowserSettings>, 'proxy'> & { proxy?: Partial<ProxySettings> }
   developerMode?: boolean
   updates?: Partial<UpdateSettings>
   appearance?: Appearance
@@ -103,6 +119,10 @@ export interface CaptureSummary {
     summary?: string
     tags?: string[]
   }
+  // Present only when the source came out of a private tab. Library hygiene, not
+  // a privacy control: it keeps private-session research findable so it can be
+  // purged later, rather than blending into every other source.
+  fromPrivateTab?: boolean
 }
 
 export interface CaptureResult extends CaptureSummary {
@@ -415,7 +435,31 @@ export interface SystemStatus {
   collections: CollectionSummary[]
   contentBlocking: ContentBlockingStatus
   aiFreeSearch: AiFreeSearchStatus
+  proxy: ProxyStatus
+  timezonePin: TimezonePinStatus
   error?: string
+}
+
+// Whether traffic is genuinely being proxied, which is not the same as whether
+// the setting is on: proxying needs macOS 14+ and is unavailable on Android.
+// A search engine ignoring an AI opt-out shows an AI answer; a proxy silently
+// doing nothing shows the page over the user's own IP, so `active` is the only
+// field an "IP hidden" affordance should key off.
+// Whether pages are actually being told UTC. Separate from the setting because
+// the mobile shell has nowhere to inject the document-start script that does it.
+export interface TimezonePinStatus {
+  enabled: boolean
+  available: boolean
+  unsupportedReason?: string
+  active: boolean
+}
+
+export interface ProxyStatus {
+  enabled: boolean
+  url: string
+  available: boolean
+  unsupportedReason?: string
+  active: boolean
 }
 
 // Reported by the backend rather than inferred from the user agent: the three

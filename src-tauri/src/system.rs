@@ -41,6 +41,8 @@ pub(crate) async fn system_status(state: &State<'_, Backend>) -> Cmd<SystemStatu
         collections,
         content_blocking: content_blocking::content_blocking_status(),
         ai_free_search: ai_free_search_status(&settings.browser),
+        proxy: proxy_status(&settings.browser),
+        timezone_pin: timezone_pin_status(&settings.browser),
         error: catalog.error,
     })
 }

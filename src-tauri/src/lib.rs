@@ -217,6 +217,139 @@ const BROWSER_USER_AGENT: &str =
 #[cfg(target_os = "android")]
 const BROWSER_USER_AGENT: &str =
     "Mozilla/5.0 (Linux; Android 15; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36";
+/// Tor's default SOCKS listener. Prefilled into the proxy field so the common
+/// case is a toggle; inert until the proxy is switched on.
+const DEFAULT_PROXY_URL: &str = "socks5://127.0.0.1:9050";
+
+/// Makes a page believe the machine is on UTC with an en-US locale.
+///
+/// Injected at *document start*, into every frame, which is the only moment that
+/// helps: `NATIVE_WEBVIEW_SCROLLBAR_SCRIPT` runs on page load, by which time a
+/// fingerprinting script has long since read the real values.
+///
+/// The point is uniformity, not noise. A randomised timezone would make the user
+/// unique, which is the opposite of the goal; UTC is a large, boring crowd that
+/// already exists. Same for the locale, which is the other free high-entropy bit
+/// sitting next to it.
+///
+/// What this is not: a defence against a determined fingerprinter. It is a
+/// JavaScript shim, so it is detectable — `Date.prototype.getTimezoneOffset`
+/// stringifies as native code here, but the *combination* of UTC with a
+/// non-UTC-looking Accept-Language or IP is itself a signal, and a page that
+/// creates a blank same-origin iframe can read pristine copies out of the fresh
+/// realm before this ever runs there. It removes two easy bits from casual
+/// fingerprinting. It does not make anyone anonymous. See docs/SECURITY.md.
+#[cfg(desktop)]
+const TIMEZONE_PIN_SCRIPT: &str = r##"
+(() => {
+  // Frozen up front: once the overrides are installed, reading the real values
+  // back out of the patched objects is impossible, and the shim needs them to
+  // compute UTC equivalents.
+  const RealDate = Date;
+  const define = (target, name, value) => {
+    try {
+      Object.defineProperty(target, name, {
+        value,
+        writable: true,
+        enumerable: false,
+        configurable: true
+      });
+    } catch {
+      /* A page may have already sealed it; nothing to do but leave it alone. */
+    }
+  };
+
+  // Presenting as native matters: a script that prints its own source is the
+  // loudest possible "this browser is patched" signal.
+  const nativeString = (fn, name) => {
+    define(fn, 'toString', () => `function ${name}() { [native code] }`);
+    define(fn, 'name', name);
+    return fn;
+  };
+
+  define(
+    RealDate.prototype,
+    'getTimezoneOffset',
+    nativeString(function getTimezoneOffset() {
+      return 0;
+    }, 'getTimezoneOffset')
+  );
+
+  // getTimezoneOffset alone is not enough. The engine formats these from its own
+  // internal zone, not from that method, so a page reading `String(new Date())`
+  // would still see the real offset and the real zone abbreviation.
+  const utcVia = (name, method, options) =>
+    define(
+      RealDate.prototype,
+      name,
+      nativeString(function () {
+        return new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' })[method](this);
+      }, name)
+    );
+
+  define(
+    RealDate.prototype,
+    'toString',
+    nativeString(function toString() {
+      // Matches the engine's own shape, with the zone forced to GMT+0000.
+      const iso = this.toISOString();
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const d = this;
+      if (Number.isNaN(d.getTime())) return 'Invalid Date';
+      return (
+        `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ` +
+        `${String(d.getUTCDate()).padStart(2, '0')} ${d.getUTCFullYear()} ` +
+        `${iso.slice(11, 19)} GMT+0000 (Coordinated Universal Time)`
+      );
+    }, 'toString')
+  );
+  utcVia('toLocaleString', 'format', { dateStyle: 'medium', timeStyle: 'medium' });
+  utcVia('toLocaleDateString', 'format', { dateStyle: 'medium' });
+  utcVia('toLocaleTimeString', 'format', { timeStyle: 'medium' });
+
+  // Intl is where a modern fingerprinting script actually looks: resolvedOptions
+  // hands over the IANA zone name, which is far more specific than an offset.
+  const patchResolved = (Ctor) => {
+    if (typeof Ctor !== 'function' || !Ctor.prototype || !Ctor.prototype.resolvedOptions) return;
+    const original = Ctor.prototype.resolvedOptions;
+    define(
+      Ctor.prototype,
+      'resolvedOptions',
+      nativeString(function resolvedOptions() {
+        const resolved = original.call(this);
+        if ('timeZone' in resolved) resolved.timeZone = 'UTC';
+        if ('locale' in resolved) resolved.locale = 'en-US';
+        return resolved;
+      }, 'resolvedOptions')
+    );
+  };
+  patchResolved(Intl.DateTimeFormat);
+  patchResolved(Intl.NumberFormat);
+  patchResolved(Intl.Collator);
+
+  // navigator.language sits next to the timezone in every fingerprint script and
+  // costs nothing to align. Accept-Language on the wire is set by the engine and
+  // is *not* covered here — see the doc comment.
+  for (const [name, value] of [
+    ['language', 'en-US'],
+    ['languages', Object.freeze(['en-US', 'en'])]
+  ]) {
+    try {
+      Object.defineProperty(Navigator.prototype, name, {
+        get: nativeString(function () {
+          return value;
+        }, `get ${name}`),
+        enumerable: true,
+        configurable: true
+      });
+    } catch {
+      /* Same reasoning as `define`. */
+    }
+  }
+})();
+"##;
+
 #[cfg(desktop)]
 const NATIVE_WEBVIEW_SCROLLBAR_SCRIPT: &str = r##"
 (() => {
@@ -354,14 +487,16 @@ impl Backend {
             #[cfg(desktop)]
             webviews: Mutex::new(NativeBrowserViews::default()),
             web_content_bounds: Mutex::new(WebContentBounds::default()),
+            // Starts direct and is rebuilt once settings are read, because
+            // Backend::new is sync and the proxy setting lives on disk. Nothing
+            // fetches before `apply_network_routing` has run — see its comment.
+            //
             // Shares the webview's UA on purpose. This client serves the capture
             // fallback in extract.rs, which re-fetches a page the user is reading;
             // "Aether/1.0 Tauri" announced both the app and the fact that the
             // request was a capture, from the user's own address.
-            client: Client::builder()
-                .user_agent(BROWSER_USER_AGENT)
-                .build()
-                .expect("reqwest client"),
+            network: Mutex::new(NetworkRouting::new(None)),
+            pin_timezone: AtomicBool::new(false),
             favicon_cache: Mutex::new(HashMap::new()),
             native_runtime: Arc::new(NativeModelRuntime::default()),
             vectors: tokio::sync::RwLock::new(None),
@@ -371,6 +506,65 @@ impl Backend {
             window_geometry_saved_at: Mutex::new(None),
             #[cfg(desktop)]
             pending_downloads: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// The client for the app's own fetches, honouring the current proxy setting.
+    ///
+    /// Returns a clone rather than a guard: reqwest clients are internally
+    /// reference-counted and cheap to clone, and holding a `std::sync::Mutex`
+    /// guard across the `.await` of an actual request would be a deadlock.
+    pub(crate) fn http_client(&self) -> Client {
+        self.network
+            .lock()
+            .map(|routing| routing.client.clone())
+            // Poisoned only if a thread panicked mid-swap. Rebuilding direct here
+            // would leak, so hand back a client that cannot connect anywhere.
+            .unwrap_or_else(|_| NetworkRouting::new(None).client)
+    }
+
+    /// The proxy the *webviews* should be built with.
+    ///
+    /// Desktop only: Android tabs are native WebViews that wry cannot proxy, which
+    /// is why `proxy_platform_support` refuses there rather than half-applying it.
+    #[cfg(desktop)]
+    pub(crate) fn proxy(&self) -> Option<Url> {
+        self.network
+            .lock()
+            .ok()
+            .and_then(|routing| routing.proxy.clone())
+    }
+}
+
+/// Caches the browser privacy settings that a webview needs at build time.
+///
+/// Called at startup and after every settings write. Tabs are *not* rebuilt:
+/// both the proxy and the document-start script are fixed when a webview is
+/// created, so an open tab keeps what it was born with and only new tabs pick up
+/// the change. The Settings copy says so, which is why these read as needing a
+/// reload rather than taking effect underneath the user.
+pub(crate) fn apply_browser_privacy(state: &Backend, browser: &BrowserSettings) {
+    apply_network_routing(state, browser);
+    state
+        .pin_timezone
+        .store(timezone_pin_status(browser).active, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Points the app's HTTP client at whatever the settings now say.
+fn apply_network_routing(state: &Backend, browser: &BrowserSettings) {
+    let proxy = active_proxy_url(browser);
+    diag_info!(
+        "network routing: setting enabled={}, endpoint={}, applied={}",
+        browser.proxy.enabled,
+        browser.proxy.url,
+        proxy
+            .as_ref()
+            .map(Url::to_string)
+            .unwrap_or_else(|| "direct".to_string())
+    );
+    if let Ok(mut routing) = state.network.lock() {
+        if routing.proxy != proxy {
+            *routing = NetworkRouting::new(proxy);
         }
     }
 }
@@ -821,6 +1015,28 @@ pub fn run() {
             // and those are the entries most worth having in a bug report.
             diagnostics::set_log_path(&app_data_dir);
             app.manage(Backend::new(app_data_dir));
+
+            // Read synchronously, ahead of everything else that can touch the
+            // network. Deferring this to a spawned task would leave a window in
+            // which session restore warms a webview, or a favicon fetch starts,
+            // against the direct-connection client Backend::new starts with —
+            // and the cost of losing that race is the user's IP address.
+            {
+                let state = app.state::<Backend>();
+                match tauri::async_runtime::block_on(load_settings(&state.paths.settings_path)) {
+                    Ok(settings) => apply_browser_privacy(&state, &settings.browser),
+                    // This branch fails *open*, and it is the one place in the
+                    // feature that does. A missing settings file is not an error
+                    // here — load_settings returns defaults — so reaching this
+                    // means the file exists and could not be read, and there is
+                    // no way to know whether it said the proxy was on. Refusing
+                    // all network access would be the strict reading, but it
+                    // bricks the app over a transient I/O failure. The compromise
+                    // is direct browsing plus a logged warning; Settings will
+                    // show the proxy as off, which is at least the truth.
+                    Err(error) => diag_warn!("could not read settings for browser privacy: {error}"),
+                }
+            }
 
             // Kicked off before the first webview is prewarmed below, so the
             // compile has the whole of session restore to land in.
@@ -2816,6 +3032,7 @@ mod tests {
                     captured_at: "2026-07-01T00:00:00Z".to_string(),
                     chunk_count: 1,
                     metadata: None,
+                    from_private_tab: false,
                 })
                 .collect(),
             ..LibraryData::default()
@@ -2837,6 +3054,7 @@ mod tests {
             captured_at: "2026-07-01T00:00:00Z".to_string(),
             chunk_count: 1,
             metadata: None,
+            from_private_tab: false,
         });
 
         assert_eq!(drop_captures_without_collections(&mut library), 1);
@@ -3212,6 +3430,7 @@ mod tests {
             ai_free_search_status(&BrowserSettings {
                 default_search_engine: engine.to_string(),
                 ai_free_search: true,
+                ..BrowserSettings::default()
             })
         };
 
@@ -3236,6 +3455,375 @@ mod tests {
         assert_eq!(parsed.default_search_engine, "google");
         assert!(parsed.ai_free_search, "a missing field must not mean off");
         assert!(BrowserSettings::default().ai_free_search);
+    }
+
+    // Only two transports exist below this layer. Anything else has to be refused
+    // at the settings screen, because the alternative is accepting it, failing to
+    // apply it, and browsing directly under a UI that says "proxy on".
+    #[test]
+    fn only_supported_proxy_schemes_are_accepted() {
+        for good in [
+            "socks5://127.0.0.1:9050",
+            "socks5://127.0.0.1:9150",
+            "http://192.168.1.10:8080",
+            "http://proxy.example.com:3128",
+        ] {
+            assert!(parse_proxy_url(good).is_ok(), "{good} should be accepted");
+        }
+
+        // This set has to match Tauri's own parse_proxy_url exactly, which maps
+        // only http and socks5. `https` and `socks5h` look reasonable and are
+        // refused there, so accepting them here would defer the failure to the
+        // first tab the user opens. A bare host:port parses as a URL with scheme
+        // "127.0.0.1" and no host, which is why it needs its own rejection.
+        for bad in [
+            "https://proxy.example.com:3128",
+            "socks5h://127.0.0.1:9050",
+            "socks4://127.0.0.1:9050",
+            "ftp://127.0.0.1:21",
+            "127.0.0.1:9050",
+            "not a url",
+            "",
+        ] {
+            assert!(parse_proxy_url(bad).is_err(), "{bad} should be refused");
+        }
+    }
+
+    // The webview needs socks5; reqwest needs socks5h or it resolves hostnames
+    // locally and leaks a DNS query for every host the app fetches.
+    #[test]
+    fn the_http_client_asks_the_proxy_to_resolve_dns() {
+        let url = parse_proxy_url("socks5://127.0.0.1:9050").expect("valid");
+        assert_eq!(reqwest_proxy_scheme(&url), "socks5h://127.0.0.1:9050");
+
+        // HTTP CONNECT already passes the hostname to the proxy, so it is untouched.
+        let http = parse_proxy_url("http://127.0.0.1:8080").expect("valid");
+        assert_eq!(reqwest_proxy_scheme(&http), "http://127.0.0.1:8080/");
+    }
+
+    // Neither Tor (9050), a Tor Browser bundle (9150), nor an arbitrary HTTP proxy
+    // shares a default port, so a guess would be wrong more often than right.
+    #[test]
+    fn a_proxy_address_must_name_its_port() {
+        assert!(parse_proxy_url("socks5://127.0.0.1").is_err());
+        assert!(parse_proxy_url("http://proxy.example.com").is_err());
+    }
+
+    fn proxied(enabled: bool, url: &str) -> BrowserSettings {
+        BrowserSettings {
+            proxy: ProxySettings {
+                enabled,
+                url: url.to_string(),
+            },
+            ..BrowserSettings::default()
+        }
+    }
+
+    // `active` is the field the UI keys its "IP hidden" claim off, so it has to be
+    // false in every state where traffic is not in fact being proxied.
+    #[test]
+    fn proxy_is_only_active_when_it_can_actually_carry_traffic() {
+        let off = proxy_status(&proxied(false, DEFAULT_PROXY_URL));
+        assert!(!off.active, "a disabled proxy is not active");
+
+        // Enabled but unusable. The setting reads as on and nothing is proxied —
+        // the state that must never be reported as protection.
+        let broken = proxy_status(&proxied(true, "socks4://127.0.0.1:9050"));
+        assert!(broken.enabled);
+        assert!(!broken.active, "an invalid endpoint is not active");
+        assert!(active_proxy_url(&proxied(true, "socks4://127.0.0.1:9050")).is_none());
+
+        let on = proxy_status(&proxied(true, DEFAULT_PROXY_URL));
+        // Only assert the positive case where the platform supports it at all;
+        // on macOS 13 or Android `available` is legitimately false.
+        if on.available {
+            assert!(on.active);
+            assert_eq!(
+                active_proxy_url(&proxied(true, DEFAULT_PROXY_URL))
+                    .map(|url| url.to_string())
+                    .as_deref(),
+                Some("socks5://127.0.0.1:9050")
+            );
+        } else {
+            assert!(!on.active, "unsupported platforms must not report active");
+            assert!(on.unsupported_reason.is_some(), "and must say why");
+        }
+    }
+
+    // The webviews and the app's own HTTP client must agree, always. If they ever
+    // disagree, every visited origin gets a favicon request from the real IP.
+    #[test]
+    fn webview_and_http_client_read_the_same_routing() {
+        for settings in [
+            proxied(false, DEFAULT_PROXY_URL),
+            proxied(true, DEFAULT_PROXY_URL),
+            proxied(true, "socks4://bad:1"),
+        ] {
+            let expected = active_proxy_url(&settings);
+            let routing = NetworkRouting::new(expected.clone());
+            assert_eq!(
+                routing.proxy, expected,
+                "the client was built with different routing than the tabs"
+            );
+        }
+    }
+
+    // Proxying is off unless asked for, and a settings.json written before the
+    // field existed must not silently acquire a proxy.
+    #[test]
+    fn proxy_defaults_off_with_tors_port_prefilled() {
+        let existing = serde_json::json!({ "defaultSearchEngine": "google" });
+        let parsed: BrowserSettings = serde_json::from_value(existing).expect("parse");
+        assert!(!parsed.proxy.enabled);
+        assert_eq!(parsed.proxy.url, DEFAULT_PROXY_URL);
+        assert!(active_proxy_url(&parsed).is_none());
+    }
+
+    // A proxy endpoint that parses but cannot carry traffic is the worst outcome
+    // available: browsing continues, unproxied, while Settings reads "on". Each
+    // case here is one that would produce exactly that if it were accepted.
+    #[test]
+    fn unusable_proxy_endpoints_are_refused() {
+        for good in [
+            "socks5://127.0.0.1:9050",
+            "socks5://127.0.0.1:9150",
+            "http://127.0.0.1:8080",
+            "http://proxy.example.com:3128",
+        ] {
+            assert!(parse_proxy_url(good).is_ok(), "{good} should be accepted");
+        }
+
+        for bad in [
+            "",
+            "   ",
+            // Real Tor-adjacent mistakes: a scheme wry cannot carry, and the bare
+            // host:port people type from memory.
+            "socks4://127.0.0.1:9050",
+            "socks://127.0.0.1:9050",
+            // Rejected even though reqwest would take it: tauri-runtime-wry maps
+            // only `http` and `socks5` to a ProxyConfig, so an https endpoint
+            // would proxy the app's fetches and leave every tab going direct.
+            "https://proxy.example.com:3128",
+            "127.0.0.1:9050",
+            "localhost:9050",
+            // Parses as a URL, but there is no port to connect to and no default
+            // worth guessing between Tor's 9050 and a bundle's 9150.
+            "socks5://127.0.0.1",
+            "not a url",
+        ] {
+            assert!(
+                parse_proxy_url(bad).is_err(),
+                "{bad:?} should have been refused"
+            );
+        }
+    }
+
+    // `active` is the only thing the UI should trust, so it has to stay false in
+    // every partial state rather than tracking the checkbox.
+    #[test]
+    fn proxy_reports_active_only_when_traffic_really_moves() {
+        let status = |enabled: bool, url: &str| {
+            proxy_status(&BrowserSettings {
+                proxy: ProxySettings {
+                    enabled,
+                    url: url.to_string(),
+                },
+                ..BrowserSettings::default()
+            })
+        };
+
+        let off = status(false, DEFAULT_PROXY_URL);
+        assert!(!off.enabled && !off.active);
+
+        // On, but pointed at something unusable: enabled stays true because that
+        // is what the user set, and active is false because nothing is proxied.
+        let broken = status(true, "socks4://127.0.0.1:9050");
+        assert!(broken.enabled, "the user's choice is reported back");
+        assert!(!broken.active, "an unusable endpoint is not active");
+
+        let on = status(true, DEFAULT_PROXY_URL);
+        assert_eq!(on.active, on.available, "usable config follows platform support");
+    }
+
+    // Off unless asked for, and — unlike the proxy — off is also the right answer
+    // for a fresh install, because the cost lands on ordinary browsing.
+    #[test]
+    fn timezone_pinning_defaults_off_and_reports_honestly() {
+        let existing = serde_json::json!({ "defaultSearchEngine": "google" });
+        let parsed: BrowserSettings = serde_json::from_value(existing).expect("parse");
+        assert!(!parsed.pin_timezone, "a missing field must not mean on");
+
+        let off = timezone_pin_status(&parsed);
+        assert!(!off.enabled && !off.active);
+
+        let on = timezone_pin_status(&BrowserSettings {
+            pin_timezone: true,
+            ..BrowserSettings::default()
+        });
+        assert!(on.enabled);
+        // `active` tracks what pages are actually told, which on a platform with
+        // nowhere to inject the script is nothing.
+        assert_eq!(on.active, on.available);
+        assert_eq!(on.available, timezone_pin_platform_support().is_ok());
+    }
+
+    // The script only helps if it runs before page scripts and in every frame, and
+    // only stays useful if it covers the places a fingerprinter actually reads.
+    // Asserting on the source is crude, but the alternative is no coverage at all
+    // for a string that is easy to edit into uselessness.
+    #[cfg(desktop)]
+    #[test]
+    fn the_timezone_script_covers_the_readable_surfaces() {
+        for needle in [
+            // Offset, and the string forms the engine builds from its own zone
+            // rather than from getTimezoneOffset.
+            "getTimezoneOffset",
+            "toLocaleString",
+            "toLocaleDateString",
+            "toLocaleTimeString",
+            // Where a modern script actually looks: the IANA zone name.
+            "resolvedOptions",
+            "Intl.DateTimeFormat",
+            "'UTC'",
+            // The other free bit sitting next to the timezone.
+            "language",
+            "languages",
+        ] {
+            assert!(
+                TIMEZONE_PIN_SCRIPT.contains(needle),
+                "the pinning script no longer covers {needle}"
+            );
+        }
+
+        // A shim that prints its own source announces itself louder than the zone
+        // it was hiding.
+        assert!(
+            TIMEZONE_PIN_SCRIPT.contains("[native code]"),
+            "overrides must not be trivially detectable via toString"
+        );
+    }
+
+    // A settings file written before the proxy existed must read as off. On would
+    // point every request at a daemon the user never installed.
+    #[test]
+    fn proxy_defaults_off_for_an_existing_settings_file() {
+        let existing = serde_json::json!({ "defaultSearchEngine": "google" });
+        let parsed: BrowserSettings = serde_json::from_value(existing).expect("parse");
+        assert!(!parsed.proxy.enabled, "a missing field must not mean on");
+        assert_eq!(parsed.proxy.url, DEFAULT_PROXY_URL);
+    }
+
+    // The whole point of the feature: one endpoint for tabs and for the app's own
+    // fetches. If these ever came from different places, favicon requests would
+    // keep leaving from the user's own address while tabs looked proxied.
+    #[test]
+    fn tabs_and_app_fetches_read_the_same_endpoint() {
+        let browser = BrowserSettings {
+            proxy: ProxySettings {
+                enabled: true,
+                url: DEFAULT_PROXY_URL.to_string(),
+            },
+            ..BrowserSettings::default()
+        };
+
+        let for_tabs = active_proxy_url(&browser);
+        let for_client = NetworkRouting::new(active_proxy_url(&browser)).proxy;
+        assert_eq!(for_tabs, for_client);
+
+        // And both go direct together when it is switched off.
+        let off = BrowserSettings::default();
+        assert!(active_proxy_url(&off).is_none());
+        assert!(NetworkRouting::new(active_proxy_url(&off)).proxy.is_none());
+    }
+
+    // Library hygiene rather than protection: the mark is what keeps a private
+    // session's sources findable once they are saved, so they can be purged as a
+    // group. It must survive a round trip, and must stay absent from every
+    // ordinary record so library.json is untouched for normal captures.
+    #[test]
+    fn private_origin_survives_the_library_round_trip() {
+        let capture = CaptureSummary {
+            id: "capture".to_string(),
+            collection_id: "hub".to_string(),
+            title: "Title".to_string(),
+            url: "https://example.com/".to_string(),
+            app_id: "browser".to_string(),
+            captured_at: now(),
+            chunk_count: 1,
+            metadata: None,
+            from_private_tab: true,
+        };
+
+        let json = serde_json::to_value(&capture).expect("serialize");
+        assert_eq!(json["fromPrivateTab"], serde_json::json!(true));
+        let parsed: CaptureSummary = serde_json::from_value(json).expect("parse");
+        assert!(parsed.from_private_tab);
+
+        // Ordinary captures leave library.json byte-identical to before the field
+        // existed, and a record written before it reads as not-private.
+        let ordinary = CaptureSummary {
+            from_private_tab: false,
+            ..capture
+        };
+        let json = serde_json::to_value(&ordinary).expect("serialize");
+        assert!(
+            json.get("fromPrivateTab").is_none(),
+            "false must not be written out"
+        );
+        let parsed: CaptureSummary = serde_json::from_value(json).expect("parse");
+        assert!(!parsed.from_private_tab);
+    }
+
+    // The end-to-end check the unit tests above cannot make: that the client the
+    // app actually fetches with reaches the internet from somewhere else.
+    //
+    // Ignored by default because it needs a running SOCKS5 proxy and the network.
+    // With Tor on its default port:
+    //
+    //     tor --SocksPort 9050 &
+    //     cargo test proxy_actually_changes_the_source_address -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore = "requires a live SOCKS5 proxy on 127.0.0.1:9050 and network access"]
+    async fn proxy_actually_changes_the_source_address() {
+        const ECHO: &str = "https://api.ipify.org";
+
+        let direct = NetworkRouting::new(None);
+        let direct_ip = direct
+            .client
+            .get(ECHO)
+            .send()
+            .await
+            .expect("direct request failed")
+            .text()
+            .await
+            .expect("direct body");
+
+        let proxy = active_proxy_url(&BrowserSettings {
+            proxy: ProxySettings {
+                enabled: true,
+                url: DEFAULT_PROXY_URL.to_string(),
+            },
+            ..BrowserSettings::default()
+        })
+        .expect("proxy should be usable on this platform");
+
+        let routed = NetworkRouting::new(Some(proxy));
+        let routed_ip = routed
+            .client
+            .get(ECHO)
+            .send()
+            .await
+            .expect("proxied request failed — is the SOCKS5 proxy running?")
+            .text()
+            .await
+            .expect("proxied body");
+
+        assert_ne!(
+            direct_ip.trim(),
+            routed_ip.trim(),
+            "the proxied client reported the same address as the direct one, \
+             which means the proxy was not applied"
+        );
     }
 
     // The reason `search` exists on CreateTabInput at all: these names would each be
@@ -3814,3 +4402,4 @@ mod tests {
         }
     }
 }
+

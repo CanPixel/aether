@@ -72,6 +72,10 @@ import {
   cleanTitle,
   countLabel,
   describeAiFreeSearch,
+  describeProxy,
+  describeTimezonePin,
+  proxyChangeNotice,
+  timezonePinChangeNotice,
   describeContentBlocking,
   formatByteSize,
   formatUpdateProgress,
@@ -457,7 +461,12 @@ function App(): React.JSX.Element {
     // Placeholder until the backend's settings arrive; it must match
     // BrowserSettings::default() in src-tauri/src/types.rs, or Settings highlights
     // an engine the backend is not actually using for the first frame.
-    browser: { defaultSearchEngine: 'duckduckgo', aiFreeSearch: true },
+    browser: {
+      defaultSearchEngine: 'duckduckgo',
+      aiFreeSearch: true,
+      proxy: { enabled: false, url: 'socks5://127.0.0.1:9050' },
+      pinTimezone: false
+    },
     developerMode: false,
     updates: { autoCheck: true },
     appearance: 'light'
@@ -2238,6 +2247,45 @@ function App(): React.JSX.Element {
     })
   }
 
+  async function updateProxyEnabled(enabled: boolean): Promise<void> {
+    await runTask('Updating settings', async () => {
+      const nextSettings = await window.aether.system.updateSettings({
+        browser: { proxy: { enabled } }
+      })
+      setSettings(nextSettings)
+      setStatus(await window.aether.system.status())
+      reportSuccess(proxyChangeNotice(enabled))
+    })
+  }
+
+  // Committed on blur/Enter rather than per keystroke: the backend rejects an
+  // invalid endpoint, and validating half-typed input would error on every
+  // character of a perfectly good address.
+  async function updateProxyUrl(url: string): Promise<void> {
+    if (url.trim() === settings.browser.proxy.url) {
+      return
+    }
+    await runTask('Updating settings', async () => {
+      const nextSettings = await window.aether.system.updateSettings({
+        browser: { proxy: { url } }
+      })
+      setSettings(nextSettings)
+      setStatus(await window.aether.system.status())
+      reportSuccess('Proxy address updated.')
+    })
+  }
+
+  async function updatePinTimezone(pinTimezone: boolean): Promise<void> {
+    await runTask('Updating settings', async () => {
+      const nextSettings = await window.aether.system.updateSettings({
+        browser: { pinTimezone }
+      })
+      setSettings(nextSettings)
+      setStatus(await window.aether.system.status())
+      reportSuccess(timezonePinChangeNotice(pinTimezone))
+    })
+  }
+
   async function updateDeveloperMode(developerMode: boolean): Promise<void> {
     await runTask('Updating settings', async () => {
       const nextSettings = await window.aether.system.updateSettings({ developerMode })
@@ -2423,11 +2471,9 @@ function App(): React.JSX.Element {
   const onReorderSavedIcebergs = useStableHandler(reorderSavedIcebergs)
   const onReorderShortcuts = useStableHandler(reorderShortcuts)
   const onSelectCollection = useStableHandler(selectCollection)
-  const onOpenCollectionDialog = useStableHandler(
-    (state: NonNullable<CollectionDialogState>) => {
-      void openCollectionDialog(state)
-    }
-  )
+  const onOpenCollectionDialog = useStableHandler((state: NonNullable<CollectionDialogState>) => {
+    void openCollectionDialog(state)
+  })
   const onAskCollection = useStableHandler((collectionId: string) => {
     void askCollectionHub(collectionId)
   })
@@ -2576,6 +2622,9 @@ function App(): React.JSX.Element {
           onClose={closeSettings}
           onDefaultSearchEngineChange={updateDefaultSearchEngine}
           onAiFreeSearchChange={updateAiFreeSearch}
+          onProxyEnabledChange={updateProxyEnabled}
+          onProxyUrlChange={updateProxyUrl}
+          onPinTimezoneChange={updatePinTimezone}
           onClearBrowsingData={clearBrowsingData}
           onDeveloperModeChange={updateDeveloperMode}
           onExportLibrary={exportLibrary}
@@ -3142,6 +3191,9 @@ function SettingsModal({
   onCheckForUpdates,
   onDefaultSearchEngineChange,
   onAiFreeSearchChange,
+  onProxyEnabledChange,
+  onProxyUrlChange,
+  onPinTimezoneChange,
   onClearBrowsingData,
   onDeveloperModeChange,
   onExportLibrary,
@@ -3172,6 +3224,9 @@ function SettingsModal({
   onCheckForUpdates: () => Promise<void>
   onDefaultSearchEngineChange: (value: SearchEngineId) => Promise<void>
   onAiFreeSearchChange: (value: boolean) => Promise<void>
+  onProxyEnabledChange: (value: boolean) => Promise<void>
+  onProxyUrlChange: (value: string) => Promise<void>
+  onPinTimezoneChange: (value: boolean) => Promise<void>
   onClearBrowsingData: () => Promise<void>
   onDeveloperModeChange: (value: boolean) => Promise<void>
   onExportLibrary: () => Promise<void>
@@ -3294,6 +3349,64 @@ function SettingsModal({
                       )?.name ?? 'This engine'
                     )}
                   </small>
+                </span>
+              </label>
+            </div>
+          )}
+
+          {systemStatus?.proxy && (
+            <div className="settings-field">
+              <label className="settings-checkbox-row">
+                <input
+                  checked={settings.browser.proxy.enabled}
+                  disabled={Boolean(busy) || !systemStatus.proxy.available}
+                  onChange={(event) => {
+                    void onProxyEnabledChange(event.currentTarget.checked)
+                  }}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Route traffic through a proxy</strong>
+                  <small>{describeProxy(systemStatus.proxy)}</small>
+                </span>
+              </label>
+              {systemStatus.proxy.available && (
+                <input
+                  aria-label="Proxy address"
+                  className="settings-input"
+                  defaultValue={settings.browser.proxy.url}
+                  disabled={Boolean(busy)}
+                  key={settings.browser.proxy.url}
+                  onBlur={(event) => {
+                    void onProxyUrlChange(event.currentTarget.value)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.currentTarget.blur()
+                    }
+                  }}
+                  placeholder="socks5://127.0.0.1:9050"
+                  spellCheck={false}
+                  type="text"
+                />
+              )}
+            </div>
+          )}
+
+          {systemStatus?.timezonePin && (
+            <div className="settings-field">
+              <label className="settings-checkbox-row">
+                <input
+                  checked={settings.browser.pinTimezone}
+                  disabled={Boolean(busy) || !systemStatus.timezonePin.available}
+                  onChange={(event) => {
+                    void onPinTimezoneChange(event.currentTarget.checked)
+                  }}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>Report UTC to websites</strong>
+                  <small>{describeTimezonePin(systemStatus.timezonePin)}</small>
                 </span>
               </label>
             </div>

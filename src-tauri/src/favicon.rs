@@ -133,7 +133,7 @@ pub(crate) async fn aether_browser_favicon(
         }
     }
 
-    let resolved = fetch_favicon(&state.client, &origin).await;
+    let resolved = fetch_favicon(&state.http_client(), &origin).await;
 
     if let Ok(mut cache) = state.favicon_cache.lock() {
         if cache.len() >= MAX_CACHED_FAVICONS {

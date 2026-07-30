@@ -134,10 +134,13 @@ here is a feature with tests behind it.
 Every item here is deliberate. A document about integrity that overstates its case
 refutes itself.
 
-- **It is not anonymity.** Tabs are ordinary system webviews. Sites see your real IP
-  address, your TLS fingerprint, and the usual canvas, WebGL, font and timezone
-  fingerprinting surface. ÆTHER does not defend against any of that and cannot
-  without shipping its own engine. If you need anonymity, you want Tor Browser.
+- **It is not anonymity.** Tabs are ordinary system webviews. Sites see your TLS
+  fingerprint and the usual canvas, WebGL, font and timezone fingerprinting
+  surface. ÆTHER does not defend against any of that and cannot without shipping
+  its own engine. You can route traffic through a proxy such as Tor, which hides
+  your IP address — but an unchanged fingerprint still links your sessions to each
+  other, and a proxy does not fix that. If you need anonymity, you want Tor
+  Browser.
 - **Protection is not uniform across platforms.** Third-party cookie blocking is
   unavailable on Windows. Storage partitioning is opt-in and macOS 14+ only. The app
   tells you which you have.

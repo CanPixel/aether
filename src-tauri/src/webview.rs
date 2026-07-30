@@ -119,12 +119,37 @@ pub(crate) fn create_native_webview(
         _ => builder,
     };
 
+    // Routed through the proxy the app is currently configured for, if any.
+    // Read from `Backend` rather than from settings.json because this is a sync
+    // path and, more importantly, because it has to be the *same* value the HTTP
+    // client is using — one source, so tabs and favicon fetches cannot diverge.
+    //
+    // macOS: safe here only because `proxy()` returns None below macOS 14. wry
+    // sets `proxyConfigurations` through KVC with no version check, and that key
+    // does not exist on 13, so an ungated call would raise rather than degrade.
+    let builder = match state.proxy() {
+        Some(proxy) => builder.proxy_url(proxy),
+        None => builder,
+    };
+
+    // Document-start, every frame. Both halves matter: on load is too late to
+    // stop a page reading the real timezone, and main-frame-only would leave any
+    // embedded tracker iframe reading it anyway.
+    let builder = if state.pin_timezone.load(std::sync::atomic::Ordering::Relaxed) {
+        builder.initialization_script_for_all_frames(TIMEZONE_PIN_SCRIPT)
+    } else {
+        builder
+    };
+
     let builder = builder
         .user_agent(BROWSER_USER_AGENT)
         // macOS/iOS: a nonPersistent WKWebsiteDataStore. Linux: an ephemeral
         // WebContext. Windows: needs WebView2 runtime 101+, and does nothing on
-        // older ones — which is why the tab is also barred from capture and from
-        // the session file rather than relying on the engine alone.
+        // older ones — which is why the tab is also kept out of the session file
+        // rather than relying on the engine alone. Reading a private tab —
+        // capture, or AiON's current-page context — is deliberately not part of
+        // that defence: both write locally and emit nothing, so they are the
+        // user's call, not the engine's. See docs/SECURITY.md.
         .incognito(tab.private)
         .on_navigation(move |url| {
             let state = app_for_navigation.state::<Backend>();

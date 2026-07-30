@@ -212,6 +212,142 @@ pub(crate) fn ai_free_search_status(browser: &BrowserSettings) -> AiFreeSearchSt
     }
 }
 
+/// Parse a proxy endpoint, rejecting anything the transports cannot carry.
+///
+/// Deliberately strict, and the accepted set is not a judgement call: Tauri's
+/// `parse_proxy_url` maps exactly `http` and `socks5` to a wry `ProxyConfig` and
+/// returns `InvalidProxyUrl` for everything else. Accepting a scheme it will
+/// refuse — `https`, `socks5h`, `socks4` — would push the failure to the moment
+/// a tab is opened, long after the Settings screen said the address was fine.
+///
+/// A bare `127.0.0.1:9050` is refused for the same reason: `Url::parse` reads it
+/// as scheme `127.0.0.1` with no host, so it would sail past a looser check and
+/// end up proxying nothing.
+pub(crate) fn parse_proxy_url(raw: &str) -> Result<Url, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("A proxy address is required while the proxy is on.".to_string());
+    }
+
+    let parsed = Url::parse(trimmed)
+        .map_err(|_| format!("\"{trimmed}\" is not a valid proxy address."))?;
+
+    if !matches!(parsed.scheme(), "socks5" | "http") {
+        return Err(format!(
+            "\"{}\" is not a supported proxy scheme — use socks5:// or http://.",
+            parsed.scheme()
+        ));
+    }
+    if parsed.host_str().unwrap_or_default().is_empty() {
+        return Err(format!("\"{trimmed}\" is missing a host."));
+    }
+    // Neither transport has a default port worth guessing: Tor is 9050, a Tor
+    // Browser bundle is 9150, and an HTTP proxy is whatever it was configured as.
+    // Guessing wrong fails closed but confusingly, so require it.
+    if parsed.port().is_none() {
+        return Err(format!("\"{trimmed}\" is missing a port."));
+    }
+
+    Ok(parsed)
+}
+
+/// Whether the running platform can route webview traffic through a proxy.
+///
+/// `Err` carries the reason, which the Settings screen shows verbatim.
+///
+/// The macOS gate is the load-bearing one. wry sets `proxyConfigurations` on the
+/// data store through KVC *without* a version check of its own — unlike the
+/// app-bound-domains call a few lines above it, which does test for 14. That key
+/// only exists on macOS 14+, and `setValue:forKey:` against a missing key raises
+/// NSUnknownKeyException, so on macOS 13 the choice is not "proxy or no proxy"
+/// but "proxy or a crashed tab". ÆTHER supports back to 10.15, so this check
+/// cannot be skipped.
+pub(crate) fn proxy_platform_support() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        if macos_major_version() < 14 {
+            return Err(
+                "Proxy support needs macOS 14 or later; this Mac browses directly.".to_string(),
+            );
+        }
+        Ok(())
+    }
+    #[cfg(target_os = "android")]
+    {
+        Err("Proxy support is not available on Android; this device browses directly.".to_string())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "android")))]
+    {
+        Ok(())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_major_version() -> isize {
+    objc2_foundation::NSProcessInfo::processInfo()
+        .operatingSystemVersion()
+        .majorVersion
+}
+
+/// What the proxy is actually doing, as opposed to what the settings file says.
+///
+/// `active` folds together the three things that all have to hold — switched on,
+/// supported here, and a parseable endpoint — so no caller has to remember the
+/// conjunction and get it subtly wrong.
+pub(crate) fn proxy_status(browser: &BrowserSettings) -> ProxyStatus {
+    let support = proxy_platform_support();
+    let available = support.is_ok();
+    let usable = available && parse_proxy_url(&browser.proxy.url).is_ok();
+
+    ProxyStatus {
+        enabled: browser.proxy.enabled,
+        url: browser.proxy.url.clone(),
+        available,
+        unsupported_reason: support.err(),
+        active: browser.proxy.enabled && usable,
+    }
+}
+
+/// Whether this shell can inject a document-start script into a visited page.
+///
+/// Desktop builds each tab with `WebviewBuilder`, which takes one. The Android
+/// shell drives its WebViews through `android_tabs` and has no equivalent hook,
+/// so the setting is inert there and says so rather than implying otherwise.
+pub(crate) fn timezone_pin_platform_support() -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        Ok(())
+    }
+    #[cfg(not(desktop))]
+    {
+        Err("Timezone pinning is not available on this platform; pages see the device's own timezone.".to_string())
+    }
+}
+
+pub(crate) fn timezone_pin_status(browser: &BrowserSettings) -> TimezonePinStatus {
+    let support = timezone_pin_platform_support();
+    let available = support.is_ok();
+
+    TimezonePinStatus {
+        enabled: browser.pin_timezone,
+        available,
+        unsupported_reason: support.err(),
+        active: browser.pin_timezone && available,
+    }
+}
+
+/// The endpoint to hand to the webview and HTTP client, or `None` to go direct.
+///
+/// Single source of truth for "is traffic proxied right now", so the tabs and the
+/// favicon/capture client cannot disagree — a disagreement there is exactly the
+/// leak this feature is meant to close.
+pub(crate) fn active_proxy_url(browser: &BrowserSettings) -> Option<Url> {
+    if !browser.proxy.enabled || proxy_platform_support().is_err() {
+        return None;
+    }
+    parse_proxy_url(&browser.proxy.url).ok()
+}
+
 pub(crate) fn ai_free_search(id: &str) -> AiFreeSearch {
     match id {
         "google" => AiFreeSearch::UrlParam("udm=14"),

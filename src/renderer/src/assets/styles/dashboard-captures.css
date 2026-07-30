@@ -980,6 +980,21 @@
   white-space: nowrap;
 }
 
+/* Marks a source saved out of a private tab. Tinted rather than neutral so it
+   can be picked out at a glance when clearing private-session research — that
+   findability is the whole job, not any kind of warning. */
+.private-origin-badge {
+  margin-left: 5px;
+  padding: 1px 6px;
+  border: 1px solid rgb(var(--accent-mid-rgb) / 0.38);
+  border-radius: 999px;
+  background: rgb(var(--accent-soft-rgb) / 0.5);
+  color: rgb(var(--text-ocean-rgb));
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
 .capture-hub-row {
   display: flex;
   flex-wrap: wrap;
