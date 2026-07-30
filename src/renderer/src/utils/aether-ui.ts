@@ -280,7 +280,15 @@ export function chatModelRungs(installed: string[]): ChatModelRung[] {
     if (model) claimed.add(model)
     // A gap is only worth showing when the app can act on it.
     if (!model && !rung.installChoice) return []
-    return [{ key: rung.id, name: rung.name, detail: rung.detail, model, installChoice: rung.installChoice }]
+    return [
+      {
+        key: rung.id,
+        name: rung.name,
+        detail: rung.detail,
+        model,
+        installChoice: rung.installChoice
+      }
+    ]
   })
 
   // Anything the ladder does not recognise, appended so it stays reachable.

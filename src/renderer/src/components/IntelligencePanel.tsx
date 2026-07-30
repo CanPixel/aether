@@ -1,4 +1,12 @@
-import { memo, FormEvent, useEffect, useRef, useState, type RefObject, type WheelEvent } from 'react'
+import {
+  memo,
+  FormEvent,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+  type WheelEvent
+} from 'react'
 import {
   ChatResult,
   CollectionSummary,

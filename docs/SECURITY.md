@@ -80,7 +80,7 @@ without patching an engine it does not ship.** Anyone who needs anonymity wants
 Tor Browser, not this.
 
 The IP address is the one exception, and only when the [proxy](#proxy) is
-switched on. That changes *where* a site thinks you are; it does not change how
+switched on. That changes _where_ a site thinks you are; it does not change how
 recognisable you are once you get there. The two are independent, and a proxy
 without fingerprint defences still leaves every visit joinable to every other.
 
@@ -113,13 +113,13 @@ source ÆTHER could capture.
 
 Four unrelated mechanisms, because the engines share nothing here:
 
-| Engine     | Mechanism                                                     | Kind           |
-| ---------- | ------------------------------------------------------------- | -------------- |
+| Engine     | Mechanism                                                      | Kind           |
+| ---------- | -------------------------------------------------------------- | -------------- |
 | Google     | `&udm=14` — the "Web" vertical, plain links, no AI Overview    | URL parameter  |
 | Bing       | `-ai` appended to the query — a real operator, added June 2026 | query operator |
-| DuckDuckGo | `noai.duckduckgo.com`, DDG's own AI-free host                 | alternate host |
-| Yahoo      | none                                                          | —              |
-| Ecosia     | none reachable from a URL                                     | —              |
+| DuckDuckGo | `noai.duckduckgo.com`, DDG's own AI-free host                  | alternate host |
+| Yahoo      | none                                                           | —              |
+| Ecosia     | none reachable from a URL                                      | —              |
 
 **Google does not get `-ai`, and this is the trap worth stating plainly.** `-ai` is
 Microsoft's operator; on Google it is an ordinary negative keyword, so it would drop
@@ -238,9 +238,9 @@ tab is **never written to the session file** (`persist_session_tabs`).
 **Capture is not gated, and the reasoning matters.** It used to be refused
 outright, on the argument that a private tab promises to leave no trace and a
 capture is the most durable trace the app makes. That conflates the two halves of
-browser privacy. One is *outward* — the IP, fingerprint, cookies and referrers a
+browser privacy. One is _outward_ — the IP, fingerprint, cookies and referrers a
 site can read, which is where being recognised actually happens. The other is
-*inward* — what persists on your own disk. Capture is purely inward: on desktop it
+_inward_ — what persists on your own disk. Capture is purely inward: on desktop it
 reads the DOM already in memory (`extract_readable_page_from_webview`, with a
 re-fetch only as fallback), so in the normal path it makes no network request at
 all. Nothing is emitted, nothing is asserted, nobody is told anything.
@@ -266,7 +266,7 @@ refusal was avoiding.
 
 The thing to keep in mind when adding any feature that reads the active tab is
 the outward/inward split, not a blanket ban: a private tab is a promise about
-what leaves the machine and what survives on it *by default*, not a prohibition
+what leaves the machine and what survives on it _by default_, not a prohibition
 on the user deliberately keeping something.
 
 ### Timezone and locale pinning
@@ -276,7 +276,7 @@ Off by default. When on, every tab is built with a document-start script
 reports UTC and `en-US` in place of the machine's own timezone and language.
 
 **Why this and not canvas noise.** Timezone is among the highest-entropy bits a
-page reads for free, and pinning it is *uniformity* rather than randomisation:
+page reads for free, and pinning it is _uniformity_ rather than randomisation:
 UTC is a large crowd that already exists, so the user becomes commoner. Randomised
 canvas or audio fingerprints do the opposite — "the browser whose canvas hash
 changes every read" is a very small set, and the shim is detectable besides. ÆTHER
@@ -449,7 +449,7 @@ capability.
 - **No encrypted DNS by default.** Hostnames go to the OS resolver, so the network
   operator sees every site visited regardless of anything above. Turning the
   [proxy](#proxy) on covers this for the app's own fetches, which use `socks5h`
-  and let the proxy resolve. Whether the *webviews* resolve locally or at the
+  and let the proxy resolve. Whether the _webviews_ resolve locally or at the
   proxy is the engine's decision and is not something ÆTHER can force — so with
   the proxy on, assume tab DNS may still be visible until measured per platform.
   Encrypted DNS without a proxy still wants a system DNS profile and is not

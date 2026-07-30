@@ -28,11 +28,11 @@ Not "private cloud". Not "we don't train on your data". **There is no server.**
 
 ## 3. The AI serves your reading — it does not replace it
 
-AiON answers from pages *you* chose to keep, and cites them. Every claim is one
+AiON answers from pages _you_ chose to keep, and cites them. Every claim is one
 click from the source you already judged worth saving.
 
-An assistant that reads for you makes you dependent. An assistant that reads *with
-you* makes you faster. We build the second one.
+An assistant that reads for you makes you dependent. An assistant that reads _with
+you_ makes you faster. We build the second one.
 
 ## 4. It only ever reads what you opened
 
@@ -91,7 +91,7 @@ someone else.**
 On WebKit, blocked requests are refused inside the network path — a tracker learns
 nothing, not even that something was attempted. Third-party cookies are blocked
 there too — on Windows they are not, and the app says so rather than implying
-otherwise. Click identifiers are stripped from URLs on navigation *and* on capture, so an ad
+otherwise. Click identifiers are stripped from URLs on navigation _and_ on capture, so an ad
 attribution never gets a permanent home in your library.
 
 ## 11. We say what we don't do
