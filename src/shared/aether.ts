@@ -46,6 +46,10 @@ export type SearchEngineId = 'google' | 'bing' | 'yahoo' | 'ecosia' | 'duckduckg
 
 export interface BrowserSettings {
   defaultSearchEngine: SearchEngineId
+  // Ask the search engine for results without AI-generated answers. On unless
+  // turned off, including for settings files written before the field existed.
+  // What it actually sends depends on the engine — see SystemStatus.aiFreeSearch.
+  aiFreeSearch: boolean
 }
 
 export interface UpdateSettings {
@@ -62,6 +66,17 @@ export interface AppSettings {
   developerMode: boolean
   updates: UpdateSettings
   appearance: Appearance
+}
+
+// Mirrors UpdateSettingsInput in src-tauri/src/types.rs, where every field of every
+// group is optional. `Partial<AppSettings>` was not the same thing: it makes the
+// groups optional but each group whole, so sending one field of `browser` only
+// type-checked while BrowserSettings happened to have exactly one field.
+export interface UpdateSettingsInput {
+  browser?: Partial<BrowserSettings>
+  developerMode?: boolean
+  updates?: Partial<UpdateSettings>
+  appearance?: Appearance
 }
 
 export interface CollectionSummary {
@@ -399,6 +414,7 @@ export interface SystemStatus {
   libraryPath: string
   collections: CollectionSummary[]
   contentBlocking: ContentBlockingStatus
+  aiFreeSearch: AiFreeSearchStatus
   error?: string
 }
 
@@ -406,6 +422,21 @@ export interface SystemStatus {
 // platforms block genuinely different things, and a claim hardcoded here would
 // keep asserting cookie blocking on Windows long after anyone remembered that
 // WebView2 has no equivalent for it.
+// Reported per selected engine, for the same reason as ContentBlockingStatus: the
+// five engines have five unrelated answers and two of them have none, so a fixed
+// string here would keep promising AI-free results on Yahoo forever.
+export interface AiFreeSearchStatus {
+  enabled: boolean
+  // What is actually sent: "udm=14 Web filter", "-ai operator",
+  // "noai.duckduckgo.com". Empty when the engine offers nothing.
+  mechanism: string
+  // False when the selected engine has no URL-level opt-out (Yahoo has no control
+  // of its own; Ecosia's is an account setting, and region-gated). `enabled` with
+  // `available: false` is a real state and the UI should say so rather than imply
+  // the toggle did something.
+  available: boolean
+}
+
 export interface ContentBlockingStatus {
   // Human-readable name of the engine doing the blocking, e.g. "WebKit content
   // rules". Empty when there is none.
@@ -542,6 +573,12 @@ export interface AetherApi {
     list(): Promise<BrowserTabSummary[]>
     create(input?: {
       url?: string
+      // Search terms, for callers holding a concept rather than a URL. Kept apart
+      // from `url` because the backend has to guess whether a bare string is a
+      // query or a host, and it guesses on the presence of a dot — so a concept
+      // named "Node.js" would open https://Node.js instead of being searched for.
+      // Takes precedence over `url` when both are given.
+      search?: string
       private?: boolean
       container?: string
     }): Promise<BrowserTabSummary>
@@ -560,8 +597,10 @@ export interface AetherApi {
     // the context that holds the IPC bridge. Resolves null when there is none.
     favicon(url: string): Promise<string | null>
     // Clears the shared webview data store: cookies, caches, local storage.
-    // Touches nothing ÆTHER stores itself. macOS only for now — see
-    // docs/SECURITY.md for why the other platforms have no equivalent yet.
+    // Touches nothing ÆTHER stores itself, and leaves private and container tabs
+    // alone — they have their own stores. Desktop only; on Windows it needs
+    // WebView2 runtime 1.0.1518.46 or newer and reports when it does not have it.
+    // See docs/SECURITY.md.
     clearBrowsingData(): Promise<void>
   }
   dashboard: {
@@ -650,7 +689,7 @@ export interface AetherApi {
   system: {
     status(): Promise<SystemStatus>
     settings(): Promise<AppSettings>
-    updateSettings(input: Partial<AppSettings>): Promise<AppSettings>
+    updateSettings(input: UpdateSettingsInput): Promise<AppSettings>
     updateModels(input: { embeddingModel?: string; chatModel?: string }): Promise<SystemStatus>
     checkForUpdate(): Promise<UpdateCheckResult>
     // Downloads, signature-verifies, and installs the newest signed release.

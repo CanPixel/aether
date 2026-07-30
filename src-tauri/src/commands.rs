@@ -85,13 +85,17 @@ pub(crate) async fn aether_tabs_create(
 ) -> Cmd<BrowserTabSummary> {
     let settings = load_settings(&state.paths.settings_path).await?;
     // No URL → open a blank start-page tab (Portals + search) rather than a search engine.
-    let (requested_url, private, container) = match input {
-        Some(input) => (input.url, input.private, input.container),
-        None => (None, false, None),
+    let (requested_url, requested_search, private, container) = match input {
+        Some(input) => (input.url, input.search, input.private, input.container),
+        None => (None, None, false, None),
     };
-    let url = match requested_url {
-        Some(raw_url) => normalize_url(&raw_url, &settings.browser.default_search_engine),
-        None => START_PAGE_URL.to_string(),
+    let search = settings.browser.search_prefs();
+    let url = match (requested_search, requested_url) {
+        // Search terms take precedence: a caller that supplied them knows they are
+        // terms, and must not have them re-guessed as a hostname.
+        (Some(terms), _) => search_url(terms.trim(), search),
+        (None, Some(raw_url)) => normalize_url(&raw_url, search),
+        (None, None) => START_PAGE_URL.to_string(),
     };
     let tab = ManagedTab::new_with_privacy("browser", &url, private, container);
     let tab_id = tab.id.clone();
@@ -211,7 +215,7 @@ pub(crate) async fn aether_tabs_navigate(
             .iter_mut()
             .find(|tab| tab.id == tab_id)
             .ok_or_else(|| format!("Unknown tab: {tab_id}"))?;
-        tab.navigate(&url, &settings.browser.default_search_engine);
+        tab.navigate(&url, settings.browser.search_prefs());
         let target_url = tab.url.clone();
         tabs.active_tab_id = tab.id.clone();
         tabs.dashboard_open = false;
@@ -511,7 +515,9 @@ pub(crate) async fn aether_hub_create(
     if title.is_empty() {
         return Err("Shortcut title is required.".to_string());
     }
-    let url = normalize_url(&input.url, "google");
+    // A shortcut's input is a URL in practice; the engine only matters if the user
+    // typed a bare phrase into the dialog, so the fallback is enough here.
+    let url = normalize_url(&input.url, SearchPrefs::fallback());
     let favicon = input
         .favicon
         .as_deref()
@@ -1455,6 +1461,9 @@ pub(crate) async fn aether_system_update_settings(
         if let Some(default_search_engine) = browser.default_search_engine {
             settings.browser.default_search_engine =
                 normalize_search_engine_id(&default_search_engine);
+        }
+        if let Some(ai_free_search) = browser.ai_free_search {
+            settings.browser.ai_free_search = ai_free_search;
         }
     }
     if let Some(developer_mode) = input.developer_mode {

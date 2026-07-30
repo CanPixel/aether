@@ -242,7 +242,8 @@ pub(crate) fn create_native_tab_from_url(
     state: &State<Backend>,
     raw_url: &str,
 ) -> Cmd<()> {
-    let url = normalize_url(raw_url, "google");
+    // A page opened this (target=_blank, window.open), so it is already a URL.
+    let url = normalize_url(raw_url, SearchPrefs::fallback());
     let tab = ManagedTab::new("browser", &url);
     let tab_id = tab.id.clone();
     {

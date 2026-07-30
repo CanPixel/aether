@@ -30,8 +30,11 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
     ICoreWebView2, COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
 };
 use webview2_com::WebResourceRequestedEventHandler;
-use windows::core::{HSTRING, PCWSTR, PWSTR};
-use windows::Win32::System::Com::CoTaskMemFree;
+// Leading `::` is load-bearing: this module is itself named `windows`, and the
+// `use super::*` above brings that name into scope from the parent, so a bare
+// `windows::` is ambiguous between this module and the crate (E0659).
+use ::windows::core::{HSTRING, PCWSTR, PWSTR};
+use ::windows::Win32::System::Com::CoTaskMemFree;
 
 /// Reads a WebView2 string out-parameter and frees it.
 ///

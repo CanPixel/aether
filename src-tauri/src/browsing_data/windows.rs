@@ -9,7 +9,10 @@ use super::*;
 
 use webview2_com::ClearBrowsingDataCompletedHandler;
 use webview2_com::Microsoft::Web::WebView2::Win32::{ICoreWebView2Profile2, ICoreWebView2_13};
-use windows::core::Interface;
+// Leading `::` is load-bearing: this module is itself named `windows`, and the
+// `use super::*` above brings that name into scope from the parent, so a bare
+// `windows::` is ambiguous between this module and the crate (E0659).
+use ::windows::core::Interface;
 
 pub(crate) fn clear(app: &AppHandle) -> Result<(), String> {
     // Every non-private tab shares one profile, so clearing through any live

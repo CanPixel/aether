@@ -89,6 +89,43 @@ What is defended:
 | Click identifiers stripped on navigation and on capture | `strip_tracking_params`, `src-tauri/src/util.rs`   |
 | Favicons never fetched from the privileged window       | `src-tauri/src/favicon.rs`                         |
 | Default search engine that does not build a profile     | `search_engine_prefix`, `src-tauri/src/util.rs`    |
+| AI-generated answers declined where the engine allows   | `search_url`, `src-tauri/src/util.rs`              |
+
+### AI-free search
+
+On by default, one toggle in Settings to turn off. Every search the app builds —
+the address bar, a bare query typed into it, and an iCE card's "Explore in Web" —
+goes through `search_url`, so none of them can disagree about it.
+
+This is a veracity and consent measure rather than a privacy one. AI answers are
+inserted above the results the user asked for, by a mechanism they did not opt into,
+and they are the part of a results page least likely to be checkable against a
+source ÆTHER could capture.
+
+Four unrelated mechanisms, because the engines share nothing here:
+
+| Engine     | Mechanism                                                     | Kind           |
+| ---------- | ------------------------------------------------------------- | -------------- |
+| Google     | `&udm=14` — the "Web" vertical, plain links, no AI Overview    | URL parameter  |
+| Bing       | `-ai` appended to the query — a real operator, added June 2026 | query operator |
+| DuckDuckGo | `noai.duckduckgo.com`, DDG's own AI-free host                 | alternate host |
+| Yahoo      | none                                                          | —              |
+| Ecosia     | none reachable from a URL                                     | —              |
+
+**Google does not get `-ai`, and this is the trap worth stating plainly.** `-ai` is
+Microsoft's operator; on Google it is an ordinary negative keyword, so it would drop
+every result containing "ai" — precisely the results an iCE concept like "neural
+network" or "transformer" needs. Google's mechanism is `udm=14`, which changes the
+result vertical and not the query's meaning. There is a unit test asserting that
+`-ai` never reaches a Google URL.
+
+**Two engines can't honour the setting at all.** Yahoo serves Bing's results with no
+control of its own, and Ecosia's opt-out is an account setting that is also gated by
+region — neither can be asked for from a URL. Nothing is appended for them, because
+an invented parameter can change how an engine parses the rest of the query. The
+Settings screen says so for the selected engine rather than implying the toggle did
+something: see `ai_free_search_status`, which derives its wording from the same
+table `search_url` uses, so the two cannot drift apart.
 
 ### Content blocking
 
@@ -281,6 +318,10 @@ capability.
   the large ad and analytics networks; it will miss a long tail that a real filter
   list catches. Regenerating from EasyPrivacy needs a converter that respects the
   two constraints above.
+- **AI-free search does nothing on Yahoo or Ecosia**, and these mechanisms are
+  undocumented conveniences that the engines can withdraw without notice. A change
+  fails open: the search still works, it just quietly carries AI answers again.
+  Nothing detects that, so the table above is worth rechecking periodically.
 - **No HTTPS-only mode.** Bare hostnames typed into the address bar resolve to
   `https://`, but an explicit `http://` URL is left alone. Upgrading it needs an
   interstitial with a way back down, or http-only sites break with no explanation.

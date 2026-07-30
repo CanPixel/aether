@@ -8,6 +8,7 @@ src-tauri/target
 src-tauri/target-linux-*
 # scripts/check-platforms.sh
 src-tauri/target-platform-check
+src-tauri/target-platform-check-windows
 aether-models/
 .DS_Store
 .eslintcache

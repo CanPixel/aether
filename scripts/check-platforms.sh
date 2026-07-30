@@ -98,37 +98,56 @@ windows = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Com"
 TOML
 
   python3 - "${REPO_ROOT}" "${WORK}" <<'PY'
-import pathlib, re, sys
+import pathlib, shutil, sys
 root = pathlib.Path(sys.argv[1]) / "src-tauri" / "src"
 work = pathlib.Path(sys.argv[2])
 
-def prepare(path):
-    src = path.read_text().replace("use super::*;\n", "")
-    src = re.sub(r"diag_(error|info)!", "eprintln!", src)
-    # Inner doc comments are only legal at the top of a module.
-    return "\n".join(l for l in src.split("\n") if not l.startswith("//!"))
+# The real module *shape* is reproduced rather than flattened, and that matters
+# more than it looks. Both platform files are named windows.rs and both open with
+# `use super::*`, which brings the parent's `mod windows` into scope alongside the
+# `windows` crate — a bare `windows::` path is then ambiguous (E0659). An earlier
+# version of this harness stripped `use super::*` while inlining, which deleted
+# the glob import that causes the collision: the check passed locally on code that
+# could not compile on Windows at all. So: same file names, same nesting, same
+# glob imports, and only the crate-root items are stubbed.
+for parent in ("content_blocking", "browsing_data"):
+    (work / "src" / parent).mkdir(parents=True, exist_ok=True)
+    shutil.copy(root / parent / "windows.rs", work / "src" / parent / "windows.rs")
+    # Stands in for the real parent module: declares the child under the same name
+    # and re-exports it, exactly as content_blocking.rs and browsing_data.rs do.
+    (work / "src" / f"{parent}.rs").write_text(
+        "use super::*;\n\n"
+        "#[cfg(windows)]\n"
+        "mod windows;\n"
+        "#[cfg(windows)]\n"
+        "#[allow(unused_imports)]\n"
+        "pub use windows::*;\n"
+    )
 
-blocking = prepare(root / "content_blocking" / "windows.rs")
-blocking = blocking.replace(
-    "pub(crate) fn apply_to_webview",
-    "fn blocked_hosts() -> Vec<String> { Vec::new() }\n\npub fn apply_to_webview",
-).replace("pub(crate) fn compile_on_startup", "pub fn compile_on_startup")
-clearing = prepare(root / "browsing_data" / "windows.rs").replace(
-    "pub(crate) fn clear", "pub fn clear"
-)
-
+# Only what the platform files actually take from the crate root. blocked_hosts is
+# a stub because the real one is unit-tested on the host; everything else has to
+# be the genuine type or the WebView2 signatures are not really being checked.
 (work / "src" / "lib.rs").write_text(
+    "#![allow(dead_code)]\n\n"
     "use std::sync::{Arc, Mutex};\n"
     "use tauri::{AppHandle, Manager, Webview};\n"
     "use url::Url;\n\n"
-    + blocking
-    + "\n\npub mod browsing_data {\nuse super::*;\n"
-    + clearing
-    + "\n}\n"
+    # Declared before the `mod` lines below, which is what puts them in textual
+    # scope for the child modules — no re-export needed, and adding one only
+    # earns an unused-import error under -D warnings.
+    "macro_rules! diag_error { ($($arg:tt)*) => { eprintln!($($arg)*) }; }\n"
+    "macro_rules! diag_info { ($($arg:tt)*) => { eprintln!($($arg)*) }; }\n\n"
+    "fn blocked_hosts() -> Vec<String> { Vec::new() }\n\n"
+    "pub mod content_blocking;\n"
+    "pub mod browsing_data;\n"
 )
 PY
 
-  (cd "${WORK}" && cargo clippy --target x86_64-pc-windows-msvc -- -D warnings) \
+  # Target dir outside the throwaway crate, like the Linux step's cache volume: the
+  # scaffolding is rebuilt each run but tauri and webview2-com are not, which is
+  # the difference between a four-minute check and a ten-second one.
+  (cd "${WORK}" && CARGO_TARGET_DIR="${REPO_ROOT}/src-tauri/target-platform-check-windows" \
+    cargo clippy --target x86_64-pc-windows-msvc -- -D warnings) \
     || fail "windows cross type-check"
 fi
 

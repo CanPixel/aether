@@ -71,6 +71,7 @@ import { QuickAction } from './types/ui'
 import {
   cleanTitle,
   countLabel,
+  describeAiFreeSearch,
   describeContentBlocking,
   formatByteSize,
   formatUpdateProgress,
@@ -79,7 +80,7 @@ import {
   getTabTint,
   normalizeComparableUrl
 } from './utils/aether-ui'
-import { HAS_NATIVE_TAB_WEBVIEWS, IS_ANDROID, IS_MACOS } from './utils/platform'
+import { HAS_NATIVE_TAB_WEBVIEWS, IS_ANDROID, IS_DESKTOP } from './utils/platform'
 import { useDismissableOverlay } from './utils/dismissable-overlay'
 import { useStableHandler } from './utils/stable-handler'
 import {
@@ -453,7 +454,10 @@ function App(): React.JSX.Element {
   >({})
   const [status, setStatus] = useState<SystemStatus | null>(null)
   const [settings, setSettings] = useState<AppSettings>({
-    browser: { defaultSearchEngine: 'google' },
+    // Placeholder until the backend's settings arrive; it must match
+    // BrowserSettings::default() in src-tauri/src/types.rs, or Settings highlights
+    // an engine the backend is not actually using for the first frame.
+    browser: { defaultSearchEngine: 'duckduckgo', aiFreeSearch: true },
     developerMode: false,
     updates: { autoCheck: true },
     appearance: 'light'
@@ -1063,6 +1067,7 @@ function App(): React.JSX.Element {
   const createTab = useCallback(
     async (input?: {
       url?: string
+      search?: string
       private?: boolean
       container?: string
     }): Promise<BrowserTabSummary | null> => {
@@ -1328,13 +1333,17 @@ function App(): React.JSX.Element {
     await window.aether.layout.setModalOverlayOpen(Boolean(settingsOpen || collectionDialog))
   }
 
-  async function openModelSetup(): Promise<void> {
+  // `preselect` comes from a greyed rung on the model slider: the user pointed at a
+  // specific missing model, so the modal opens with that one already chosen instead
+  // of making them find it again.
+  async function openModelSetup(preselect?: ModelDownloadChoice): Promise<void> {
     setSettingsOpen(false)
     setModelSetupDismissed(false)
     setModelSetupRequested(true)
     setModelSetupError(null)
     setModelSetupComplete(false)
     setModelDownloadProgress([])
+    if (preselect) setSelectedSetupModels([preselect])
     await window.aether.layout.setModalOverlayOpen(true)
   }
 
@@ -2148,9 +2157,12 @@ function App(): React.JSX.Element {
     }
   }
 
+  // Handed to the backend as search *terms*, not as a pre-built URL. Two things
+  // used to be wrong with building it here: it hardcoded Google regardless of the
+  // user's chosen engine, and a URL assembled in the renderer skips the AI-free
+  // step that every other search in the app goes through.
   async function openCrystallizedTopic(_keyword: string, item: IcebergItem): Promise<void> {
-    const url = `https://www.google.com/search?q=${encodeURIComponent(`${item.name}`)}`
-    await createTab({ url })
+    await createTab({ search: item.name })
     setWorkspaceMode('dashboard')
     setDashboardOpen(false)
   }
@@ -2207,7 +2219,22 @@ function App(): React.JSX.Element {
         browser: { defaultSearchEngine }
       })
       setSettings(nextSettings)
+      // status.aiFreeSearch describes the *selected* engine, so it goes stale the
+      // moment the engine changes — refetched here rather than left to the next
+      // shell refresh, which may be a while.
+      setStatus(await window.aether.system.status())
       reportSuccess('Default search engine updated.')
+    })
+  }
+
+  async function updateAiFreeSearch(aiFreeSearch: boolean): Promise<void> {
+    await runTask('Updating settings', async () => {
+      const nextSettings = await window.aether.system.updateSettings({
+        browser: { aiFreeSearch }
+      })
+      setSettings(nextSettings)
+      setStatus(await window.aether.system.status())
+      reportSuccess(aiFreeSearch ? 'AI-free search enabled.' : 'AI-free search disabled.')
     })
   }
 
@@ -2548,6 +2575,7 @@ function App(): React.JSX.Element {
           onRelaunchForUpdate={relaunchForUpdate}
           onClose={closeSettings}
           onDefaultSearchEngineChange={updateDefaultSearchEngine}
+          onAiFreeSearchChange={updateAiFreeSearch}
           onClearBrowsingData={clearBrowsingData}
           onDeveloperModeChange={updateDeveloperMode}
           onExportLibrary={exportLibrary}
@@ -3113,6 +3141,7 @@ function SettingsModal({
   onClose,
   onCheckForUpdates,
   onDefaultSearchEngineChange,
+  onAiFreeSearchChange,
   onClearBrowsingData,
   onDeveloperModeChange,
   onExportLibrary,
@@ -3142,6 +3171,7 @@ function SettingsModal({
   onClose: () => Promise<void>
   onCheckForUpdates: () => Promise<void>
   onDefaultSearchEngineChange: (value: SearchEngineId) => Promise<void>
+  onAiFreeSearchChange: (value: boolean) => Promise<void>
   onClearBrowsingData: () => Promise<void>
   onDeveloperModeChange: (value: boolean) => Promise<void>
   onExportLibrary: () => Promise<void>
@@ -3243,6 +3273,32 @@ function SettingsModal({
             </div>
           </div>
 
+          {systemStatus?.aiFreeSearch && (
+            <div className="settings-field">
+              <label className="settings-checkbox-row">
+                <input
+                  checked={settings.browser.aiFreeSearch}
+                  disabled={Boolean(busy)}
+                  onChange={(event) => {
+                    void onAiFreeSearchChange(event.currentTarget.checked)
+                  }}
+                  type="checkbox"
+                />
+                <span>
+                  <strong>AI-free search results</strong>
+                  <small>
+                    {describeAiFreeSearch(
+                      systemStatus.aiFreeSearch,
+                      searchEngines.find(
+                        (engine) => engine.id === settings.browser.defaultSearchEngine
+                      )?.name ?? 'This engine'
+                    )}
+                  </small>
+                </span>
+              </label>
+            </div>
+          )}
+
           {systemStatus?.contentBlocking && (
             <div className="settings-field">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -3261,7 +3317,7 @@ function SettingsModal({
             </div>
           )}
 
-          {IS_MACOS && (
+          {IS_DESKTOP && (
             <div className="settings-field">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Trash2 height={30} width={30} />

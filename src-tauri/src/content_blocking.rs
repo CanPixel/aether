@@ -48,6 +48,14 @@ use super::*;
 /// Identifier the compiled list is cached under. Changing it orphans the
 /// previously compiled list in the store rather than replacing it, so it should
 /// change only when the rules themselves change shape.
+///
+/// Only the two WebKit platforms compile a rule list at all — Windows derives a
+/// host list instead and Android has no blocking — so the cfg matches the
+/// submodules below rather than carrying a dead constant elsewhere.
+#[cfg(any(
+    target_os = "macos",
+    all(unix, not(target_os = "macos"), not(target_os = "android"))
+))]
 const RULE_LIST_IDENTIFIER: &str = "aether-tracker-blocking-v1";
 
 /// Compiled into the binary; see resources/content-blocking-rules.json.

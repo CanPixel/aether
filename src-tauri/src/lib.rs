@@ -3,7 +3,10 @@ mod air;
 mod browsing_data;
 mod chat;
 mod commands;
-#[cfg(desktop)]
+// Not desktop-gated, unlike browsing_data: the platform submodules and the
+// apply/compile entry points are, but `content_blocking_status` is reported in
+// SystemStatus on every platform — including Android, where it says plainly that
+// there is no blocking. Gating the whole module leaves that call unresolved.
 mod content_blocking;
 mod diagnostics;
 mod extract;
@@ -406,10 +409,10 @@ impl TabState {
             // TabState has no handle on AppSettings, so this reports the default
             // engine rather than the user's chosen one. Harmless today: nothing
             // in the renderer reads homeUrl. Worth revisiting if anything does.
-            home_url: search_engine_home(DEFAULT_SEARCH_ENGINE).to_string(),
+            home_url: search_engine_home(SearchPrefs::fallback()).to_string(),
             current_url: active
                 .map(|tab| tab.url.clone())
-                .unwrap_or_else(|| search_engine_home(DEFAULT_SEARCH_ENGINE).to_string()),
+                .unwrap_or_else(|| search_engine_home(SearchPrefs::fallback()).to_string()),
             title: active
                 .map(|tab| tab.title.clone())
                 .unwrap_or_else(|| "Browser".to_string()),
@@ -448,7 +451,7 @@ impl ManagedTab {
         private: bool,
         container: Option<String>,
     ) -> Self {
-        let url = normalize_url(raw_url, DEFAULT_SEARCH_ENGINE);
+        let url = normalize_url(raw_url, SearchPrefs::fallback());
         let title = if url == START_PAGE_URL {
             "New tab".to_string()
         } else {
@@ -473,8 +476,8 @@ impl ManagedTab {
         }
     }
 
-    fn navigate(&mut self, raw_url: &str, search_engine: &str) {
-        let url = normalize_url(raw_url, search_engine);
+    fn navigate(&mut self, raw_url: &str, search: SearchPrefs<'_>) {
+        let url = normalize_url(raw_url, search);
         self.url = url.clone();
         self.title = title_from_url(&url);
         self.favicon = favicon_for_url(&url);
@@ -1050,7 +1053,7 @@ async fn navigate_active_tab(app: &AppHandle, state: &State<'_, Backend>, url: &
         let tab = tabs
             .active_tab_mut()
             .ok_or_else(|| "No active browser tab.".to_string())?;
-        tab.navigate(url, &settings.browser.default_search_engine);
+        tab.navigate(url, settings.browser.search_prefs());
         let result = (tab.id.clone(), tab.url.clone());
         tabs.dashboard_open = false;
         result
@@ -3034,7 +3037,10 @@ mod tests {
     #[test]
     fn tracking_params_are_stripped_from_navigation() {
         assert_eq!(
-            normalize_url("https://shop.example/item?gclid=1&utm_medium=cpc", "duckduckgo"),
+            normalize_url(
+                "https://shop.example/item?gclid=1&utm_medium=cpc",
+                search_prefs("duckduckgo")
+            ),
             "https://shop.example/item"
         );
     }
@@ -3048,7 +3054,11 @@ mod tests {
             "https://example.com/watch?v=abc123",
             "https://example.com/?id=1&sort=desc",
         ] {
-            assert_eq!(normalize_url(url, "duckduckgo"), url, "{url} must be intact");
+            assert_eq!(
+                normalize_url(url, search_prefs("duckduckgo")),
+                url,
+                "{url} must be intact"
+            );
         }
     }
 
@@ -3082,6 +3092,169 @@ mod tests {
         assert_eq!(BrowserSettings::default().default_search_engine, "duckduckgo");
         // An explicit choice is still honoured.
         assert_eq!(search_engine_prefix("google"), "https://www.google.com/search?q=");
+    }
+
+    /// Search preferences for an engine with AI-free search left at its default.
+    fn search_prefs(engine: &str) -> SearchPrefs<'_> {
+        SearchPrefs {
+            engine,
+            ai_free: default_ai_free_search(),
+        }
+    }
+
+    fn plain_prefs(engine: &str) -> SearchPrefs<'_> {
+        SearchPrefs {
+            engine,
+            ai_free: false,
+        }
+    }
+
+    // The mechanisms are per-engine and unrelated to one another, so each is
+    // asserted against the exact string the engine documents. A wrong parameter
+    // fails silently: the search still works, it just quietly carries the AI
+    // answers the user asked not to see.
+    #[test]
+    fn ai_free_search_uses_each_engines_own_mechanism() {
+        // Google: the Web vertical. Note `&`, not `?` — the prefix already has one.
+        assert_eq!(
+            search_url("neural network", search_prefs("google")),
+            "https://www.google.com/search?q=neural+network&udm=14"
+        );
+        // Bing: a real operator, appended to the terms rather than to the URL.
+        assert_eq!(
+            search_url("neural network", search_prefs("bing")),
+            "https://www.bing.com/search?q=neural+network+-ai"
+        );
+        // DuckDuckGo: a whole host, so the prefix is replaced rather than extended.
+        assert_eq!(
+            search_url("neural network", search_prefs("duckduckgo")),
+            "https://noai.duckduckgo.com/?q=neural+network"
+        );
+    }
+
+    // The two engines with no URL-level opt-out must produce exactly the ordinary
+    // search URL. Inventing a parameter for them would be worse than doing nothing:
+    // an unrecognised parameter can change how the engine parses the rest.
+    #[test]
+    fn engines_without_an_opt_out_are_left_alone() {
+        for engine in ["yahoo", "ecosia"] {
+            assert_eq!(
+                search_url("neural network", search_prefs(engine)),
+                search_url("neural network", plain_prefs(engine)),
+                "{engine} has no mechanism, so the URL must be unchanged"
+            );
+        }
+    }
+
+    // Google's `-ai` is the trap this guards. It is a Bing operator; on Google it is
+    // an ordinary negative keyword, so it would drop every result that mentions
+    // "ai" — exactly the results an iCE concept like "neural network" needs.
+    #[test]
+    fn google_never_receives_the_bing_operator() {
+        let url = search_url("neural network", search_prefs("google"));
+        assert!(!url.contains("-ai"), "negative keyword leaked into Google: {url}");
+        assert!(url.ends_with("&udm=14"));
+    }
+
+    // Turning the setting off has to yield the untouched engine URL, or "off" is
+    // not actually off.
+    #[test]
+    fn disabling_ai_free_search_restores_the_plain_url() {
+        assert_eq!(
+            search_url("rust traits", plain_prefs("google")),
+            "https://www.google.com/search?q=rust+traits"
+        );
+        assert_eq!(
+            search_url("rust traits", plain_prefs("duckduckgo")),
+            "https://duckduckgo.com/?q=rust+traits"
+        );
+    }
+
+    // A bare query typed into the address bar goes through normalize_url, not
+    // search_url, so it needs its own assertion — this is the highest-traffic
+    // search path in the app and the easiest one to leave behind.
+    #[test]
+    fn the_address_bar_honours_ai_free_search() {
+        assert_eq!(
+            normalize_url("neural network", search_prefs("google")),
+            "https://www.google.com/search?q=neural+network&udm=14"
+        );
+        // A real URL is still passed through untouched.
+        assert_eq!(
+            normalize_url("https://example.com/x", search_prefs("google")),
+            "https://example.com/x"
+        );
+    }
+
+    // Only DuckDuckGo has an AI-free *home*, because only its opt-out is a host.
+    #[test]
+    fn only_the_alt_host_engine_changes_its_home_page() {
+        assert_eq!(
+            search_engine_home(search_prefs("duckduckgo")),
+            "https://noai.duckduckgo.com"
+        );
+        assert_eq!(
+            search_engine_home(plain_prefs("duckduckgo")),
+            "https://duckduckgo.com"
+        );
+        // udm=14 needs a query to apply to, so Google's home is unchanged.
+        assert_eq!(
+            search_engine_home(search_prefs("google")),
+            "https://www.google.com"
+        );
+    }
+
+    // What the Settings screen says out loud, derived from the same table the URL
+    // builder uses so the two cannot disagree.
+    #[test]
+    fn reported_mechanism_matches_the_selected_engine() {
+        let status = |engine: &str| {
+            ai_free_search_status(&BrowserSettings {
+                default_search_engine: engine.to_string(),
+                ai_free_search: true,
+            })
+        };
+
+        assert_eq!(status("google").mechanism, "udm=14 Web filter");
+        assert_eq!(status("bing").mechanism, "-ai operator");
+        assert_eq!(status("duckduckgo").mechanism, "noai.duckduckgo.com");
+        assert!(status("google").available);
+
+        // The honest state: the setting is on, and the engine cannot honour it.
+        let yahoo = status("yahoo");
+        assert!(yahoo.enabled);
+        assert!(!yahoo.available);
+        assert!(yahoo.mechanism.is_empty());
+    }
+
+    // Existing installs predate the field, so a settings.json without it must read
+    // as on. Off would be a silent downgrade for every user who already had one.
+    #[test]
+    fn ai_free_search_defaults_on_for_an_existing_settings_file() {
+        let existing = serde_json::json!({ "defaultSearchEngine": "google" });
+        let parsed: BrowserSettings = serde_json::from_value(existing).expect("parse");
+        assert_eq!(parsed.default_search_engine, "google");
+        assert!(parsed.ai_free_search, "a missing field must not mean off");
+        assert!(BrowserSettings::default().ai_free_search);
+    }
+
+    // The reason `search` exists on CreateTabInput at all: these names would each be
+    // read as a hostname by normalize_url's dot heuristic and never searched for.
+    #[test]
+    fn concept_names_that_look_like_hosts_are_still_searched() {
+        for concept in ["Node.js", "Web 2.0", "ASP.NET"] {
+            let url = search_url(concept, search_prefs("duckduckgo"));
+            assert!(
+                url.starts_with("https://noai.duckduckgo.com/?q="),
+                "{concept} was not searched for: {url}"
+            );
+        }
+        // And the heuristic really would have mangled the dotted one.
+        assert_eq!(
+            normalize_url("Node.js", search_prefs("duckduckgo")),
+            "https://Node.js",
+            "this is exactly why the search field is separate from url"
+        );
     }
 
     // Every one of these is a silent failure: nothing looks wrong, the tab just

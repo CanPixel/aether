@@ -40,6 +40,7 @@ pub(crate) async fn system_status(state: &State<'_, Backend>) -> Cmd<SystemStatu
         library_path: state.paths.library_path.display().to_string(),
         collections,
         content_blocking: content_blocking::content_blocking_status(),
+        ai_free_search: ai_free_search_status(&settings.browser),
         error: catalog.error,
     })
 }

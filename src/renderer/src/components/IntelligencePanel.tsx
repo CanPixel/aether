@@ -3,15 +3,23 @@ import {
   ChatResult,
   CollectionSummary,
   ConversationTurn,
+  ModelDownloadChoice,
   SearchResult,
   SemanticTrailItem,
   SemanticTrailResult,
   SystemStatus
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
-import { countLabel, formatDate, formatVisibleModelName, getCaptureHost } from '../utils/aether-ui'
+import {
+  chatModelRungs,
+  countLabel,
+  formatDate,
+  formatVisibleModelName,
+  getCaptureHost
+} from '../utils/aether-ui'
 import { claimTextForCitation, renderAnswerMarkdown } from './answer-markdown'
 import { CrystallizingOrb } from './CrystallizingOrb'
+import { ModelLevelSlider } from './ModelLevelSlider'
 import { AetherSigilIcon, ChevronRightIcon, GearIcon } from './icons'
 import { Droplet, HardDriveDownload, Waves, Newspaper } from 'lucide-react'
 
@@ -57,7 +65,9 @@ type IntelligencePanelProps = {
   onClearHistory: () => void
   onOpenSemanticTrailItem: (item: SemanticTrailItem) => Promise<void>
   onUpdateModels: (input: { embeddingModel?: string; chatModel?: string }) => Promise<void>
-  onOpenModelSetup: () => Promise<void>
+  // The optional argument preselects a model in the setup modal, so a click on a
+  // greyed slider rung lands on that model rather than on a blank chooser.
+  onOpenModelSetup: (preselect?: ModelDownloadChoice) => Promise<void>
 }
 
 function modelOptionsWithSelected(models: string[], selected?: string | null): string[] {
@@ -549,24 +559,18 @@ function IntelligencePanelComponent({
             </button>
           ) : (
             <div className="inline-model-controls">
-              <label className="inline-model-selector">
-                <span>Model:</span>
-                <select
-                  disabled={Boolean(busy) || !status}
-                  value={status?.chatModel ?? ''}
-                  onChange={(event) => onUpdateModels({ chatModel: event.target.value })}
-                >
-                  <option value="" disabled>
-                    No model
-                  </option>
-                  {chatModelOptions.map((model) => (
-                    <option key={model} value={model}>
-                      {formatVisibleModelName(model, { developerMode, role: 'chat' }) ?? model}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {/* Outside the label: nested in it, a click would also drive the select. */}
+              <ModelLevelSlider
+                activeModel={status?.chatModel}
+                developerMode={developerMode}
+                disabled={Boolean(busy) || !status}
+                onInstall={(choice) => {
+                  void onOpenModelSetup(choice)
+                }}
+                onSelect={(chatModel) => {
+                  void onUpdateModels({ chatModel })
+                }}
+                rungs={chatModelRungs(chatModelOptions)}
+              />
               <button
                 aria-label="Manage Models"
                 className="inline-model-manage-button"

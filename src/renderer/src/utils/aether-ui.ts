@@ -1,7 +1,9 @@
 import {
+  AiFreeSearchStatus,
   BrowserTabSummary,
   ContentBlockingStatus,
   IcebergItem,
+  ModelDownloadChoice,
   SavedIcebergSummary,
   UpdateInstallProgress
 } from '../../../shared/aether'
@@ -195,6 +197,103 @@ function formatBrandedModelName(
   return 'AiON'
 }
 
+/// One position on the chat-model slider.
+export interface ChatModelRung {
+  // Stable React key: the ladder id for a known model, the path for anything else.
+  key: string
+  name: string
+  // One short phrase on what picking this costs or buys.
+  detail: string
+  // The installed model's path. Undefined means this rung is a gap — the model is
+  // known to the app but not on disk, so the rung is shown greyed as an install
+  // affordance rather than hidden. Hiding it is what sent people hunting for the
+  // onboarding modal.
+  model?: string
+  // Set when the app can fetch this rung itself. A model the user placed by hand
+  // has no download to offer, so a gap for it would be unactionable — those only
+  // ever appear as rungs when already installed.
+  installChoice?: ModelDownloadChoice
+}
+
+// Ordered by capability, cheapest first, because that is what makes the control a
+// slider rather than a list: moving right always means "more model, more time".
+//
+// `canonical` marks the two the app can download. Those always get a rung, present
+// or not. Anything else appears only when it is actually installed.
+const CHAT_MODEL_LADDER: Array<{
+  id: string
+  name: string
+  detail: string
+  installChoice?: ModelDownloadChoice
+  matches: (normalized: string, isCommunity: boolean) => boolean
+}> = [
+  {
+    id: 'tiny',
+    name: 'AiON TiNY',
+    detail: 'Community build',
+    matches: (normalized, isCommunity) => normalized.includes('gemma-4-e2b') && isCommunity
+  },
+  {
+    id: 'lite',
+    name: 'AiON LiTE',
+    detail: 'Faster, everyday answers',
+    installChoice: 'lite',
+    matches: (normalized, isCommunity) => normalized.includes('gemma-4-e2b') && !isCommunity
+  },
+  {
+    id: 'wise',
+    name: 'AiON WiSE',
+    detail: 'Deeper synthesis and iCE maps',
+    installChoice: 'wise',
+    matches: (normalized) => normalized.includes('gemma-4-e4b')
+  },
+  {
+    id: 'prime',
+    name: 'AiON PRiME',
+    detail: 'Largest, slowest',
+    matches: (normalized) => normalized.includes('gemma-4-12b')
+  }
+]
+
+function modelMatchesRung(model: string, rung: (typeof CHAT_MODEL_LADDER)[number]): boolean {
+  const filename = model.split(/[\\/]/).pop() ?? model
+  const normalized = filename.replace(/\.gguf$/i, '').toLowerCase()
+  return rung.matches(normalized, /q4_k_m|lmstudio|community/.test(model.toLowerCase()))
+}
+
+/**
+ * The slider's positions, given what is installed.
+ *
+ * Returns the two downloadable rungs plus any other installed chat model, so a
+ * hand-placed model is still selectable and is never silently dropped from the UI.
+ * Empty only when nothing is installed *and* nothing is installable, which is not a
+ * state this app reaches — the caller shows its own "Install Models" button when
+ * every rung is a gap.
+ */
+export function chatModelRungs(installed: string[]): ChatModelRung[] {
+  const claimed = new Set<string>()
+
+  const rungs: ChatModelRung[] = CHAT_MODEL_LADDER.flatMap((rung) => {
+    const model = installed.find((candidate) => modelMatchesRung(candidate, rung))
+    if (model) claimed.add(model)
+    // A gap is only worth showing when the app can act on it.
+    if (!model && !rung.installChoice) return []
+    return [{ key: rung.id, name: rung.name, detail: rung.detail, model, installChoice: rung.installChoice }]
+  })
+
+  // Anything the ladder does not recognise, appended so it stays reachable.
+  const extras = installed
+    .filter((model) => !claimed.has(model))
+    .map((model) => ({
+      key: model,
+      name: formatBrandedModelName(model, 'chat') ?? model,
+      detail: 'Installed locally',
+      model
+    }))
+
+  return [...rungs, ...extras]
+}
+
 export function formatVisibleModelName(
   model?: string | null,
   options: { developerMode?: boolean; role?: 'chat' | 'embedding' } = {}
@@ -320,4 +419,16 @@ export function describeContentBlocking(status: ContentBlockingStatus): string {
   return status.blocksThirdPartyCookies
     ? `${blocked} Third-party cookies are blocked too.`
     : `${blocked} Third-party cookies are not blocked on this platform, so a tracker that is not on the list can still set them.`
+}
+
+// Same contract as describeContentBlocking: say what is actually happening for the
+// engine in use, including when the answer is "nothing". A toggle that reads as on
+// while the selected engine ignores it is the failure this exists to prevent.
+export function describeAiFreeSearch(status: AiFreeSearchStatus, engineName: string): string {
+  if (!status.available) {
+    return `${engineName} has no way to turn AI answers off from a search link, so this setting does nothing while it is selected. Google, Bing and DuckDuckGo all do.`
+  }
+  return status.enabled
+    ? `Searches ask ${engineName} for results without AI-generated answers, using its ${status.mechanism}.`
+    : `Off. ${engineName} can suppress AI-generated answers via its ${status.mechanism} when enabled.`
 }

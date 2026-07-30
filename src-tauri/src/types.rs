@@ -268,6 +268,13 @@ pub(crate) struct HubShortcutSummary {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct BrowserSettings {
     pub(crate) default_search_engine: String,
+    /// Ask the search engine for results without AI-generated answers.
+    ///
+    /// `serde(default)` rather than plain `bool`, so an existing settings.json
+    /// written before this field existed reads as on rather than off — the same
+    /// direction as tracker blocking, which is also on without being asked for.
+    #[serde(default = "default_ai_free_search")]
+    pub(crate) ai_free_search: bool,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -731,6 +738,7 @@ pub(crate) struct SystemStatus {
     pub(crate) library_path: String,
     pub(crate) collections: Vec<CollectionSummary>,
     pub(crate) content_blocking: ContentBlockingStatus,
+    pub(crate) ai_free_search: AiFreeSearchStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
 }
@@ -751,10 +759,38 @@ pub(crate) struct ContentBlockingStatus {
     pub(crate) available: bool,
 }
 
+/// Whether the *currently selected* engine can be asked for AI-free results.
+///
+/// Same reasoning as `ContentBlockingStatus`: the five engines have five unrelated
+/// answers and two of them have none, so a fixed string in the renderer would keep
+/// promising AI-free results on Yahoo long after anyone remembered that Yahoo has
+/// no control to offer. `available == false` with the setting on is a real state,
+/// and the screen should say so rather than imply the toggle did something.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AiFreeSearchStatus {
+    pub(crate) enabled: bool,
+    /// What is actually being sent, for the UI to state plainly: "udm=14 Web
+    /// filter", "-ai operator", "noai.duckduckgo.com". Empty when unavailable.
+    pub(crate) mechanism: String,
+    /// False when the selected engine offers no URL-level opt-out at all.
+    pub(crate) available: bool,
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CreateTabInput {
     pub(crate) url: Option<String>,
+    /// Search terms, for callers that have a *concept* rather than a URL — the iCE
+    /// cards' "Explore in Web".
+    ///
+    /// Separate from `url` on purpose. `normalize_url` has to guess whether a bare
+    /// string is a query or a host, and it guesses by looking for a dot: a concept
+    /// named "Node.js" or "Web 2.0" would be sent to `https://Node.js` instead of
+    /// being searched for. A caller that already knows it holds search terms should
+    /// not have to route them through that guess.
+    #[serde(default)]
+    pub(crate) search: Option<String>,
     #[serde(default)]
     pub(crate) private: bool,
     #[serde(default)]
@@ -971,6 +1007,7 @@ pub(crate) struct UpdateSettingsInput {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PartialBrowserSettings {
     pub(crate) default_search_engine: Option<String>,
+    pub(crate) ai_free_search: Option<bool>,
 }
 
 #[derive(Deserialize)]
@@ -1288,6 +1325,7 @@ impl Default for BrowserSettings {
             // Existing installs keep whatever is already in settings.json; this
             // only changes where a fresh profile starts. See search_engine_prefix.
             default_search_engine: DEFAULT_SEARCH_ENGINE.to_string(),
+            ai_free_search: default_ai_free_search(),
         }
     }
 }
@@ -1319,6 +1357,13 @@ pub(crate) fn default_settings_version() -> u8 {
 }
 
 pub(crate) fn default_update_auto_check() -> bool {
+    true
+}
+
+/// On unless turned off. AI answers are inserted above the results the user asked
+/// for, by a mechanism they did not opt into, so the default that respects the
+/// user's intent is the one that declines them.
+pub(crate) fn default_ai_free_search() -> bool {
     true
 }
 

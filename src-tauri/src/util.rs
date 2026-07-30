@@ -114,20 +114,16 @@ pub(crate) fn strip_tracking_params(url: &str) -> String {
     cleaned.to_string()
 }
 
-pub(crate) fn normalize_url(raw_url: &str, search_engine: &str) -> String {
+pub(crate) fn normalize_url(raw_url: &str, search: SearchPrefs<'_>) -> String {
     let trimmed = raw_url.trim();
     if trimmed.is_empty() {
-        return search_engine_home(search_engine).to_string();
+        return search_engine_home(search).to_string();
     }
     if Url::parse(trimmed).is_ok() {
         return strip_tracking_params(trimmed);
     }
     if trimmed.contains(char::is_whitespace) || !trimmed.contains(['.', ':']) {
-        return format!(
-            "{}{}",
-            search_engine_prefix(search_engine),
-            urlencoding(trimmed)
-        );
+        return search_url(trimmed, search);
     }
     if trimmed.starts_with("localhost")
         || trimmed.starts_with("127.0.0.1")
@@ -136,6 +132,136 @@ pub(crate) fn normalize_url(raw_url: &str, search_engine: &str) -> String {
         return format!("http://{trimmed}");
     }
     format!("https://{trimmed}")
+}
+
+/// Which engine a typed query goes to, and whether to ask that engine for results
+/// without AI-generated answers.
+///
+/// The two travel together because they are one decision — "how does a query
+/// become a URL" — and separating them is how a search path ends up honouring the
+/// engine but quietly dropping the AI-free request, or the reverse.
+#[derive(Clone, Copy)]
+pub(crate) struct SearchPrefs<'a> {
+    pub(crate) engine: &'a str,
+    pub(crate) ai_free: bool,
+}
+
+impl SearchPrefs<'_> {
+    /// For the paths that have no settings in hand: a link a page opened in a new
+    /// tab, or a shortcut whose input is already a URL. The engine is only ever a
+    /// fallback there — it applies when the input turns out to be a bare search
+    /// term, which for those callers is the rare case, not the normal one.
+    pub(crate) fn fallback() -> SearchPrefs<'static> {
+        SearchPrefs {
+            engine: DEFAULT_SEARCH_ENGINE,
+            ai_free: default_ai_free_search(),
+        }
+    }
+}
+
+impl BrowserSettings {
+    pub(crate) fn search_prefs(&self) -> SearchPrefs<'_> {
+        SearchPrefs {
+            engine: &self.default_search_engine,
+            ai_free: self.ai_free_search,
+        }
+    }
+}
+
+/// How an engine lets a user refuse AI-generated answers — if it lets them at all.
+///
+/// Every variant below was checked against the engine's own documentation rather
+/// than inferred, because the mechanisms are unrelated to each other and two of
+/// the five engines have none. See docs/SECURITY.md for the sources.
+pub(crate) enum AiFreeSearch {
+    /// No URL-level opt-out exists. Yahoo has no control of its own (it serves
+    /// Bing's results), and Ecosia's is an account setting that is also gated by
+    /// region — neither can be asked for from a URL, so nothing is claimed.
+    Unavailable,
+    /// A query operator appended to the search terms. Bing's `-ai` is a real,
+    /// documented operator, added in June 2026.
+    QueryOperator(&'static str),
+    /// A parameter on the search URL. Google's `udm=14` selects the "Web" vertical,
+    /// which returns plain links and no AI Overview.
+    ///
+    /// Deliberately *not* Google's `-ai`: that is a Bing operator, and on Google it
+    /// is an ordinary negative keyword that drops every result containing "ai" —
+    /// which would quietly gut a search for an iCE concept like "neural network".
+    UrlParam(&'static str),
+    /// A different host serving the same engine with AI features off, which is how
+    /// DuckDuckGo ships its opt-out.
+    AltHost { search: &'static str, home: &'static str },
+}
+
+/// What AI-free search does for the engine the user has actually selected.
+///
+/// Derived from `ai_free_search` rather than written out again, so a mechanism
+/// added or lost below cannot leave the Settings screen describing the old one.
+pub(crate) fn ai_free_search_status(browser: &BrowserSettings) -> AiFreeSearchStatus {
+    let mechanism = match ai_free_search(&browser.default_search_engine) {
+        AiFreeSearch::UrlParam(param) => format!("{param} Web filter"),
+        AiFreeSearch::QueryOperator(operator) => format!("{operator} operator"),
+        AiFreeSearch::AltHost { home, .. } => home.trim_start_matches("https://").to_string(),
+        AiFreeSearch::Unavailable => String::new(),
+    };
+
+    AiFreeSearchStatus {
+        enabled: browser.ai_free_search,
+        available: !mechanism.is_empty(),
+        mechanism,
+    }
+}
+
+pub(crate) fn ai_free_search(id: &str) -> AiFreeSearch {
+    match id {
+        "google" => AiFreeSearch::UrlParam("udm=14"),
+        "bing" => AiFreeSearch::QueryOperator("-ai"),
+        "duckduckgo" => AiFreeSearch::AltHost {
+            search: "https://noai.duckduckgo.com/?q=",
+            home: "https://noai.duckduckgo.com",
+        },
+        // Yahoo and Ecosia, and anything unrecognised: nothing to append.
+        _ => AiFreeSearch::Unavailable,
+    }
+}
+
+/// Turns search terms into a URL for the chosen engine.
+///
+/// The AI-free step is applied here rather than at the call sites so that every
+/// route to a search — the address bar, a bare query typed into it, and an iCE
+/// concept sent to the web — cannot disagree about it.
+pub(crate) fn search_url(terms: &str, search: SearchPrefs<'_>) -> String {
+    if !search.ai_free {
+        return format!(
+            "{}{}",
+            search_engine_prefix(search.engine),
+            urlencoding(terms)
+        );
+    }
+
+    match ai_free_search(search.engine) {
+        // Appended before encoding, so the space before the operator survives as
+        // `+` rather than being lost or double-escaped.
+        AiFreeSearch::QueryOperator(operator) => format!(
+            "{}{}",
+            search_engine_prefix(search.engine),
+            urlencoding(&format!("{terms} {operator}"))
+        ),
+        // The prefixes all end in `?q=` (or `?p=`), so the separator is `&`.
+        AiFreeSearch::UrlParam(param) => format!(
+            "{}{}&{param}",
+            search_engine_prefix(search.engine),
+            urlencoding(terms)
+        ),
+        AiFreeSearch::AltHost { search: prefix, .. } => {
+            format!("{prefix}{}", urlencoding(terms))
+        }
+        AiFreeSearch::Unavailable => format!(
+            "{}{}",
+            search_engine_prefix(search.engine),
+            urlencoding(terms)
+        ),
+    }
 }
 
 // DuckDuckGo is the fallback rather than Google in all three functions below.
@@ -152,8 +278,18 @@ pub(crate) fn search_engine_prefix(id: &str) -> &'static str {
     }
 }
 
-pub(crate) fn search_engine_home(id: &str) -> &'static str {
-    match id {
+/// The engine's own landing page, which an empty address bar opens.
+///
+/// Only DuckDuckGo differs when AI-free is on: its opt-out is a whole host, so
+/// landing there keeps later searches typed into *that page* AI-free too. Google's
+/// `udm=14` needs a query to apply to, so its home page is unchanged.
+pub(crate) fn search_engine_home(search: SearchPrefs<'_>) -> &'static str {
+    if search.ai_free {
+        if let AiFreeSearch::AltHost { home, .. } = ai_free_search(search.engine) {
+            return home;
+        }
+    }
+    match search.engine {
         "google" => "https://www.google.com",
         "bing" => "https://www.bing.com",
         "yahoo" => "https://search.yahoo.com",
