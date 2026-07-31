@@ -1,123 +1,158 @@
-# Licensing — options and open questions
+# Licensing — the decision and the reasoning
 
-A decision record, not a decision. Nothing here has been applied: ÆTHER is still
-under **PolyForm Strict License 1.0.0**. This exists so the reasoning is on paper
-when the choice is actually made.
+**ÆTHER is on [PolyForm Strict
+1.0.0](https://polyformproject.org/licenses/strict/1.0.0), plus a standing
+contribution exception** in [`CONTRIBUTING.md`](../CONTRIBUTING.md). A move to
+PolyForm Noncommercial was prepared on 31 July 2026 and reverted the same day; the
+reasoning on both sides is kept below, because this question will come back.
 
-Not legal advice. Anything with revenue attached to it is worth a lawyer's hour.
+The requirement that produced this shape was specific: **contributors must be able
+to fork, and nobody may redistribute** — commercially or otherwise. No stock
+licence does that. Strict blocks the forking a pull request needs; Noncommercial
+permits the redistribution that is the thing to prevent. So the licence stays
+Strict and the copyright holder grants a narrow written exception on top of it,
+which is a normal thing for a copyright holder to do and keeps the LICENSE file
+itself unmodified and standard.
 
-## Three gaps in the current setup
+Not legal advice. Anything with revenue attached is worth a lawyer's hour.
 
-These are true today and worth fixing **whatever licence is chosen**.
+## Where Strict actually draws the line
 
-### 1. Even local modification is not permitted
+Worth stating plainly, because it is easy to get backwards. Strict and
+Noncommercial **both permit noncommercial use**, in identical terms — personal
+use, and use by charities, schools, public research bodies and government
+institutions regardless of funding.
 
-PolyForm Strict grants everything _"other than distributing the software **or making
-changes or new works based on the software**."_
+Neither licence stops the public using ÆTHER for free. What Strict adds is a ban
+on **modification and redistribution**:
 
-That second clause is stricter than it usually reads. It means:
+> the licensor grants you a copyright license ... for any permitted purpose,
+> **other than distributing the software or making changes or new works based on
+> the software**.
 
-- A user cannot legally patch a bug for their own machine.
-- A contributor cannot legally fork to open a pull request — a fork is
-  redistribution, and a patch is a new work.
+So the choice between them is not "can people use it for free" — that is yes
+either way. It is "can people change it and pass it on."
 
-So the project cannot accept outside contributions without granting permission
-out-of-band first, per contributor, before they have written anything.
+Neither stops the public running ÆTHER for free. If that ever becomes the goal, it
+is a different family of licence entirely — see
+[If free use is the thing to stop](#if-free-use-is-the-thing-to-stop).
 
-### 2. The README promises a CLA that does not exist
+## What Strict costs, and what the exception buys back
 
-> External contributions require a signed Contributor License Agreement (CLA) or
-> another written contributor agreement.
+Strict alone would mean a user cannot patch a bug on their own machine, and a
+contributor cannot legally fork to open a pull request — a fork is redistribution
+and a patch is a new work. Both are fixed by the standing grant, which permits
+forking and modifying **for the purpose of contributing**, and patching your own
+copy for your own use.
 
-There is no `CONTRIBUTING.md`, no CLA text, and no CLA bot. The stated route to
-contributing terminates in nothing. Either write it or stop referring to it.
+What is deliberately _not_ bought back:
 
-### 3. There is no way to buy a commercial licence
+- Redistributing ÆTHER to anyone else, modified or not, paid or free.
+- Publishing built binaries, installers, or packages.
+- Carrying a build to an air-gapped machine that is not yours, which stays
+  awkward for an audience that does exactly that. This is the one real cost still
+  standing, and it is the price of the redistribution ban.
 
-Redistribution and commercial use "require separate written permission from
-CanPixel" — and no email, form, or contact appears anywhere in the repository. The
-single revenue path the licence exists to protect has no door in it.
+The grant is scoped tightly on purpose: publishing a contribution fork is allowed
+because a pull request mechanically requires it, but using that fork to hand
+people a usable alternative build is not.
 
-This one is worth fixing immediately and costs one line.
+## The gaps, and where they stand
 
-## What constrains the choice
+| Gap                                      | Status                                                                                          |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Even local modification is forbidden     | **Closed** by the standing grant — forking to contribute and patching your own copy are allowed |
+| README promised a CLA that did not exist | **Closed** — [`CONTRIBUTING.md`](../CONTRIBUTING.md) carries the contributor terms and the flow |
+| No way to buy a commercial licence       | **Closed** — `canpixeldev@gmail.com`, in the README licence section                             |
+
+The third was the one actually costing money: the single revenue path the licence
+exists to protect had no door in it.
+
+## If free use is the thing to stop
+
+Neither PolyForm option above does this. If the goal is that the public cannot run
+ÆTHER without paying, the licence family has to change entirely:
+
+- **PolyForm Internal Use 1.0.0** — permits use only inside the licensee's own
+  organization; no public grant at all.
+- **A proprietary EULA** — all rights reserved, use only under a purchased licence.
+  Source can still be published for auditability; publishing source and granting a
+  licence are separate acts.
+- **Free-trial terms** — PolyForm Free Trial 1.0.0 grants 32 days, then nothing.
+
+All three trade away the noncommercial goodwill that Strict currently gives, and
+all three need a payment and licence-key path that does not exist yet. That is a
+product decision with build work behind it, not a one-line licence swap.
+
+## What constrained the choice
 
 **Nothing in the dependency tree.** Gemma 4 E2B/E4B and Qwen3-Embedding-0.6B are
 Apache-2.0; llama.cpp, Tauri, and the rest are Apache-2.0/MIT. No copyleft
 obligation reaches ÆTHER's own code.
 
-**The product shape does.** ÆTHER is a local desktop app with no server. That rules
-out the usual open-core playbook — there is no hosted tier to sell, and AGPL has no
-leverage because there is no network service to trigger the source obligation. The
-realistic revenue is a one-time purchase or a per-seat commercial licence, which is
-what PolyForm already reserves.
+**The product shape did.** ÆTHER is a local desktop app with no server. That rules
+out the open-core playbook — there is no hosted tier to sell — and it defangs
+AGPL, whose network-use trigger needs a network service. The realistic revenue is
+a one-time purchase or a per-seat commercial licence, which is what PolyForm
+reserves.
 
-**The audience does too.** Researchers, journalists, and people in regulated or
+**The audience did too.** Researchers, journalists, and people in regulated or
 air-gapped environments care about auditability and about not being cut off. Both
-argue for source-available with a durable guarantee, and against anything that
-makes moving a build onto an offline machine legally awkward.
+argue for source-available with a durable guarantee.
 
-## Options
+**The threat model is not the usual one.** Anti-cloud clauses (FSL, Elastic,
+PolyForm Perimeter) exist to stop a hyperscaler reselling your service. The
+realistic risk to a desktop app is a rebranded fork on an app store — a different
+problem, and one [`TRADEMARKS.md`](../TRADEMARKS.md) addresses independently of the
+code licence. A forker can be entitled to the code and still barred from the name.
 
-### A. PolyForm Noncommercial 1.0.0
+## The comparison
 
-Permits modification and redistribution; still bans commercial use.
+| Licence                 | Modify | Redistribute | Others' commercial use  | You can sell | OSI              | PRs possible |
+| ----------------------- | ------ | ------------ | ----------------------- | ------------ | ---------------- | ------------ |
+| **PolyForm Strict** ←   | ✗      | ✗            | ✗                       | ✓            | ✗                | ✗            |
+| PolyForm Noncommercial  | ✓      | ✓            | ✗                       | ✓            | ✗                | ✓            |
+| PolyForm Small Business | ✓      | ✓            | free under ~100 staff   | ✓            | ✗                | ✓            |
+| FSL-1.1-Apache-2.0      | ✓      | ✓            | ✗ (non-compete)         | ✓            | ✗ → ✓ after 2 yr | ✓            |
+| BUSL-1.1                | ✓      | ✓            | you define the grant    | ✓            | ✗ → ✓ at date    | ✓            |
+| Elastic v2              | ✓      | ✓            | ✗ managed service only  | ✓            | ✗                | ✓            |
+| GPL-3.0                 | ✓      | ✓            | ✓ (must publish source) | weak         | ✓                | ✓            |
+| AGPL-3.0                | ✓      | ✓            | ✓ (must publish source) | weak         | ✓                | ✓            |
+| Apache-2.0 / MIT        | ✓      | ✓            | ✓                       | ✗            | ✓                | ✓            |
 
-- Fixes all three frictions: local fixes, sneakernet to an air-gapped machine, PRs.
-- Gives up nothing sellable — noncommercial use was already permitted.
-- Roughly a one-word change in the licence family, plus `package.json` and README.
+\* Modification permitted for contributing and for your own copy; see
+[`CONTRIBUTING.md`](../CONTRIBUTING.md). Redistribution stays forbidden either way,
+which is what separates this row from PolyForm Noncommercial.
 
-The smallest change that removes real friction. Still not OSI open source, so it
-does not buy open-source goodwill or a place in distro repositories.
+Two notes that change the usual advice for a project shaped like this one:
 
-### B. FSL-1.1-Apache-2.0 (Functional Source License)
+- **AGPL is the wrong copyleft here.** Its network clause needs a server; with none,
+  it degrades to plain GPL-3.0. If copyleft is ever wanted, pick GPL-3.0 knowingly:
+  it triggers on _distributing the binary_, which is exactly what a rebranded fork
+  would do.
+- **"Converts to open source later" is a real signal.** FSL and BUSL make an
+  irrevocable per-release promise. That is the strongest anti-lock-in guarantee
+  short of going open, and it costs nothing today.
 
-Same commercial protection now; each release converts to Apache-2.0 two years after
-it ships.
+## Still open
 
-- The strongest "this will not be taken away from you" signal short of going open,
-  which matters for the trust-sensitive audience.
-- Irrevocable per release — a promise that cannot be walked back.
-- Two years is a long time in this category; by the time a release converts, it is
-  unlikely to be competitive.
+Two options remain live, in opposite directions. Which one is right depends on a
+question that is not a licensing question: **is the goal more reach, or more
+control?**
 
-### C. AGPL-3.0 + commercial dual licence
+**Toward more openness — PolyForm Noncommercial, or FSL-1.1-Apache-2.0.** Both
+keep the commercial position exactly as it is today; neither gives up anything
+sellable. Noncommercial removes the three costs listed above at no revenue cost.
+FSL goes further, adding an irrevocable promise that each release becomes
+Apache-2.0 two years after it ships — the strongest anti-lock-in signal available
+without giving up revenue, and the one most likely to matter to an audience of
+researchers and journalists.
 
-Real OSI open source, with a commercial licence sold to anyone who cannot comply.
+**Toward more control — Internal Use, a proprietary EULA, or trial terms.** See
+[If free use is the thing to stop](#if-free-use-is-the-thing-to-stop). These
+require a payment and licensing path to be built first, and trade away the
+noncommercial goodwill Strict currently grants.
 
-- Weak here. The copyleft trigger is _conveying_ or _network use_; a local desktop
-  app with no server rarely trips either, so the commercial pressure that makes
-  dual-licensing work mostly is not there.
-- A competitor could fork commercially provided they publish source.
-- Meaningful legal and administrative overhead for a solo project.
-
-### D. Keep PolyForm Strict, close the gaps
-
-Write the CLA and `CONTRIBUTING.md` the README already promises, add a commercial
-contact.
-
-- Zero licence risk, and the documentation is owed regardless.
-- Contributors still cannot legally fork to submit a PR, so the contribution path
-  stays theoretical.
-
-### E. Fully permissive (Apache-2.0 / MIT)
-
-- Maximum adoption and goodwill.
-- No revenue path at all for a local app with no hosted component, and no
-  protection against a rebranded fork.
-
-## A correction to the audit that prompted this
-
-The audit said the current setup has _"the costs of proprietary and the revenue of
-open source."_ That is unfair as written. PolyForm Strict **does** establish the
-legal basis for a commercial story — every commercial right is retained. What is
-missing is everything on the other side of it: no price, no tier, no contact. Gap 3
-above is the real finding; the licence family is a secondary question.
-
-## Suggested order
-
-1. **Add a commercial-licence contact.** One line. Fixes a gap that exists under
-   every option, and is the only one currently costing money.
-2. **Resolve the CLA claim** — write it, or remove the sentence.
-3. **Then** decide between A and B, if either. That decision is about how much
-   openness is worth to the audience, not about unblocking anything technical.
+Strict sits between the two and commits to neither, which is a reasonable place to
+wait — but it is worth being clear that it is a middle position, not a maximally
+protective one. It does not stop anyone using ÆTHER for free.

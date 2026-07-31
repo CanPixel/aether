@@ -74,31 +74,37 @@ The honest boundary, because "local AI" and "anonymous browsing" are different
 claims and only the first is ours.
 
 Tabs are ordinary system webviews (WKWebView, WebView2, WebKitGTK). Sites see the
-real TLS fingerprint, cookies, and the usual canvas, WebGL, font and timezone
+real TLS fingerprint, cookies, and the usual canvas, WebGL and font
 fingerprinting surface. **ÆTHER does not defend against any of that, and cannot
 without patching an engine it does not ship.** Anyone who needs anonymity wants
 Tor Browser, not this.
 
-The IP address is the one exception, and only when the [proxy](#proxy) is
-switched on. That changes _where_ a site thinks you are; it does not change how
-recognisable you are once you get there. The two are independent, and a proxy
-without fingerprint defences still leaves every visit joinable to every other.
+There are exactly two exceptions, both opt-in and both off by default. The
+[proxy](#proxy) hides the IP address, and [timezone pinning](#timezone-and-locale-pinning)
+reports UTC and a fixed locale in place of the machine's own.
+
+Neither buys anonymity, and the reason is worth stating plainly: they change
+_where_ a site thinks you are, not how recognisable you are once you get there.
+Those are independent. A proxy without fingerprint defences still leaves every
+visit joinable to every other — and two removed bits of entropy, against a
+canvas and WebGL surface left untouched, does not change that answer.
 
 What is defended:
 
-| Defence                                                 | Where                                              |
-| ------------------------------------------------------- | -------------------------------------------------- |
-| Tracker and ad requests blocked before they are sent    | macOS, Linux, Windows — `src/content_blocking/`    |
-| Third-party cookies blocked                             | macOS, Linux, Android — **not Windows**, see below |
-| Private tabs (ephemeral store, no capture, no session)  | `.incognito()`, `src-tauri/src/webview.rs`         |
-| Container tabs (isolated persistent storage)            | macOS 14+ only — `data_store_identifier`           |
-| Clear cookies, caches and site storage                  | macOS, Linux, Windows — `src/browsing_data/`       |
-| One User-Agent per platform, consistent with the engine | `BROWSER_USER_AGENT`, `src-tauri/src/lib.rs`       |
-| Click identifiers stripped on navigation and on capture | `strip_tracking_params`, `src-tauri/src/util.rs`   |
-| Favicons never fetched from the privileged window       | `src-tauri/src/favicon.rs`                         |
-| Default search engine that does not build a profile     | `search_engine_prefix`, `src-tauri/src/util.rs`    |
-| AI-generated answers declined where the engine allows   | `search_url`, `src-tauri/src/util.rs`              |
-| IP address hidden behind a SOCKS5/HTTP proxy, opt-in    | macOS 14+, Linux, Windows — **not Android**        |
+| Defence                                                  | Where                                              |
+| -------------------------------------------------------- | -------------------------------------------------- |
+| Tracker and ad requests blocked before they are sent     | macOS, Linux, Windows — `src/content_blocking/`    |
+| Third-party cookies blocked                              | macOS, Linux, Android — **not Windows**, see below |
+| Private tabs (ephemeral store, never written to session) | `.incognito()`, `src-tauri/src/webview.rs`         |
+| Container tabs (isolated persistent storage)             | macOS 14+ only — `data_store_identifier`           |
+| Clear cookies, caches and site storage                   | macOS, Linux, Windows — `src/browsing_data/`       |
+| One User-Agent per platform, consistent with the engine  | `BROWSER_USER_AGENT`, `src-tauri/src/lib.rs`       |
+| Click identifiers stripped on navigation and on capture  | `strip_tracking_params`, `src-tauri/src/util.rs`   |
+| Favicons never fetched from the privileged window        | `src-tauri/src/favicon.rs`                         |
+| Default search engine that does not build a profile      | `search_engine_prefix`, `src-tauri/src/util.rs`    |
+| AI-generated answers declined where the engine allows    | `search_url`, `src-tauri/src/util.rs`              |
+| IP address hidden behind a SOCKS5/HTTP proxy, opt-in     | macOS 14+, Linux, Windows — **not Android**        |
+| Timezone and locale reported as UTC/en-US, opt-in        | desktop only — `TIMEZONE_PIN_SCRIPT`               |
 
 ### AI-free search
 

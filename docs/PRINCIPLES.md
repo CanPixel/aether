@@ -135,15 +135,17 @@ Every item here is deliberate. A document about integrity that overstates its ca
 refutes itself.
 
 - **It is not anonymity.** Tabs are ordinary system webviews. Sites see your TLS
-  fingerprint and the usual canvas, WebGL, font and timezone fingerprinting
-  surface. ÆTHER does not defend against any of that and cannot without shipping
-  its own engine. You can route traffic through a proxy such as Tor, which hides
-  your IP address — but an unchanged fingerprint still links your sessions to each
-  other, and a proxy does not fix that. If you need anonymity, you want Tor
-  Browser.
+  fingerprint and the usual canvas, WebGL and font fingerprinting surface, and
+  ÆTHER cannot defend against those without shipping its own engine. Two of the
+  easy bits can be taken off the table — a proxy such as Tor hides your IP
+  address, and timezone pinning reports UTC and a fixed locale — and both are off
+  until you turn them on. Neither is anonymity. An unchanged fingerprint still
+  links your sessions to each other, and a hidden IP does not fix that. If you
+  need anonymity, you want Tor Browser.
 - **Protection is not uniform across platforms.** Third-party cookie blocking is
-  unavailable on Windows. Storage partitioning is opt-in and macOS 14+ only. The app
-  tells you which you have.
+  unavailable on Windows. Storage partitioning is opt-in and macOS 14+ only.
+  Proxying needs macOS 14+ and is unavailable on Android; timezone pinning is
+  desktop-only. The app tells you which you have.
 - **The blocklist is curated and small**, not a full filter list. It covers the large
   ad and analytics networks and will miss a long tail.
 - **A local model is not a better model.** It is a model that cannot leak. Answers
@@ -151,10 +153,11 @@ refutes itself.
   and check.
 - **AI-free search depends on the engines.** These are documented opt-outs, not
   guarantees; an engine can withdraw one without notice, and that failure is silent.
-- **It is not open source.** The source is public and auditable, but ÆTHER ships
-  under PolyForm Strict 1.0.0, which permits neither redistribution nor
-  modification — including patching your own copy. See
-  [LICENSING.md](LICENSING.md), where this is an acknowledged open question.
+- **It is not open source.** The source is public and auditable, and ÆTHER ships
+  under PolyForm Strict 1.0.0: noncommercial _use_ is permitted, redistribution is
+  not. A standing grant in [CONTRIBUTING.md](../CONTRIBUTING.md) lets anyone fork
+  and modify it to contribute, and patch their own copy — but passing it on to
+  someone else, paid or free, is the line. See [LICENSING.md](LICENSING.md).
 - **Releases are unsigned.** See [SIGNING.md](SIGNING.md).
 
 For the full technical account, including the complete list of known gaps, see

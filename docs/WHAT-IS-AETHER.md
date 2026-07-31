@@ -84,7 +84,7 @@ On first launch, ÆTHER offers to download a recommended model pack (a couple of
 **ÆTHER is not:**
 
 - A cloud chatbot — it won't answer from the whole internet, and that's the point: answers come from _your_ captured sources
-- A privacy shield for browsing itself — websites behave as they do in any browser
+- An anonymity tool. It does block trackers and third-party cookies, strip click identifiers, and offer opt-in proxy and UTC-timezone reporting — but sites still see your browser's fingerprint, and a hidden IP does not change that. For anonymity, use Tor Browser
 - A lightweight app for very old machines — the local AI wants a reasonably modern computer (8 GB of RAM is the practical floor; see the README for specifics)
 
 ---
