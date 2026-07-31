@@ -141,11 +141,7 @@ export function ModelSetupModal({
             'Install MiST only · 639 MB'
 
   return (
-    <div
-      className="model-setup-overlay"
-      role="presentation"
-      {...backdrop}
-    >
+    <div className="model-setup-overlay" role="presentation" {...backdrop}>
       {/* The shell wraps both the card and the actions below it, so anything inside —
           including the Later/Install buttons — is a descendant and never dismisses. */}
       <div className="model-setup-shell">
@@ -163,8 +159,7 @@ export function ModelSetupModal({
                 Choose the local model pack for ascending
                 <br></br>
                 <small style={{ fontWeight: '700' }}>
-                  AiON MiST is all ÆTHER needs — chat models are optional and can be
-                  added any time
+                  AiON MiST is all ÆTHER needs — chat models are optional and can be added any time
                 </small>
               </p>
             </div>

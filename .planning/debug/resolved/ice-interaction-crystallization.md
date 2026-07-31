@@ -1,6 +1,6 @@
 ---
 status: resolved
-trigger: "iCE card clicks teleport cards to the top-left instead of centering with a slight zoom; Ordered Topics centers without zoom; crystallization intermittently fails for Quantum; percentage labels and Open in Library should be removed."
+trigger: 'iCE card clicks teleport cards to the top-left instead of centering with a slight zoom; Ordered Topics centers without zoom; crystallization intermittently fails for Quantum; percentage labels and Open in Library should be removed.'
 created: 2026-07-25T20:55:39+0200
 updated: 2026-07-25T21:38:00+0200
 ---

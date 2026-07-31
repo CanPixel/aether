@@ -104,8 +104,53 @@ pub(crate) fn create_native_webview(
     let app_for_download = app.clone();
     let url = Url::parse(&tab.url).map_err(|error| error.to_string())?;
 
-    let builder = WebviewBuilder::new(label, WebviewUrl::External(url))
-        .user_agent(DESKTOP_BROWSER_USER_AGENT)
+    let builder = WebviewBuilder::new(label, WebviewUrl::External(url));
+
+    // Container tabs get their own persistent store. wry's availability check is
+    // at *runtime* (macOS 14+) and falls back to the default store below that, so
+    // this costs nothing on older systems and needs no deployment-target bump —
+    // but it does mean a container silently shares the default jar on macOS 13
+    // and earlier, and on every other platform, where the option is unsupported.
+    #[cfg(target_os = "macos")]
+    let builder = match tab.container.as_deref() {
+        Some(container) if !tab.private => {
+            builder.data_store_identifier(container_data_store_id(container))
+        }
+        _ => builder,
+    };
+
+    // Routed through the proxy the app is currently configured for, if any.
+    // Read from `Backend` rather than from settings.json because this is a sync
+    // path and, more importantly, because it has to be the *same* value the HTTP
+    // client is using — one source, so tabs and favicon fetches cannot diverge.
+    //
+    // macOS: safe here only because `proxy()` returns None below macOS 14. wry
+    // sets `proxyConfigurations` through KVC with no version check, and that key
+    // does not exist on 13, so an ungated call would raise rather than degrade.
+    let builder = match state.proxy() {
+        Some(proxy) => builder.proxy_url(proxy),
+        None => builder,
+    };
+
+    // Document-start, every frame. Both halves matter: on load is too late to
+    // stop a page reading the real timezone, and main-frame-only would leave any
+    // embedded tracker iframe reading it anyway.
+    let builder = if state.pin_timezone.load(std::sync::atomic::Ordering::Relaxed) {
+        builder.initialization_script_for_all_frames(TIMEZONE_PIN_SCRIPT)
+    } else {
+        builder
+    };
+
+    let builder = builder
+        .user_agent(BROWSER_USER_AGENT)
+        // macOS/iOS: a nonPersistent WKWebsiteDataStore. Linux: an ephemeral
+        // WebContext. Windows: needs WebView2 runtime 101+, and does nothing on
+        // older ones — which is why the tab is also kept out of the session file
+        // rather than relying on the engine alone. Reading a private tab —
+        // capture, or AiON's current-page context — is deliberately not part of
+        // that defence: both write locally and emit nothing, so they are the
+        // user's call, not the engine's. See docs/SECURITY.md.
+        .incognito(tab.private)
         .on_navigation(move |url| {
             let state = app_for_navigation.state::<Backend>();
             update_tab_navigation_state(&state, &tab_id_for_navigation, url.as_str(), true);
@@ -210,6 +255,8 @@ pub(crate) fn create_native_webview(
     let webview = window
         .add_child(builder, bounds.position, bounds.size)
         .map_err(|error| error.to_string())?;
+    // Before the first paint, so no tracker request escapes an unblocked tab.
+    content_blocking::apply_to_webview(&webview);
     webview.hide().map_err(|error| error.to_string())?;
     Ok(webview)
 }
@@ -220,7 +267,8 @@ pub(crate) fn create_native_tab_from_url(
     state: &State<Backend>,
     raw_url: &str,
 ) -> Cmd<()> {
-    let url = normalize_url(raw_url, "google");
+    // A page opened this (target=_blank, window.open), so it is already a URL.
+    let url = normalize_url(raw_url, SearchPrefs::fallback());
     let tab = ManagedTab::new("browser", &url);
     let tab_id = tab.id.clone();
     {

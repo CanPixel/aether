@@ -120,12 +120,3 @@ pub(crate) async fn save_json<T: Serialize>(path: &Path, data: &T) -> Cmd<()> {
     let raw = serde_json::to_string_pretty(data).map_err(|error| error.to_string())?;
     write_store_durably(path, format!("{raw}\n").as_bytes()).await
 }
-
-pub(crate) async fn get_collection(path: &Path, collection_id: &str) -> Cmd<CollectionSummary> {
-    load_library(path)
-        .await?
-        .collections
-        .into_iter()
-        .find(|collection| collection.id == collection_id)
-        .ok_or_else(|| "Collection not found.".to_string())
-}

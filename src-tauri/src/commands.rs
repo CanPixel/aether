@@ -85,12 +85,19 @@ pub(crate) async fn aether_tabs_create(
 ) -> Cmd<BrowserTabSummary> {
     let settings = load_settings(&state.paths.settings_path).await?;
     // No URL → open a blank start-page tab (Portals + search) rather than a search engine.
-    let requested_url = input.and_then(|input| input.url);
-    let url = match requested_url {
-        Some(raw_url) => normalize_url(&raw_url, &settings.browser.default_search_engine),
-        None => START_PAGE_URL.to_string(),
+    let (requested_url, requested_search, private, container) = match input {
+        Some(input) => (input.url, input.search, input.private, input.container),
+        None => (None, None, false, None),
     };
-    let tab = ManagedTab::new("browser", &url);
+    let search = settings.browser.search_prefs();
+    let url = match (requested_search, requested_url) {
+        // Search terms take precedence: a caller that supplied them knows they are
+        // terms, and must not have them re-guessed as a hostname.
+        (Some(terms), _) => search_url(terms.trim(), search),
+        (None, Some(raw_url)) => normalize_url(&raw_url, search),
+        (None, None) => START_PAGE_URL.to_string(),
+    };
+    let tab = ManagedTab::new_with_privacy("browser", &url, private, container);
     let tab_id = tab.id.clone();
     let summary = tab.summary(true);
     {
@@ -208,7 +215,7 @@ pub(crate) async fn aether_tabs_navigate(
             .iter_mut()
             .find(|tab| tab.id == tab_id)
             .ok_or_else(|| format!("Unknown tab: {tab_id}"))?;
-        tab.navigate(&url, &settings.browser.default_search_engine);
+        tab.navigate(&url, settings.browser.search_prefs());
         let target_url = tab.url.clone();
         tabs.active_tab_id = tab.id.clone();
         tabs.dashboard_open = false;
@@ -496,7 +503,7 @@ pub(crate) fn aether_dashboard_open(app: AppHandle, state: State<Backend>) -> Cm
 
 #[tauri::command]
 pub(crate) async fn aether_hub_list(state: State<'_, Backend>) -> Cmd<Vec<HubShortcutSummary>> {
-    Ok(load_library(&state.paths.library_path).await?.shortcuts)
+    with_library_read(&state, |library| library.shortcuts.clone()).await
 }
 
 #[tauri::command]
@@ -508,8 +515,9 @@ pub(crate) async fn aether_hub_create(
     if title.is_empty() {
         return Err("Shortcut title is required.".to_string());
     }
-    let url = normalize_url(&input.url, "google");
-    let mut data = load_library(&state.paths.library_path).await?;
+    // A shortcut's input is a URL in practice; the engine only matters if the user
+    // typed a bare phrase into the dialog, so the fallback is enough here.
+    let url = normalize_url(&input.url, SearchPrefs::fallback());
     let favicon = input
         .favicon
         .as_deref()
@@ -517,38 +525,55 @@ pub(crate) async fn aether_hub_create(
         .filter(|favicon| !favicon.is_empty())
         .map(str::to_string);
     let theme_color = input.theme_color.as_deref().and_then(normalize_theme_color);
-    if let Some(existing) = data
-        .shortcuts
-        .iter_mut()
-        .find(|shortcut| shortcut.url == url)
-    {
-        let mut changed = false;
-        if existing.favicon.is_none() && favicon.is_some() {
-            existing.favicon = favicon;
-            changed = true;
-        }
-        if existing.theme_color.is_none() && theme_color.is_some() {
-            existing.theme_color = theme_color;
-            changed = true;
-        }
-        let shortcut = existing.clone();
-        if changed {
-            save_json(&state.paths.library_path, &data).await?;
-        }
+
+    // Re-adding a shortcut that is already there and needs no new icon must not
+    // write the library. Checked under the read lock first so the common case
+    // costs nothing; the mutation below re-resolves the shortcut under the write
+    // lock, so nothing depends on the state observed here still being current.
+    let unchanged = with_library_read(&state, |library| {
+        library
+            .shortcuts
+            .iter()
+            .find(|shortcut| shortcut.url == url)
+            .filter(|shortcut| {
+                let gains_icon = shortcut.favicon.is_none() && favicon.is_some();
+                let gains_color = shortcut.theme_color.is_none() && theme_color.is_some();
+                !(gains_icon || gains_color)
+            })
+            .cloned()
+    })
+    .await?;
+    if let Some(shortcut) = unchanged {
         return Ok(shortcut);
     }
-    let shortcut = HubShortcutSummary {
-        id: uuid(),
-        title,
-        host: get_tab_host(&url),
-        url,
-        created_at: now(),
-        favicon,
-        theme_color,
-    };
-    data.shortcuts.insert(0, shortcut.clone());
-    save_json(&state.paths.library_path, &data).await?;
-    Ok(shortcut)
+
+    with_library_mut(&state, |data| {
+        if let Some(existing) = data
+            .shortcuts
+            .iter_mut()
+            .find(|shortcut| shortcut.url == url)
+        {
+            if existing.favicon.is_none() && favicon.is_some() {
+                existing.favicon = favicon;
+            }
+            if existing.theme_color.is_none() && theme_color.is_some() {
+                existing.theme_color = theme_color;
+            }
+            return Ok(existing.clone());
+        }
+        let shortcut = HubShortcutSummary {
+            id: uuid(),
+            title,
+            host: get_tab_host(&url),
+            url,
+            created_at: now(),
+            favicon,
+            theme_color,
+        };
+        data.shortcuts.insert(0, shortcut.clone());
+        Ok(shortcut)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -556,24 +581,29 @@ pub(crate) async fn aether_hub_reorder(
     state: State<'_, Backend>,
     ids: Vec<String>,
 ) -> Cmd<Vec<HubShortcutSummary>> {
-    let mut data = load_library(&state.paths.library_path).await?;
-    data.shortcuts = reorder(data.shortcuts, &ids, |shortcut| &shortcut.id);
-    save_json(&state.paths.library_path, &data).await?;
-    Ok(data.shortcuts)
+    with_library_mut(&state, |data| {
+        data.shortcuts = reorder(std::mem::take(&mut data.shortcuts), &ids, |shortcut| {
+            &shortcut.id
+        });
+        Ok(data.shortcuts.clone())
+    })
+    .await
 }
 
 #[tauri::command]
 pub(crate) async fn aether_hub_delete(state: State<'_, Backend>, id: String) -> Cmd<()> {
-    let mut data = load_library(&state.paths.library_path).await?;
-    data.shortcuts.retain(|shortcut| shortcut.id != id);
-    save_json(&state.paths.library_path, &data).await
+    with_library_mut(&state, |data| {
+        data.shortcuts.retain(|shortcut| shortcut.id != id);
+        Ok(())
+    })
+    .await
 }
 
 #[tauri::command]
 pub(crate) async fn aether_collections_list(
     state: State<'_, Backend>,
 ) -> Cmd<Vec<CollectionSummary>> {
-    Ok(load_library(&state.paths.library_path).await?.collections)
+    with_library_read(&state, |library| library.collections.clone()).await
 }
 
 #[tauri::command]
@@ -585,28 +615,31 @@ pub(crate) async fn aether_collections_create(
     if name.is_empty() {
         return Err("Collection name is required.".to_string());
     }
-    let mut data = load_library(&state.paths.library_path).await?;
-    let now = now();
-    let existing = data
-        .collections
-        .iter()
-        .map(|collection| collection.id.clone())
-        .collect::<Vec<_>>();
-    let collection = CollectionSummary {
-        id: unique_slug(&name, &existing),
-        name,
-        description: input.description.unwrap_or_default().trim().to_string(),
-        icon: Some(input.icon.unwrap_or_else(|| "book".to_string()))
-            .map(|icon| icon.trim().to_string())
-            .filter(|icon| !icon.is_empty()),
-        created_at: now.clone(),
-        updated_at: now,
-        capture_count: 0,
-        chunk_count: 0,
-    };
-    data.collections.push(collection.clone());
-    save_json(&state.paths.library_path, &data).await?;
-    Ok(collection)
+    with_library_mut(&state, |data| {
+        let now = now();
+        // Inside the lock: the slug has to be unique against the collections that
+        // exist at the moment of the insert, not a moment earlier.
+        let existing = data
+            .collections
+            .iter()
+            .map(|collection| collection.id.clone())
+            .collect::<Vec<_>>();
+        let collection = CollectionSummary {
+            id: unique_slug(&name, &existing),
+            name,
+            description: input.description.unwrap_or_default().trim().to_string(),
+            icon: Some(input.icon.unwrap_or_else(|| "book".to_string()))
+                .map(|icon| icon.trim().to_string())
+                .filter(|icon| !icon.is_empty()),
+            created_at: now.clone(),
+            updated_at: now,
+            capture_count: 0,
+            chunk_count: 0,
+        };
+        data.collections.push(collection.clone());
+        Ok(collection)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -614,29 +647,32 @@ pub(crate) async fn aether_collections_update(
     state: State<'_, Backend>,
     input: UpdateCollectionInput,
 ) -> Cmd<CollectionSummary> {
-    let mut data = load_library(&state.paths.library_path).await?;
-    let collection = data
-        .collections
-        .iter_mut()
-        .find(|collection| collection.id == input.id)
-        .ok_or_else(|| "Collection not found.".to_string())?;
-    if let Some(name) = input.name {
-        let name = name.trim();
-        if name.is_empty() {
-            return Err("Collection name is required.".to_string());
+    with_library_mut(&state, |data| {
+        let collection = data
+            .collections
+            .iter_mut()
+            .find(|collection| collection.id == input.id)
+            .ok_or_else(|| "Collection not found.".to_string())?;
+        if let Some(name) = input.name {
+            let name = name.trim();
+            if name.is_empty() {
+                // Returns after the lookup but before any field is written, so
+                // nothing is half-applied — and with_library_mut drops the cache
+                // on Err regardless, which is what makes that safe to rely on.
+                return Err("Collection name is required.".to_string());
+            }
+            collection.name = name.to_string();
         }
-        collection.name = name.to_string();
-    }
-    if let Some(description) = input.description {
-        collection.description = description.trim().to_string();
-    }
-    if let Some(icon) = input.icon {
-        collection.icon = Some(icon.trim().to_string()).filter(|icon| !icon.is_empty());
-    }
-    collection.updated_at = now();
-    let updated = collection.clone();
-    save_json(&state.paths.library_path, &data).await?;
-    Ok(updated)
+        if let Some(description) = input.description {
+            collection.description = description.trim().to_string();
+        }
+        if let Some(icon) = input.icon {
+            collection.icon = Some(icon.trim().to_string()).filter(|icon| !icon.is_empty());
+        }
+        collection.updated_at = now();
+        Ok(collection.clone())
+    })
+    .await
 }
 
 #[tauri::command]
@@ -644,23 +680,33 @@ pub(crate) async fn aether_collections_reorder(
     state: State<'_, Backend>,
     ids: Vec<String>,
 ) -> Cmd<Vec<CollectionSummary>> {
-    let mut data = load_library(&state.paths.library_path).await?;
-    data.collections = reorder(data.collections, &ids, |collection| &collection.id);
-    save_json(&state.paths.library_path, &data).await?;
-    Ok(data.collections)
+    with_library_mut(&state, |data| {
+        data.collections = reorder(std::mem::take(&mut data.collections), &ids, |collection| {
+            &collection.id
+        });
+        Ok(data.collections.clone())
+    })
+    .await
 }
 
 #[tauri::command]
 pub(crate) async fn aether_collections_delete(state: State<'_, Backend>, id: String) -> Cmd<()> {
-    let mut library = load_library(&state.paths.library_path).await?;
-    library.collections.retain(|collection| collection.id != id);
-    library
-        .captures
-        .retain(|capture| capture.collection_id != id);
-    save_json(&state.paths.library_path, &library).await?;
-
-    with_vectors_mut(&state, |vectors| {
+    // Chunks first, library second. The other order leaves a crash window in which
+    // the collection is gone but its chunks are not: those chunks still match a
+    // search, and with no collection to name them they surface under the fallback
+    // hub name — a deleted source reappearing. This order can only ever orphan the
+    // cheap direction, a collection with nothing in it.
+    with_vectors_deleted(&state, |vectors| {
         vectors.chunks.retain(|chunk| chunk.collection_id != id);
+    })
+    .await?;
+
+    with_library_mut(&state, |library| {
+        library.collections.retain(|collection| collection.id != id);
+        library
+            .captures
+            .retain(|capture| capture.collection_id != id);
+        Ok(())
     })
     .await
 }
@@ -670,12 +716,15 @@ pub(crate) async fn aether_collections_captures(
     state: State<'_, Backend>,
     collection_id: String,
 ) -> Cmd<Vec<CaptureSummary>> {
-    let mut captures = load_library(&state.paths.library_path)
-        .await?
-        .captures
-        .into_iter()
-        .filter(|capture| capture.collection_id == collection_id)
-        .collect::<Vec<_>>();
+    let mut captures = with_library_read(&state, |library| {
+        library
+            .captures
+            .iter()
+            .filter(|capture| capture.collection_id == collection_id)
+            .cloned()
+            .collect::<Vec<_>>()
+    })
+    .await?;
     captures.sort_by(|left, right| right.captured_at.cmp(&left.captured_at));
     Ok(captures)
 }
@@ -703,7 +752,9 @@ pub(crate) fn capture_target_url(raw: &str) -> Cmd<String> {
     if parsed.host_str().unwrap_or_default().is_empty() {
         return Err(format!("\"{trimmed}\" is not a web address."));
     }
-    Ok(parsed.to_string())
+    // A capture is written to disk and kept, so a click identifier left in the URL
+    // would outlive the visit that created it.
+    Ok(strip_tracking_params(parsed.as_str()))
 }
 
 #[tauri::command]
@@ -722,9 +773,26 @@ pub(crate) async fn aether_capture_current_page(
             .cloned()
             .ok_or_else(|| "No active browser tab.".to_string())?
     };
+    // Private tabs capture like any other. This used to be refused outright, on
+    // the reasoning that a private tab promises to leave no trace and a capture
+    // is the most durable trace the app makes — but that conflates the two halves
+    // of browser privacy. Capture emits nothing: it reads the DOM already in
+    // memory and writes to the user's own disk. Nothing is sent, nothing is
+    // recognised, no identity is asserted. The only thing at stake is local
+    // persistence, which is what this app is *for*, and pressing Capture is the
+    // decision. Saving a bookmark or a download from a private window is not
+    // gated either, and for the same reason.
     let app_id = active_tab.app_id.clone();
     let captured = extract_readable_active_page(&state, &active_tab).await?;
-    capture_page_into_collection(&app, &state, &input.collection_id, captured, &app_id).await
+    capture_page_into_collection(
+        &app,
+        &state,
+        &input.collection_id,
+        captured,
+        &app_id,
+        active_tab.private,
+    )
+    .await
 }
 
 // Captures a page ÆTHER never had to load. This is what lets sources arrive from a
@@ -738,8 +806,9 @@ pub(crate) async fn aether_capture_url(
 ) -> Cmd<CaptureResult> {
     let target = capture_target_url(&input.url)?;
     emit_capture_progress(&app, "Fetching page", None, None);
-    let captured = extract_readable_page(&state.client, &target).await?;
-    capture_page_into_collection(&app, &state, &input.collection_id, captured, "browser").await
+    let captured = extract_readable_page(&state.http_client(), &target).await?;
+    capture_page_into_collection(&app, &state, &input.collection_id, captured, "browser", false)
+        .await
 }
 
 // Bulk sibling of aether_capture_url. One bad link in a batch must not discard the
@@ -753,7 +822,7 @@ pub(crate) async fn aether_capture_urls(
     if input.urls.is_empty() {
         return Err("No links to capture.".to_string());
     }
-    let collection = get_collection(&state.paths.library_path, &input.collection_id).await?;
+    let collection = get_collection(&state, &input.collection_id).await?;
 
     let total = input.urls.len();
     let mut captured = Vec::new();
@@ -768,8 +837,9 @@ pub(crate) async fn aether_capture_urls(
         );
         let outcome = async {
             let target = capture_target_url(raw_url)?;
-            let page = extract_readable_page(&state.client, &target).await?;
-            capture_page_into_collection(&app, &state, &input.collection_id, page, "browser").await
+            let page = extract_readable_page(&state.http_client(), &target).await?;
+            capture_page_into_collection(&app, &state, &input.collection_id, page, "browser", false)
+                .await
         }
         .await;
 
@@ -794,27 +864,35 @@ pub(crate) async fn aether_capture_urls(
 // Shared tail of every capture path: chunk, embed, store vectors, update the
 // library manifest. Kept in one place so the fetch-based captures cannot drift
 // from the active-tab capture.
+// One page per collection, compared on the normalized URL key rather than the raw
+// URL so the same article behind different tracking parameters is one capture.
+pub(crate) fn is_duplicate_capture(
+    library: &LibraryData,
+    collection_id: &str,
+    captured_key: &str,
+) -> bool {
+    library.captures.iter().any(|capture| {
+        capture.collection_id == collection_id
+            && normalize_capture_url_key(&capture.url) == captured_key
+    })
+}
+
 pub(crate) async fn capture_page_into_collection(
     app: &AppHandle,
     state: &State<'_, Backend>,
     collection_id: &str,
     captured: CapturedPage,
     app_id: &str,
+    from_private_tab: bool,
 ) -> Cmd<CaptureResult> {
     let settings = load_settings(&state.paths.settings_path).await?;
-    let mut library = load_library(&state.paths.library_path).await?;
-    let collection = library
-        .collections
-        .iter()
-        .find(|collection| collection.id == collection_id)
-        .cloned()
-        .ok_or_else(|| "Collection not found.".to_string())?;
+    // Embedding is the slow step and must not hold the library lock, so the checks
+    // run twice: once here to fail fast before spending it, and again inside the
+    // write lock below, which is the one that actually decides.
+    let collection = get_collection(state, collection_id).await?;
     emit_capture_progress(app, "Chunking readable text", None, None);
     let captured_key = normalize_capture_url_key(&captured.url);
-    if library.captures.iter().any(|capture| {
-        capture.collection_id == collection.id
-            && normalize_capture_url_key(&capture.url) == captured_key
-    }) {
+    if with_library_read(state, |library| is_duplicate_capture(library, &collection.id, &captured_key)).await? {
         return Err(format!("Page is already in {}.", collection.name));
     }
 
@@ -873,12 +951,6 @@ pub(crate) async fn capture_page_into_collection(
         })
         .collect::<Vec<_>>();
 
-    // push_chunks assigns the sidecar slots; never extend `chunks` directly.
-    with_vectors_mut(state, |vectors| {
-        vectors.push_chunks(records.iter().cloned());
-    })
-    .await?;
-
     let capture = CaptureSummary {
         id: capture_id,
         collection_id: collection.id.clone(),
@@ -888,18 +960,40 @@ pub(crate) async fn capture_page_into_collection(
         captured_at,
         chunk_count: records.len(),
         metadata: None,
+        from_private_tab,
     };
-    library.captures.push(capture.clone());
-    if let Some(stored_collection) = library
-        .collections
-        .iter_mut()
-        .find(|item| item.id == collection.id)
-    {
-        stored_collection.capture_count += 1;
-        stored_collection.chunk_count += records.len();
-        stored_collection.updated_at = capture.captured_at.clone();
-    }
-    save_json(&state.paths.library_path, &library).await?;
+
+    // Re-check under the write lock. Embedding takes long enough that the same
+    // page can be captured twice in that window, and the earlier check cannot see
+    // a capture that landed after it ran.
+    //
+    // Library first, chunks second — the opposite of delete, for the same reason.
+    // A crash between the two should leave the harmless orphan: here that is a
+    // capture with no chunks, which is visible and deletable. Chunks with no
+    // capture would match searches with nothing in the UI to remove them.
+    with_library_mut(state, |library| {
+        if is_duplicate_capture(library, &collection.id, &captured_key) {
+            return Err(format!("Page is already in {}.", collection.name));
+        }
+        library.captures.push(capture.clone());
+        if let Some(stored_collection) = library
+            .collections
+            .iter_mut()
+            .find(|item| item.id == collection.id)
+        {
+            stored_collection.capture_count += 1;
+            stored_collection.chunk_count += records.len();
+            stored_collection.updated_at = capture.captured_at.clone();
+        }
+        Ok(())
+    })
+    .await?;
+
+    // push_chunks assigns the sidecar slots; never extend `chunks` directly.
+    with_vectors_mut(state, |vectors| {
+        vectors.push_chunks(records.iter().cloned());
+    })
+    .await?;
 
     Ok(CaptureResult {
         capture,
@@ -912,40 +1006,42 @@ pub(crate) async fn aether_capture_move(
     state: State<'_, Backend>,
     input: MoveCaptureInput,
 ) -> Cmd<CaptureSummary> {
-    let mut library = load_library(&state.paths.library_path).await?;
-    let now = now();
-    let target_exists = library
-        .collections
-        .iter()
-        .any(|collection| collection.id == input.collection_id);
-    if !target_exists {
-        return Err("Target collection not found.".to_string());
-    }
-    let capture = library
-        .captures
-        .iter_mut()
-        .find(|capture| capture.id == input.capture_id)
-        .ok_or_else(|| "Capture not found.".to_string())?;
-    if capture.collection_id == input.collection_id {
-        return Ok(capture.clone());
-    }
-    let source_collection_id = capture.collection_id.clone();
-    let chunk_count = capture.chunk_count;
-    capture.collection_id = input.collection_id.clone();
-    let moved = capture.clone();
-    for collection in &mut library.collections {
-        if collection.id == source_collection_id {
-            collection.capture_count = collection.capture_count.saturating_sub(1);
-            collection.chunk_count = collection.chunk_count.saturating_sub(chunk_count);
-            collection.updated_at = now.clone();
+    let moved = with_library_mut(&state, |library| {
+        let now = now();
+        let target_exists = library
+            .collections
+            .iter()
+            .any(|collection| collection.id == input.collection_id);
+        if !target_exists {
+            return Err("Target collection not found.".to_string());
         }
-        if collection.id == input.collection_id {
-            collection.capture_count += 1;
-            collection.chunk_count += chunk_count;
-            collection.updated_at = now.clone();
+        let capture = library
+            .captures
+            .iter_mut()
+            .find(|capture| capture.id == input.capture_id)
+            .ok_or_else(|| "Capture not found.".to_string())?;
+        if capture.collection_id == input.collection_id {
+            return Ok(capture.clone());
         }
-    }
-    save_json(&state.paths.library_path, &library).await?;
+        let source_collection_id = capture.collection_id.clone();
+        let chunk_count = capture.chunk_count;
+        capture.collection_id = input.collection_id.clone();
+        let moved = capture.clone();
+        for collection in &mut library.collections {
+            if collection.id == source_collection_id {
+                collection.capture_count = collection.capture_count.saturating_sub(1);
+                collection.chunk_count = collection.chunk_count.saturating_sub(chunk_count);
+                collection.updated_at = now.clone();
+            }
+            if collection.id == input.collection_id {
+                collection.capture_count += 1;
+                collection.chunk_count += chunk_count;
+                collection.updated_at = now.clone();
+            }
+        }
+        Ok(moved)
+    })
+    .await?;
 
     with_vectors_mut(&state, |vectors| {
         for chunk in &mut vectors.chunks {
@@ -963,29 +1059,34 @@ pub(crate) async fn aether_capture_delete(
     state: State<'_, Backend>,
     capture_id: String,
 ) -> Cmd<()> {
-    let mut library = load_library(&state.paths.library_path).await?;
-    let deleted = library
-        .captures
-        .iter()
-        .find(|capture| capture.id == capture_id)
-        .cloned();
-    library.captures.retain(|capture| capture.id != capture_id);
-    if let Some(deleted) = deleted {
-        if let Some(collection) = library
-            .collections
-            .iter_mut()
-            .find(|collection| collection.id == deleted.collection_id)
-        {
-            collection.capture_count = collection.capture_count.saturating_sub(1);
-            collection.chunk_count = collection.chunk_count.saturating_sub(deleted.chunk_count);
-            collection.updated_at = now();
-        }
-    }
-    save_json(&state.paths.library_path, &library).await?;
-    with_vectors_mut(&state, |vectors| {
+    // Chunks first — same ordering rule as collection delete: a crash must not be
+    // able to leave searchable chunks behind an entry the user already removed.
+    with_vectors_deleted(&state, |vectors| {
         vectors
             .chunks
             .retain(|chunk| chunk.capture_id != capture_id);
+    })
+    .await?;
+
+    with_library_mut(&state, |library| {
+        let deleted = library
+            .captures
+            .iter()
+            .find(|capture| capture.id == capture_id)
+            .cloned();
+        library.captures.retain(|capture| capture.id != capture_id);
+        if let Some(deleted) = deleted {
+            if let Some(collection) = library
+                .collections
+                .iter_mut()
+                .find(|collection| collection.id == deleted.collection_id)
+            {
+                collection.capture_count = collection.capture_count.saturating_sub(1);
+                collection.chunk_count = collection.chunk_count.saturating_sub(deleted.chunk_count);
+                collection.updated_at = now();
+            }
+        }
+        Ok(())
     })
     .await
 }
@@ -1135,10 +1236,15 @@ pub(crate) async fn aether_chat_ask(
                 let tabs = lock_tabs(&state)?;
                 tabs.active_tab().cloned()
             };
+            // Private tabs are read like any other. Answers and their citations do
+            // land in the conversation store, but that is a local write on the
+            // user's own disk — the same reasoning that ungated capture. Asking
+            // about the page in front of you and getting an answer that silently
+            // pretended not to see it was the worse outcome by a distance.
             let captured = if let Some(active_tab) = active_tab {
                 extract_readable_active_page(&state, &active_tab).await.ok()
             } else {
-                extract_readable_page(&state.client, &active_url).await.ok()
+                extract_readable_page(&state.http_client(), &active_url).await.ok()
             };
             if let Some(captured) = captured {
                 // Give the current page fewer slots when a hub is also in play so the
@@ -1372,6 +1478,29 @@ pub(crate) async fn aether_system_update_settings(
             settings.browser.default_search_engine =
                 normalize_search_engine_id(&default_search_engine);
         }
+        if let Some(ai_free_search) = browser.ai_free_search {
+            settings.browser.ai_free_search = ai_free_search;
+        }
+        if let Some(proxy) = browser.proxy {
+            if let Some(url) = proxy.url {
+                // Validated before it is stored, and the whole update is rejected
+                // if it fails. Saving an unusable endpoint would leave the toggle
+                // reading "on" while `active_proxy_url` returns None and every
+                // request goes out directly — the silent-bypass state this
+                // feature exists to make impossible.
+                parse_proxy_url(&url)?;
+                settings.browser.proxy.url = url.trim().to_string();
+            }
+            if let Some(enabled) = proxy.enabled {
+                if enabled {
+                    parse_proxy_url(&settings.browser.proxy.url)?;
+                }
+                settings.browser.proxy.enabled = enabled;
+            }
+        }
+        if let Some(pin_timezone) = browser.pin_timezone {
+            settings.browser.pin_timezone = pin_timezone;
+        }
     }
     if let Some(developer_mode) = input.developer_mode {
         settings.developer_mode = developer_mode;
@@ -1385,6 +1514,9 @@ pub(crate) async fn aether_system_update_settings(
         settings.appearance = appearance;
     }
     save_json(&state.paths.settings_path, &settings).await?;
+    // The app's own fetches follow the new setting immediately; open tabs keep the
+    // routing they were created with, because a webview's proxy is fixed at build.
+    apply_browser_privacy(&state, &settings.browser);
     Ok(AppSettings {
         browser: settings.browser,
         developer_mode: settings.developer_mode,
@@ -1401,7 +1533,7 @@ pub(crate) async fn aether_system_check_for_update(
     let current_version = env!("CARGO_PKG_VERSION").to_string();
 
     let request = state
-        .client
+        .http_client()
         .get(AETHER_RELEASES_API_URL)
         .header("Accept", "application/vnd.github+json")
         .header("X-GitHub-Api-Version", "2022-11-28")
@@ -1841,13 +1973,19 @@ pub(crate) async fn aether_system_export_library(
         return Err("There is nothing to export yet.".to_string());
     }
 
-    let library = load_library(&paths.library_path).await.unwrap_or_default();
-    let capture_count = library.captures.len();
-    let chunk_count = library
-        .collections
-        .iter()
-        .map(|collection| collection.chunk_count)
-        .sum::<usize>();
+    let (capture_count, chunk_count, collection_count) = with_library_read(&state, |library| {
+        (
+            library.captures.len(),
+            library
+                .collections
+                .iter()
+                .map(|collection| collection.chunk_count)
+                .sum::<usize>(),
+            library.collections.len(),
+        )
+    })
+    .await
+    .unwrap_or_default();
 
     let manifest = serde_json::json!({
         "app": "aether",
@@ -1856,7 +1994,7 @@ pub(crate) async fn aether_system_export_library(
         "files": files,
         "captureCount": capture_count,
         "chunkCount": chunk_count,
-        "collectionCount": library.collections.len(),
+        "collectionCount": collection_count,
     });
     let manifest_raw =
         serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;

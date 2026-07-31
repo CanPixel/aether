@@ -1,4 +1,4 @@
-import { CSSProperties, DragEvent, useRef, useState, type ComponentType } from 'react'
+import { memo, CSSProperties, DragEvent, useRef, useState, type ComponentType } from 'react'
 import {
   Atom,
   BookOpen,
@@ -30,7 +30,15 @@ import {
   SavedIcebergSummary
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
-import { cleanTitle, countLabel, formatDate, getCaptureHost, getPortalTint, getRootDomainLetter, inferIcebergIcon } from '../utils/aether-ui'
+import {
+  cleanTitle,
+  countLabel,
+  formatDate,
+  getCaptureHost,
+  getPortalTint,
+  getRootDomainLetter,
+  inferIcebergIcon
+} from '../utils/aether-ui'
 import { ChevronRightIcon, AetherSigilIcon, CloseIcon, CubeIcon } from './icons'
 import { SquarePen, Trash2 as TrashIcon } from 'lucide-react'
 import { portals } from '../constants/Features'
@@ -96,7 +104,7 @@ type DashboardProps = {
   selectCollection: (value: string) => Promise<void>
 }
 
-export function Dashboard({
+function DashboardComponent({
   busy,
   searchResult,
   searching,
@@ -243,7 +251,7 @@ export function Dashboard({
       <header className="dashboard-hero">
         <div className="hero-copy">
           <h1>ÆTHER</h1>
-          <p>Your browser, your knowledge.</p>
+          <p>Your browser and your knowledge.</p>
         </div>
         <div className="hero-orb" aria-hidden="true">
           <span className="hero-orb-aura" />
@@ -500,8 +508,7 @@ export function Dashboard({
                       mistaken for an empty library. */}
                   {searchResult.mode === 'literal' && (
                     <span className="library-search-mode">
-                      name matching only — install an embedding model for meaning-based
-                      search
+                      name matching only — install an embedding model for meaning-based search
                     </span>
                   )}
                 </p>
@@ -698,9 +705,7 @@ export function Dashboard({
                         </small>
                       </span>
                       <span className="collection-meta">
-                        <strong>
-                          {countLabel(collection.captureCount, 'capture')}
-                        </strong>
+                        <strong>{countLabel(collection.captureCount, 'capture')}</strong>
                       </span>
                       <ChevronRightIcon />
                     </button>
@@ -861,6 +866,14 @@ function CaptureCard({
         <div className="data-badges">
           <time>{formatDate(capture.capturedAt)}</time>
           <span>{countLabel(capture.chunkCount, 'chunk')}</span>
+          {/* Library hygiene, not a privacy marker — capture writes locally and
+              emits nothing. It exists so private-session research stays findable
+              afterwards instead of blending into every other source. */}
+          {capture.fromPrivateTab && (
+            <span className="private-origin-badge" title="Saved from a private tab">
+              Private
+            </span>
+          )}
         </div>
       </div>
       <div className="capture-hub-row">
@@ -902,3 +915,11 @@ function IcebergFlairIcon({ icon }: { icon: string }): React.JSX.Element {
 
   return <Icon size={20} strokeWidth={1.9} />
 }
+
+// Wrapped in memo because App owns almost all of this app's state: a keystroke in
+// the address bar, a status toast, a streaming token — each re-renders App, and
+// without this every one of them re-renders this panel too. The handlers App
+// passes down go through useStableHandler so those props stay equal between
+// renders; without that this wrapper would compare unequal every time and do
+// nothing.
+export const Dashboard = memo(DashboardComponent)

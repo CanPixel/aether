@@ -1,7 +1,7 @@
 {
   "name": "aether-browser",
   "version": "1.0.29",
-  "productName": "ÆTHER",
+  "productName": "\u00c6THER",
   "description": "Local AI-powered browser and knowledge hub",
   "keywords": [
     "knowledge",
@@ -21,6 +21,7 @@
     "typecheck:tauri": "cargo check --manifest-path src-tauri/Cargo.toml",
     "typecheck": "bun run typecheck:web && bun run typecheck:tauri",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --lib",
+    "check:platforms": "bash scripts/check-platforms.sh",
     "version:bump": "bun scripts/bump-version.ts",
     "version:check": "bun scripts/bump-version.ts --check",
     "release": "bun scripts/release.ts",

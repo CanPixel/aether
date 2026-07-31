@@ -1594,6 +1594,138 @@
   box-shadow: 0 0 0 3px rgb(var(--accent-light-rgb) / 0.18);
 }
 
+/* Chat model as a position on a scale. Replaces the old <select>: with two options
+   at most, a dropdown hid the second model behind a click and gave no hint that a
+   deeper one existed. See components/ModelLevelSlider.tsx.
+
+   The pill borrows the selector's frame so the footer group still reads as one
+   control, and the rungs sit on a shared track with a thumb that slides between
+   them — the movement is what makes it read as a level rather than a list. */
+.model-level-slider {
+  position: relative;
+  display: grid;
+  box-sizing: border-box;
+  width: min(190px, 100%);
+  min-width: 0;
+  padding: 3px;
+  border: 1px solid rgb(var(--accent-soft-rgb) / 0.22);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 18% 16%, rgb(var(--surface-rgb) / 0.95), transparent 42%),
+    linear-gradient(145deg, rgb(var(--surface-tint-rgb) / 0.84), rgb(var(--surface-rgb) / 0.6));
+  box-shadow:
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.72),
+    0 8px 18px rgb(var(--sky-deep-rgb) / 0.08);
+  transition:
+    border-color 0.4s ease,
+    box-shadow 0.4s ease;
+}
+
+.model-level-slider:hover {
+  border-color: rgb(var(--accent-pale-rgb) / 0.6);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.9),
+    0 8px 24px rgb(var(--accent-soft-rgb) / 0.2),
+    0 0 8px rgb(var(--sky-mist-rgb) / 0.3);
+}
+
+/* Track and rungs share one grid cell, so the thumb sits behind the labels without
+   taking part in their layout. */
+.model-level-track,
+.model-level-rungs {
+  grid-area: 1 / 1;
+}
+
+.model-level-track {
+  position: relative;
+  border-radius: 999px;
+}
+
+.model-level-thumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    145deg,
+    rgb(var(--accent-soft-rgb) / 0.42),
+    rgb(var(--accent-pale-rgb) / 0.24)
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(var(--highlight-rgb) / 0.85),
+    0 2px 8px rgb(var(--sky-deep-rgb) / 0.12);
+  /* left/width are set inline from the active index; this is the slide. */
+  transition:
+    left 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-level-thumb {
+    transition: none;
+  }
+}
+
+.model-level-rungs {
+  position: relative;
+  display: grid;
+  /* Equal columns, so the inline percentages the thumb uses line up with the rungs
+     whatever the count. */
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}
+
+.model-level-rung {
+  display: inline-flex;
+  min-width: 0;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: rgb(var(--accent-strong-rgb) / 0.62);
+  font-size: 10px;
+  font-weight: 860;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    color 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.model-level-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-level-rung:hover:not(:disabled) {
+  color: rgb(var(--accent-strong-rgb));
+}
+
+.model-level-rung.is-active {
+  color: rgb(var(--accent-strong-rgb));
+}
+
+/* Not installed: legible enough to read as a real option that exists, faint enough
+   to read as unavailable. It stays clickable — that click is the install route. */
+.model-level-rung.is-missing {
+  color: rgb(var(--accent-strong-rgb) / 0.38);
+  font-weight: 700;
+}
+
+.model-level-rung.is-missing:hover:not(:disabled) {
+  color: rgb(var(--accent-strong-rgb) / 0.72);
+}
+
+.model-level-rung:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Icon-only sibling of the model selector. Sized to the selector's own pill so the
    pair reads as one control group rather than a control plus an afterthought. */
 /* The icons are flex items; without an explicit shrink guard they collapse to zero

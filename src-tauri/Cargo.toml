@@ -15,20 +15,30 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.5", features = [] }
 
 [dependencies]
+base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 encoding_rs = "0.8"
 # Metal is added only in the macOS target block below; it is Apple-only and would
 # break Windows/Linux/Android compiles. Off macOS, llama.cpp runs CPU-only.
 llama-cpp-2 = { version = "0.1.146", default-features = false, features = ["sampler"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+# `socks` is what makes socks5:// proxy URLs work; without it reqwest rejects the
+# scheme at request time and the app's own fetches would fail while tabs proxied
+# fine — see NetworkRouting.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "socks"] }
 scraper = "0.24"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "2.9", features = ["unstable"] }
+# `macos-proxy` reaches wry's `mac-proxy`, which is what puts WKWebView traffic
+# through a SOCKS5/HTTP CONNECT endpoint. It is off by default in Tauri because
+# the underlying WKWebsiteDataStore key is macOS 14+; the runtime version gate
+# that makes it safe below 14 lives in `util::proxy_platform_support`.
+tauri = { version = "2.9", features = ["unstable", "macos-proxy"] }
 tauri-plugin-opener = "2.5"
 tokio = { version = "1", features = ["fs", "io-util", "sync", "time"] }
 url = "2"
-uuid = { version = "1", features = ["v4", "serde"] }
+# v5 is the deterministic (name-based) variant, which is what turns a container
+# name into a stable data-store identifier across restarts.
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 
 [dev-dependencies]
 # The store-durability tests drive async fs helpers, which needs a runtime. Dev
@@ -41,7 +51,42 @@ tokio = { version = "1", features = ["fs", "io-util", "macros", "rt"] }
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
 
+# Linux content blocking and data clearing. The safe webkit2gtk crate binds
+# neither WebKitUserContentFilterStore nor website_data_manager_clear, so the
+# -sys crate is a direct dependency too. Versions must match what wry resolves
+# to, or these link against a second, incompatible GObject graph.
+[target.'cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))'.dependencies]
+# Only webkit2gtk is declared: it re-exports `ffi` (webkit2gtk-sys), `glib` and
+# `gio`, and going through those re-exports is not a style preference. Declaring
+# glib/gio separately resolves a *second* copy of each into the graph, and the
+# GBytes handed to a webkit2gtk function then fails to satisfy ToGlibPtr because
+# it is a different type with the same name.
+webkit2gtk = { version = "2.0", features = ["v2_40"] }
+
+# Windows content blocking and data clearing; see src/content_blocking/windows.rs.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+# Win32_System_Com is for CoTaskMemFree: WebView2 string out-parameters are
+# COM-allocated and the caller owns them.
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Com"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
+# Content blocking reaches WKContentRuleList directly: neither Tauri nor wry
+# exposes it. Versions are pinned to whatever tauri/wry already resolve to, so
+# these share one objc2 graph rather than linking a second, incompatible copy.
+# See src-tauri/src/content_blocking.rs.
+objc2 = "0.6"
+# NSProcessInfo is the macOS-version gate for proxy support; see util.rs.
+objc2-foundation = { version = "0.3", features = ["NSProcessInfo"] }
+objc2-web-kit = { version = "0.3", features = [
+  "WKContentRuleList",
+  "WKContentRuleListStore",
+  "WKUserContentController",
+  "WKWebsiteDataStore",
+  "block2",
+] }
+block2 = "0.6"
+
 # Cargo unions features across target tables, so on macOS llama.cpp gets metal + sampler.
 llama-cpp-2 = { version = "0.1.146", default-features = false, features = ["metal"] }
 
@@ -54,3 +99,29 @@ opt-level = 3
 
 [profile.dev.package.llama-cpp-2]
 opt-level = 3
+
+# Ships a smaller, faster binary than the cargo defaults. Build time goes up
+# noticeably, so this is release-only and dev is left alone.
+#
+# `panic` is deliberately NOT set to "abort", and this is load-bearing rather than
+# an oversight. Every call into llama.cpp goes through task::spawn_blocking and
+# ends in `.map_err(|error| error.to_string())` on the JoinError — that is how a
+# panic inside embedding or generation becomes an error message in the UI instead
+# of a dead app. Under panic="abort" there is no JoinError to map: the process
+# takes SIGABRT.
+#
+# Measured, not assumed. The same spawn_blocking-panic-then-recover program under
+# each setting:
+#   unwind  -> exit 0, panic arrives as a JoinError, the program continues
+#   abort   -> exit 134 (SIGABRT), nothing after the panic runs
+#
+# An abort mid-capture is worse than a lost answer: capture commits the library
+# entry before it writes chunks, so dying between the two is exactly the orphan
+# state reconcile_orphans exists to clean up. Trading crash recovery for a small
+# binary is the wrong direction for this crate.
+[profile.release]
+# "thin" rather than "fat": nearly all of the win, without the link-time blowup
+# on a dependency tree that already includes llama.cpp.
+lto = "thin"
+codegen-units = 1
+strip = true

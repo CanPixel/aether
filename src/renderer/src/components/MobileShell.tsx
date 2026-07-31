@@ -1,11 +1,4 @@
-import {
-  FormEvent,
-  MutableRefObject,
-  ReactNode,
-  useEffect,
-  useRef,
-  useState
-} from 'react'
+import { FormEvent, MutableRefObject, ReactNode, useEffect, useRef, useState } from 'react'
 import {
   BrowserTabSummary,
   ChatResult,
@@ -16,6 +9,7 @@ import {
 } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
 import { countLabel, formatVisibleModelName, getTabTint } from '../utils/aether-ui'
+import { useSiteFavicon } from '../utils/site-favicon'
 import { renderAnswerMarkdown } from './answer-markdown'
 import {
   AetherSigilIcon,
@@ -28,15 +22,7 @@ import {
   PlusIcon,
   SpinnerIcon
 } from './icons'
-import {
-  ArrowUpRight,
-  BookmarkPlus,
-  Download,
-  RefreshCw,
-  Search,
-  Snowflake,
-  X
-} from 'lucide-react'
+import { ArrowUpRight, BookmarkPlus, Download, RefreshCw, Search, Snowflake, X } from 'lucide-react'
 
 // ÆTHER's dedicated Android shell: Samsung-style bottom chrome (mini tab strip
 // + compact address row) that auto-hides on page scroll, an Opera-style
@@ -152,9 +138,7 @@ export function MobileShell({
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
   // Unfolded / tablet-width screens (Z Fold inner display): AiON docks as a
   // persistent right-hand panel beside the page instead of a bottom sheet.
-  const [wideScreen, setWideScreen] = useState(
-    () => window.matchMedia(WIDE_SCREEN_QUERY).matches
-  )
+  const [wideScreen, setWideScreen] = useState(() => window.matchMedia(WIDE_SCREEN_QUERY).matches)
   const addressRef = useRef<HTMLInputElement | null>(null)
   const chromeRef = useRef<HTMLDivElement | null>(null)
   const activeTabId = activeTab?.id ?? ''
@@ -237,7 +221,9 @@ export function MobileShell({
   // overlay must hide them through the shared modal-overlay flag. Includes the
   // App-owned modals so closing a sheet into a dialog never re-shows the page.
   useEffect(() => {
-    void window.aether.layout.setModalOverlayOpen(overlayOpen || appModalOpen).catch(() => undefined)
+    void window.aether.layout
+      .setModalOverlayOpen(overlayOpen || appModalOpen)
+      .catch(() => undefined)
   }, [overlayOpen, appModalOpen])
 
   // Hardware back peels mobile overlays before App's own layering logic runs.
@@ -361,8 +347,8 @@ export function MobileShell({
       {ask.chatBlocked ? (
         <div className="mobile-aion-setup">
           <p>
-            AiON answers locally on this device. Install the local AI models to ask about your
-            pages and knowledge hubs.
+            AiON answers locally on this device. Install the local AI models to ask about your pages
+            and knowledge hubs.
           </p>
           <button
             onClick={() => {
@@ -501,113 +487,113 @@ export function MobileShell({
 
       <div className={`mobile-chrome ${chromeHidden ? 'hidden' : ''}`} ref={chromeRef}>
         <div className="mobile-chrome-inner">
-        <div className="mobile-tab-strip" aria-label="Open tabs">
-          <div className="mobile-tab-strip-scroll">
-            {tabs.map((tab) => (
+          <div className="mobile-tab-strip" aria-label="Open tabs">
+            <div className="mobile-tab-strip-scroll">
+              {tabs.map((tab) => (
+                <button
+                  className={`mobile-tab-chip ${tab.isActive && !dashboardOpen ? 'active' : ''}`}
+                  key={tab.id}
+                  onClick={() => onSelectTab(tab.id)}
+                  style={
+                    { '--tab-tint': getTabTint(tab.host, tab.themeColor) } as React.CSSProperties
+                  }
+                  type="button"
+                >
+                  <span className="mobile-tab-chip-icon" aria-hidden="true">
+                    {tab.isLoading ? <SpinnerIcon /> : <TabFavicon icon={tab.favicon} />}
+                  </span>
+                  <span className="mobile-tab-chip-title">
+                    {tab.title || tab.host || 'New Tab'}
+                  </span>
+                  {tab.isActive && !dashboardOpen && tabs.length > 1 && (
+                    <span
+                      className="mobile-tab-chip-close"
+                      role="button"
+                      tabIndex={0}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void onCloseTab(tab.id)
+                      }}
+                    >
+                      <CloseIcon />
+                    </span>
+                  )}
+                </button>
+              ))}
               <button
-                className={`mobile-tab-chip ${tab.isActive && !dashboardOpen ? 'active' : ''}`}
-                key={tab.id}
-                onClick={() => onSelectTab(tab.id)}
-                style={{ '--tab-tint': getTabTint(tab.host, tab.themeColor) } as React.CSSProperties}
+                className="mobile-tab-new"
+                aria-label="New tab"
+                onClick={onCreateTab}
                 type="button"
               >
-                <span className="mobile-tab-chip-icon" aria-hidden="true">
-                  {tab.isLoading ? <SpinnerIcon /> : <TabFavicon icon={tab.favicon} />}
-                </span>
-                <span className="mobile-tab-chip-title">{tab.title || tab.host || 'New Tab'}</span>
-                {tab.isActive && !dashboardOpen && tabs.length > 1 && (
-                  <span
-                    className="mobile-tab-chip-close"
-                    role="button"
-                    tabIndex={0}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      void onCloseTab(tab.id)
-                    }}
-                  >
-                    <CloseIcon />
-                  </span>
-                )}
+                <PlusIcon />
               </button>
-            ))}
+            </div>
             <button
-              className="mobile-tab-new"
-              aria-label="New tab"
-              onClick={onCreateTab}
+              className="mobile-tab-grid-button"
+              aria-label={`Tab overview (${countLabel(tabs.length, 'tab')})`}
+              onClick={() => setGridOpen(true)}
               type="button"
             >
-              <PlusIcon />
+              <GridIcon />
             </button>
           </div>
-          <button
-            className="mobile-tab-grid-button"
-            aria-label={`Tab overview (${countLabel(tabs.length, 'tab')})`}
-            onClick={() => setGridOpen(true)}
-            type="button"
-          >
-            <GridIcon />
-          </button>
-        </div>
 
-        <div className="mobile-address-row">
-          <button
-            className={`mobile-nav-button ${dashboardOpen && !crystallizerOpen ? 'active' : ''}`}
-            aria-label="ÆTHER dashboard"
-            onClick={onOpenDashboard}
-            type="button"
-          >
-            <CloudIcon />
-          </button>
-          <form className="mobile-address-pill" onSubmit={submitAddress}>
-            {activeTab?.isLoading && isWebPage ? (
-              <SpinnerIcon />
-            ) : (
-              <GlobeIcon />
-            )}
-            <input
-              ref={addressRef}
-              aria-label="Address or search"
-              inputMode="url"
-              autoCapitalize="none"
-              autoCorrect="off"
-              value={addressEditing ? addressDraft : addressValue}
-              onBlur={() => setAddressEditing(false)}
-              onChange={(event) => setAddressDraft(event.target.value)}
-              onFocus={beginAddressEdit}
-              placeholder="Search or enter website"
-            />
-          </form>
-          <button
-            className={`mobile-nav-button aion ${aionOpen ? 'active' : ''}`}
-            aria-label="Ask AiON"
-            onClick={() => setAionOpen(true)}
-            type="button"
-          >
-            <AetherSigilIcon size={21} />
-          </button>
-          <button
-            className="mobile-nav-button capture"
-            aria-label="Capture page into knowledge hub"
-            disabled={Boolean(busy) || capturesBlocked}
-            onClick={() => {
-              void onCapture()
-            }}
-            type="button"
-          >
-            <Download />
-          </button>
-          <button
-            className="mobile-nav-button"
-            aria-label="More actions"
-            onClick={() => {
-              void onCaptureIntent()
-              setActionsOpen(true)
-            }}
-            type="button"
-          >
-            <MoreDotsIcon />
-          </button>
-        </div>
+          <div className="mobile-address-row">
+            <button
+              className={`mobile-nav-button ${dashboardOpen && !crystallizerOpen ? 'active' : ''}`}
+              aria-label="ÆTHER dashboard"
+              onClick={onOpenDashboard}
+              type="button"
+            >
+              <CloudIcon />
+            </button>
+            <form className="mobile-address-pill" onSubmit={submitAddress}>
+              {activeTab?.isLoading && isWebPage ? <SpinnerIcon /> : <GlobeIcon />}
+              <input
+                ref={addressRef}
+                aria-label="Address or search"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
+                value={addressEditing ? addressDraft : addressValue}
+                onBlur={() => setAddressEditing(false)}
+                onChange={(event) => setAddressDraft(event.target.value)}
+                onFocus={beginAddressEdit}
+                placeholder="Search or enter website"
+              />
+            </form>
+            <button
+              className={`mobile-nav-button aion ${aionOpen ? 'active' : ''}`}
+              aria-label="Ask AiON"
+              onClick={() => setAionOpen(true)}
+              type="button"
+            >
+              <AetherSigilIcon size={21} />
+            </button>
+            <button
+              className="mobile-nav-button capture"
+              aria-label="Capture page into knowledge hub"
+              disabled={Boolean(busy) || capturesBlocked}
+              onClick={() => {
+                void onCapture()
+              }}
+              type="button"
+            >
+              <Download />
+            </button>
+            <button
+              className="mobile-nav-button"
+              aria-label="More actions"
+              onClick={() => {
+                void onCaptureIntent()
+                setActionsOpen(true)
+              }}
+              type="button"
+            >
+              <MoreDotsIcon />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -635,7 +621,9 @@ export function MobileShell({
                 }}
                 role="button"
                 tabIndex={0}
-                style={{ '--tab-tint': getTabTint(tab.host, tab.themeColor) } as React.CSSProperties}
+                style={
+                  { '--tab-tint': getTabTint(tab.host, tab.themeColor) } as React.CSSProperties
+                }
               >
                 <header>
                   <span className="mobile-tab-card-icon" aria-hidden="true">
@@ -691,108 +679,108 @@ export function MobileShell({
           label="Browser actions"
           onClose={() => setActionsOpen(false)}
         >
-            <div className="mobile-capture-block">
-              <label htmlFor="mobile-capture-collection">Capture into knowledge hub</label>
-              <div className="mobile-capture-row">
-                <select
-                  id="mobile-capture-collection"
-                  aria-label="Capture hub"
-                  value={selectedCollectionId}
-                  onChange={(event) => {
-                    if (event.target.value === CREATE_COLLECTION_VALUE) {
-                      setActionsOpen(false)
-                      onCreateCollection()
-                      return
-                    }
-                    void onSelectCollection(event.target.value)
-                  }}
-                >
-                  <option value="" disabled>
-                    Collection
-                  </option>
-                  {collections.map((collection) => (
-                    <option key={collection.id} value={collection.id}>
-                      {collection.name}
-                    </option>
-                  ))}
-                  <option value={CREATE_COLLECTION_VALUE}>+ Create new hub</option>
-                </select>
-                <button
-                  className="mobile-capture-button"
-                  disabled={Boolean(busy) || capturesBlocked}
-                  onClick={() => {
+          <div className="mobile-capture-block">
+            <label htmlFor="mobile-capture-collection">Capture into knowledge hub</label>
+            <div className="mobile-capture-row">
+              <select
+                id="mobile-capture-collection"
+                aria-label="Capture hub"
+                value={selectedCollectionId}
+                onChange={(event) => {
+                  if (event.target.value === CREATE_COLLECTION_VALUE) {
                     setActionsOpen(false)
-                    void onCapture()
-                  }}
-                  type="button"
-                >
-                  <Download /> Capture
-                </button>
-              </div>
+                    onCreateCollection()
+                    return
+                  }
+                  void onSelectCollection(event.target.value)
+                }}
+              >
+                <option value="" disabled>
+                  Collection
+                </option>
+                {collections.map((collection) => (
+                  <option key={collection.id} value={collection.id}>
+                    {collection.name}
+                  </option>
+                ))}
+                <option value={CREATE_COLLECTION_VALUE}>+ Create new hub</option>
+              </select>
+              <button
+                className="mobile-capture-button"
+                disabled={Boolean(busy) || capturesBlocked}
+                onClick={() => {
+                  setActionsOpen(false)
+                  void onCapture()
+                }}
+                type="button"
+              >
+                <Download /> Capture
+              </button>
             </div>
+          </div>
 
-            <div className="mobile-action-list">
-              <button
-                disabled={portalSaveBlocked || Boolean(busy)}
-                onClick={() => {
-                  setActionsOpen(false)
-                  void onSavePortal()
-                }}
-                title={portalSaveTitle}
-                type="button"
-              >
-                <BookmarkPlus /> Save as Portal
-              </button>
-              <button
-                disabled={!isWebPage}
-                onClick={() => {
-                  setActionsOpen(false)
-                  onOpenFind()
-                }}
-                type="button"
-              >
-                <Search /> Find on Page
-              </button>
-              <button
-                disabled={!isWebPage || !activeTab}
-                onClick={() => {
-                  setActionsOpen(false)
-                  if (activeTab) void onNavigateAddress(activeTab.url)
-                }}
-                type="button"
-              >
-                <RefreshCw /> Reload Page
-              </button>
-              <button
-                disabled={dashboardOpen || !activeTab?.canGoForward}
-                onClick={() => {
-                  setActionsOpen(false)
-                  void onGoForward()
-                }}
-                type="button"
-              >
-                <ChevronRightIcon /> Forward
-              </button>
-              <button
-                className={crystallizerOpen ? 'active' : ''}
-                onClick={() => {
-                  setActionsOpen(false)
-                  void onOpenCrystallizer()
-                }}
-                type="button"
-              >
-                <Snowflake /> iCE Crystallizer
-              </button>
-              <button
-                onClick={() => {
-                  setActionsOpen(false)
-                  void onOpenSettings()
-                }}
-                type="button"
-              >
-                <GearIcon /> Settings
-              </button>
-            </div>
+          <div className="mobile-action-list">
+            <button
+              disabled={portalSaveBlocked || Boolean(busy)}
+              onClick={() => {
+                setActionsOpen(false)
+                void onSavePortal()
+              }}
+              title={portalSaveTitle}
+              type="button"
+            >
+              <BookmarkPlus /> Save as Portal
+            </button>
+            <button
+              disabled={!isWebPage}
+              onClick={() => {
+                setActionsOpen(false)
+                onOpenFind()
+              }}
+              type="button"
+            >
+              <Search /> Find on Page
+            </button>
+            <button
+              disabled={!isWebPage || !activeTab}
+              onClick={() => {
+                setActionsOpen(false)
+                if (activeTab) void onNavigateAddress(activeTab.url)
+              }}
+              type="button"
+            >
+              <RefreshCw /> Reload Page
+            </button>
+            <button
+              disabled={dashboardOpen || !activeTab?.canGoForward}
+              onClick={() => {
+                setActionsOpen(false)
+                void onGoForward()
+              }}
+              type="button"
+            >
+              <ChevronRightIcon /> Forward
+            </button>
+            <button
+              className={crystallizerOpen ? 'active' : ''}
+              onClick={() => {
+                setActionsOpen(false)
+                void onOpenCrystallizer()
+              }}
+              type="button"
+            >
+              <Snowflake /> iCE Crystallizer
+            </button>
+            <button
+              onClick={() => {
+                setActionsOpen(false)
+                void onOpenSettings()
+              }}
+              type="button"
+            >
+              <GearIcon /> Settings
+            </button>
+          </div>
         </MobileSheet>
       )}
 
@@ -981,8 +969,10 @@ function MobileSheet({
 
 function TabFavicon({ icon }: { icon?: string }): React.JSX.Element {
   const [failed, setFailed] = useState(false)
-  if (!icon || failed) return <GlobeIcon />
-  return <img src={icon} alt="" onError={() => setFailed(true)} />
+  // See PageFavicon in BrowserChrome.tsx: `icon` is a key, the src is a data URI.
+  const dataUri = useSiteFavicon(icon)
+  if (!dataUri || failed) return <GlobeIcon />
+  return <img src={dataUri} alt="" onError={() => setFailed(true)} />
 }
 
 function MoreDotsIcon(): React.JSX.Element {

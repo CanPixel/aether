@@ -195,6 +195,34 @@ pub(crate) async fn with_vectors_mut<T>(
     Ok(result)
 }
 
+/// `with_vectors_mut` for a deletion the user asked for, which rewrites the
+/// sidecar instead of waiting for the usual compaction thresholds.
+///
+/// Removing a chunk drops its text — the metadata file is rewritten whole on
+/// every save — but the vector itself only leaves the sidecar when compaction
+/// renumbers the live slots, and that needs 512 slots at ≥50% dead. Until then
+/// the floats for a source the user deleted are still on disk. Embedding vectors
+/// are not the text, but they are derived from it, and "delete" should not leave
+/// a residue whose lifetime depends on how much else happens to be in the store.
+///
+/// Kept separate from `with_vectors_mut` on purpose: this rewrites the whole
+/// sidecar, which is the cost the ratio thresholds exist to avoid on the routine
+/// save path. Only an explicit delete is worth paying it.
+pub(crate) async fn with_vectors_deleted<T>(
+    state: &State<'_, Backend>,
+    mutate: impl FnOnce(&mut VectorStoreData) -> T,
+) -> Cmd<T> {
+    let mut guard = state.vectors.write().await;
+    if guard.is_none() {
+        *guard = Some(load_vectors(&state.paths.chunks_path).await?);
+    }
+    let vectors = guard.as_mut().expect("vector store cache");
+    let result = mutate(vectors);
+    compact_vectors(&state.paths.chunks_path, vectors).await?;
+    save_vector_metadata(&state.paths.chunks_path, vectors).await?;
+    Ok(result)
+}
+
 // Vector rows are large and machine-managed, so the metadata is persisted as compact
 // JSON instead of the pretty format used for small user-editable stores.
 pub(crate) async fn save_vector_metadata(path: &Path, data: &VectorStoreData) -> Cmd<()> {
@@ -273,6 +301,18 @@ pub(crate) async fn compact_vectors_if_needed(
         return Ok(false);
     }
 
+    compact_vectors(path, data).await?;
+    Ok(true)
+}
+
+// Renumbers the live chunks and rewrites the sidecar from scratch, unconditionally.
+// Callers that only want this when it pays for itself go through
+// compact_vectors_if_needed; a user-initiated delete calls it directly, because
+// there the point is that the bytes actually leave the file.
+pub(crate) async fn compact_vectors(path: &Path, data: &mut VectorStoreData) -> Cmd<()> {
+    let live = data.embedded_count();
+    let dead = data.next_slot.saturating_sub(live);
+
     // Embedded chunks first in slot order, parked ones after, so renumbering walks
     // exactly the records that occupy the sidecar.
     data.chunks
@@ -286,9 +326,10 @@ pub(crate) async fn compact_vectors_if_needed(
         next += 1;
     }
     data.next_slot = live;
-    diag_info!("compacted vector store, reclaimed {dead} dead slot(s)");
-    write_vector_sidecar(path, data, 0).await?;
-    Ok(true)
+    if dead > 0 {
+        diag_info!("compacted vector store, reclaimed {dead} dead slot(s)");
+    }
+    write_vector_sidecar(path, data, 0).await
 }
 
 pub(crate) async fn save_vectors(path: &Path, data: &mut VectorStoreData) -> Cmd<()> {

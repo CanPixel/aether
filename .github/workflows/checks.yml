@@ -1,0 +1,93 @@
+name: Checks
+
+# Compile and test on every desktop platform, on every push and PR.
+#
+# build.yml already compiles all three, but only as part of a release-profile
+# installer build with llama.cpp and bundling behind it — so a Windows-only
+# compile error surfaces late and expensive. This job is dev-profile, no bundle,
+# and exists purely to answer "does it build and pass everywhere" quickly.
+#
+# It earns its keep on the per-platform FFI in src/content_blocking/ and
+# src/browsing_data/, where each platform is a separate implementation against a
+# different native API and two of the three cannot be compiled on a Mac.
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - '**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_HTTP_MULTIPLEXING: 'false'
+  CARGO_NET_RETRY: '10'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  web:
+    name: Lint and typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck:web
+
+  rust:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Never cancel the other two on one platform's failure: when the platform
+      # implementations diverge, knowing which ones broke is the whole point.
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+          - name: Linux
+            os: ubuntu-latest
+          - name: Windows
+            os: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Linux build dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
+            librsvg2-dev libssl-dev pkg-config
+
+      - name: Set libclang path
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: echo 'LIBCLANG_PATH=C:\Program Files\LLVM\bin' >> "$GITHUB_ENV"
+
+      # clippy compiles everything cargo check would, so it stands in for both.
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      # Only WebKit can say whether the rule file compiles, and a rejected list
+      # disables blocking silently at runtime. The unit tests check the rules
+      # against what the documentation claims; this checks them against WebKit.
+      - name: Verify content blocking rules compile
+        if: matrix.os == 'macos-latest'
+        working-directory: src-tauri
+        run: cargo run --example verify_content_rules

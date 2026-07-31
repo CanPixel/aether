@@ -1,8 +1,16 @@
 mod air;
+#[cfg(desktop)]
+mod browsing_data;
 mod chat;
 mod commands;
+// Not desktop-gated, unlike browsing_data: the platform submodules and the
+// apply/compile entry points are, but `content_blocking_status` is reported in
+// SystemStatus on every platform — including Android, where it says plainly that
+// there is no blocking. Gating the whole module leaves that call unresolved.
+mod content_blocking;
 mod diagnostics;
 mod extract;
+mod favicon;
 mod flow;
 mod iceberg;
 mod inference;
@@ -28,7 +36,7 @@ use llama_cpp_2::{
     sampling::LlamaSampler,
 };
 use reqwest::Client;
-use scraper::{Html, Selector};
+use scraper::{ElementRef, Html, Selector};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     cmp::Ordering,
@@ -38,7 +46,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering as AtomicOrdering},
-        Arc, Mutex,
+        Arc, Mutex, OnceLock,
     },
     time::{Duration, Instant},
 };
@@ -56,11 +64,14 @@ use tokio::task;
 use url::Url;
 
 use air::*;
+#[cfg(desktop)]
+use browsing_data::*;
 use chat::*;
 use commands::*;
 use diagnostics::{diag_error, diag_info, diag_warn};
 
 use extract::*;
+use favicon::*;
 use flow::*;
 use iceberg::*;
 use inference::*;
@@ -183,9 +194,162 @@ const PREFERRED_CHAT_MODEL_HINTS: [&str; 8] = [
     "gemma4", "gemma-4", "gemma3", "gemma-3", "gemma-2b", "2b", "gemma", "qwen",
 ];
 const MIN_CAPTURE_TEXT_LENGTH: usize = 120;
+const DEFAULT_SEARCH_ENGINE: &str = "duckduckgo";
+// One UA per platform, and it must not contradict what the engine leaks anyway.
+// A single macOS Safari string on every desktop target was the worst of both
+// worlds: on Windows and Linux it disagreed with navigator.platform, the WebGL
+// renderer and the font list, and a UA that contradicts its own engine is a
+// stronger fingerprint than an honest one. Each string below names the engine
+// actually running, so the crowd we join is the largest consistent one.
+//
+// Linux is the deliberate exception: WebKitGTK has no crowd to hide in, so we
+// present the Chrome/Linux string for compatibility and accept that a probe can
+// tell WebKit from Blink. See docs/SECURITY.md.
+#[cfg(target_os = "macos")]
+const BROWSER_USER_AGENT: &str =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
+#[cfg(target_os = "windows")]
+const BROWSER_USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36 Edg/137.0.0.0";
+#[cfg(all(unix, not(target_os = "macos"), not(target_os = "android")))]
+const BROWSER_USER_AGENT: &str =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
+#[cfg(target_os = "android")]
+const BROWSER_USER_AGENT: &str =
+    "Mozilla/5.0 (Linux; Android 15; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36";
+/// Tor's default SOCKS listener. Prefilled into the proxy field so the common
+/// case is a toggle; inert until the proxy is switched on.
+const DEFAULT_PROXY_URL: &str = "socks5://127.0.0.1:9050";
+
+/// Makes a page believe the machine is on UTC with an en-US locale.
+///
+/// Injected at *document start*, into every frame, which is the only moment that
+/// helps: `NATIVE_WEBVIEW_SCROLLBAR_SCRIPT` runs on page load, by which time a
+/// fingerprinting script has long since read the real values.
+///
+/// The point is uniformity, not noise. A randomised timezone would make the user
+/// unique, which is the opposite of the goal; UTC is a large, boring crowd that
+/// already exists. Same for the locale, which is the other free high-entropy bit
+/// sitting next to it.
+///
+/// What this is not: a defence against a determined fingerprinter. It is a
+/// JavaScript shim, so it is detectable — `Date.prototype.getTimezoneOffset`
+/// stringifies as native code here, but the *combination* of UTC with a
+/// non-UTC-looking Accept-Language or IP is itself a signal, and a page that
+/// creates a blank same-origin iframe can read pristine copies out of the fresh
+/// realm before this ever runs there. It removes two easy bits from casual
+/// fingerprinting. It does not make anyone anonymous. See docs/SECURITY.md.
 #[cfg(desktop)]
-const DESKTOP_BROWSER_USER_AGENT: &str =
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
+const TIMEZONE_PIN_SCRIPT: &str = r##"
+(() => {
+  // Frozen up front: once the overrides are installed, reading the real values
+  // back out of the patched objects is impossible, and the shim needs them to
+  // compute UTC equivalents.
+  const RealDate = Date;
+  const define = (target, name, value) => {
+    try {
+      Object.defineProperty(target, name, {
+        value,
+        writable: true,
+        enumerable: false,
+        configurable: true
+      });
+    } catch {
+      /* A page may have already sealed it; nothing to do but leave it alone. */
+    }
+  };
+
+  // Presenting as native matters: a script that prints its own source is the
+  // loudest possible "this browser is patched" signal.
+  const nativeString = (fn, name) => {
+    define(fn, 'toString', () => `function ${name}() { [native code] }`);
+    define(fn, 'name', name);
+    return fn;
+  };
+
+  define(
+    RealDate.prototype,
+    'getTimezoneOffset',
+    nativeString(function getTimezoneOffset() {
+      return 0;
+    }, 'getTimezoneOffset')
+  );
+
+  // getTimezoneOffset alone is not enough. The engine formats these from its own
+  // internal zone, not from that method, so a page reading `String(new Date())`
+  // would still see the real offset and the real zone abbreviation.
+  const utcVia = (name, method, options) =>
+    define(
+      RealDate.prototype,
+      name,
+      nativeString(function () {
+        return new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' })[method](this);
+      }, name)
+    );
+
+  define(
+    RealDate.prototype,
+    'toString',
+    nativeString(function toString() {
+      // Matches the engine's own shape, with the zone forced to GMT+0000.
+      const iso = this.toISOString();
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const d = this;
+      if (Number.isNaN(d.getTime())) return 'Invalid Date';
+      return (
+        `${days[d.getUTCDay()]} ${months[d.getUTCMonth()]} ` +
+        `${String(d.getUTCDate()).padStart(2, '0')} ${d.getUTCFullYear()} ` +
+        `${iso.slice(11, 19)} GMT+0000 (Coordinated Universal Time)`
+      );
+    }, 'toString')
+  );
+  utcVia('toLocaleString', 'format', { dateStyle: 'medium', timeStyle: 'medium' });
+  utcVia('toLocaleDateString', 'format', { dateStyle: 'medium' });
+  utcVia('toLocaleTimeString', 'format', { timeStyle: 'medium' });
+
+  // Intl is where a modern fingerprinting script actually looks: resolvedOptions
+  // hands over the IANA zone name, which is far more specific than an offset.
+  const patchResolved = (Ctor) => {
+    if (typeof Ctor !== 'function' || !Ctor.prototype || !Ctor.prototype.resolvedOptions) return;
+    const original = Ctor.prototype.resolvedOptions;
+    define(
+      Ctor.prototype,
+      'resolvedOptions',
+      nativeString(function resolvedOptions() {
+        const resolved = original.call(this);
+        if ('timeZone' in resolved) resolved.timeZone = 'UTC';
+        if ('locale' in resolved) resolved.locale = 'en-US';
+        return resolved;
+      }, 'resolvedOptions')
+    );
+  };
+  patchResolved(Intl.DateTimeFormat);
+  patchResolved(Intl.NumberFormat);
+  patchResolved(Intl.Collator);
+
+  // navigator.language sits next to the timezone in every fingerprint script and
+  // costs nothing to align. Accept-Language on the wire is set by the engine and
+  // is *not* covered here — see the doc comment.
+  for (const [name, value] of [
+    ['language', 'en-US'],
+    ['languages', Object.freeze(['en-US', 'en'])]
+  ]) {
+    try {
+      Object.defineProperty(Navigator.prototype, name, {
+        get: nativeString(function () {
+          return value;
+        }, `get ${name}`),
+        enumerable: true,
+        configurable: true
+      });
+    } catch {
+      /* Same reasoning as `define`. */
+    }
+  }
+})();
+"##;
+
 #[cfg(desktop)]
 const NATIVE_WEBVIEW_SCROLLBAR_SCRIPT: &str = r##"
 (() => {
@@ -323,17 +487,84 @@ impl Backend {
             #[cfg(desktop)]
             webviews: Mutex::new(NativeBrowserViews::default()),
             web_content_bounds: Mutex::new(WebContentBounds::default()),
-            client: Client::builder()
-                .user_agent("Aether/1.0 Tauri")
-                .build()
-                .expect("reqwest client"),
-            native_runtime: Arc::new(Mutex::new(NativeModelRuntime::default())),
+            // Starts direct and is rebuilt once settings are read, because
+            // Backend::new is sync and the proxy setting lives on disk. Nothing
+            // fetches before `apply_network_routing` has run — see its comment.
+            //
+            // Shares the webview's UA on purpose. This client serves the capture
+            // fallback in extract.rs, which re-fetches a page the user is reading;
+            // "Aether/1.0 Tauri" announced both the app and the fact that the
+            // request was a capture, from the user's own address.
+            network: Mutex::new(NetworkRouting::new(None)),
+            pin_timezone: AtomicBool::new(false),
+            favicon_cache: Mutex::new(HashMap::new()),
+            native_runtime: Arc::new(NativeModelRuntime::default()),
             vectors: tokio::sync::RwLock::new(None),
+            library: tokio::sync::RwLock::new(None),
             generation_cancelled: Arc::new(AtomicBool::new(false)),
             #[cfg(desktop)]
             window_geometry_saved_at: Mutex::new(None),
             #[cfg(desktop)]
             pending_downloads: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// The client for the app's own fetches, honouring the current proxy setting.
+    ///
+    /// Returns a clone rather than a guard: reqwest clients are internally
+    /// reference-counted and cheap to clone, and holding a `std::sync::Mutex`
+    /// guard across the `.await` of an actual request would be a deadlock.
+    pub(crate) fn http_client(&self) -> Client {
+        self.network
+            .lock()
+            .map(|routing| routing.client.clone())
+            // Poisoned only if a thread panicked mid-swap. Rebuilding direct here
+            // would leak, so hand back a client that cannot connect anywhere.
+            .unwrap_or_else(|_| NetworkRouting::new(None).client)
+    }
+
+    /// The proxy the *webviews* should be built with.
+    ///
+    /// Desktop only: Android tabs are native WebViews that wry cannot proxy, which
+    /// is why `proxy_platform_support` refuses there rather than half-applying it.
+    #[cfg(desktop)]
+    pub(crate) fn proxy(&self) -> Option<Url> {
+        self.network
+            .lock()
+            .ok()
+            .and_then(|routing| routing.proxy.clone())
+    }
+}
+
+/// Caches the browser privacy settings that a webview needs at build time.
+///
+/// Called at startup and after every settings write. Tabs are *not* rebuilt:
+/// both the proxy and the document-start script are fixed when a webview is
+/// created, so an open tab keeps what it was born with and only new tabs pick up
+/// the change. The Settings copy says so, which is why these read as needing a
+/// reload rather than taking effect underneath the user.
+pub(crate) fn apply_browser_privacy(state: &Backend, browser: &BrowserSettings) {
+    apply_network_routing(state, browser);
+    state
+        .pin_timezone
+        .store(timezone_pin_status(browser).active, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Points the app's HTTP client at whatever the settings now say.
+fn apply_network_routing(state: &Backend, browser: &BrowserSettings) {
+    let proxy = active_proxy_url(browser);
+    diag_info!(
+        "network routing: setting enabled={}, endpoint={}, applied={}",
+        browser.proxy.enabled,
+        browser.proxy.url,
+        proxy
+            .as_ref()
+            .map(Url::to_string)
+            .unwrap_or_else(|| "direct".to_string())
+    );
+    if let Ok(mut routing) = state.network.lock() {
+        if routing.proxy != proxy {
+            *routing = NetworkRouting::new(proxy);
         }
     }
 }
@@ -369,10 +600,13 @@ impl TabState {
             id: "browser".to_string(),
             name: "Browser".to_string(),
             category: "Web".to_string(),
-            home_url: "https://www.google.com".to_string(),
+            // TabState has no handle on AppSettings, so this reports the default
+            // engine rather than the user's chosen one. Harmless today: nothing
+            // in the renderer reads homeUrl. Worth revisiting if anything does.
+            home_url: search_engine_home(SearchPrefs::fallback()).to_string(),
             current_url: active
                 .map(|tab| tab.url.clone())
-                .unwrap_or_else(|| "https://www.google.com".to_string()),
+                .unwrap_or_else(|| search_engine_home(SearchPrefs::fallback()).to_string()),
             title: active
                 .map(|tab| tab.title.clone())
                 .unwrap_or_else(|| "Browser".to_string()),
@@ -402,7 +636,16 @@ impl TabState {
 
 impl ManagedTab {
     fn new(app_id: &str, raw_url: &str) -> Self {
-        let url = normalize_url(raw_url, "google");
+        Self::new_with_privacy(app_id, raw_url, false, None)
+    }
+
+    fn new_with_privacy(
+        app_id: &str,
+        raw_url: &str,
+        private: bool,
+        container: Option<String>,
+    ) -> Self {
+        let url = normalize_url(raw_url, SearchPrefs::fallback());
         let title = if url == START_PAGE_URL {
             "New tab".to_string()
         } else {
@@ -420,11 +663,15 @@ impl ManagedTab {
             history_index: 0,
             native_can_go_back: None,
             native_can_go_forward: None,
+            private,
+            // A private tab is already isolated in a non-persistent store, so a
+            // container on top of it would be meaningless.
+            container: if private { None } else { container },
         }
     }
 
-    fn navigate(&mut self, raw_url: &str, search_engine: &str) {
-        let url = normalize_url(raw_url, search_engine);
+    fn navigate(&mut self, raw_url: &str, search: SearchPrefs<'_>) {
+        let url = normalize_url(raw_url, search);
         self.url = url.clone();
         self.title = title_from_url(&url);
         self.favicon = favicon_for_url(&url);
@@ -480,6 +727,8 @@ impl ManagedTab {
             can_go_forward: self.can_go_forward() || self.native_can_go_forward.unwrap_or(false),
             favicon: self.favicon.clone(),
             theme_color: self.theme_color.clone(),
+            is_private: self.private,
+            container: self.container.clone(),
         }
     }
 }
@@ -767,6 +1016,33 @@ pub fn run() {
             diagnostics::set_log_path(&app_data_dir);
             app.manage(Backend::new(app_data_dir));
 
+            // Read synchronously, ahead of everything else that can touch the
+            // network. Deferring this to a spawned task would leave a window in
+            // which session restore warms a webview, or a favicon fetch starts,
+            // against the direct-connection client Backend::new starts with —
+            // and the cost of losing that race is the user's IP address.
+            {
+                let state = app.state::<Backend>();
+                match tauri::async_runtime::block_on(load_settings(&state.paths.settings_path)) {
+                    Ok(settings) => apply_browser_privacy(&state, &settings.browser),
+                    // This branch fails *open*, and it is the one place in the
+                    // feature that does. A missing settings file is not an error
+                    // here — load_settings returns defaults — so reaching this
+                    // means the file exists and could not be read, and there is
+                    // no way to know whether it said the proxy was on. Refusing
+                    // all network access would be the strict reading, but it
+                    // bricks the app over a transient I/O failure. The compromise
+                    // is direct browsing plus a logged warning; Settings will
+                    // show the proxy as off, which is at least the truth.
+                    Err(error) => diag_warn!("could not read settings for browser privacy: {error}"),
+                }
+            }
+
+            // Kicked off before the first webview is prewarmed below, so the
+            // compile has the whole of session restore to land in.
+            #[cfg(desktop)]
+            content_blocking::compile_on_startup(app.handle());
+
             // Restore the previous session before anything reads tab state or
             // prewarms a webview, so the restored active tab is the one warmed.
             #[cfg(desktop)]
@@ -820,6 +1096,7 @@ pub fn run() {
                 }
                 prewarm_local_models(&app_handle);
             }
+            reconcile_orphans_on_startup(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -854,6 +1131,9 @@ pub fn run() {
             aether_collections_reorder,
             aether_collections_delete,
             aether_collections_captures,
+            aether_browser_favicon,
+            #[cfg(desktop)]
+            aether_browser_clear_data,
             aether_capture_current_page,
             aether_capture_url,
             aether_capture_urls,
@@ -907,6 +1187,23 @@ pub fn run() {
         });
 }
 
+// Spawned rather than awaited in setup: it loads the vector store, which on a
+// large library is tens of megabytes, and blocking the window on that to fix a
+// condition almost no store is in would be the wrong trade. Spawning is safe
+// because reconcile_orphans holds the library lock for the whole operation, so a
+// command that arrives while it runs waits rather than racing it.
+fn reconcile_orphans_on_startup(app: &AppHandle) {
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let state = app_handle.state::<Backend>();
+        if let Err(error) = reconcile_orphans(&state).await {
+            // Never fatal. A store that cannot be reconciled is still a usable
+            // store; it just keeps whatever the interrupted delete left.
+            diag_warn!("could not reconcile orphaned records: {error}");
+        }
+    });
+}
+
 #[cfg(desktop)]
 fn prewarm_local_models(app: &AppHandle) {
     let state = app.state::<Backend>();
@@ -924,15 +1221,10 @@ fn prewarm_local_models(app: &AppHandle) {
             return;
         }
         let result = task::spawn_blocking(move || {
-            let mut runtime = runtime
-                .lock()
-                .map_err(|_| "Local model runtime is unavailable.".to_string())?;
             if let Some(model_path) = &chat_model {
-                runtime
-                    .ensure_model(NativeModelKind::Chat, model_path)
-                    .map_err(|error| {
-                        format!("chat model {} failed: {error}", model_label(model_path))
-                    })?;
+                runtime.warm_chat_model(model_path).map_err(|error| {
+                    format!("chat model {} failed: {error}", model_label(model_path))
+                })?;
             }
             if let Some(model_path) = &embedding_model {
                 runtime.warm_embedding_model(model_path).map_err(|error| {
@@ -977,7 +1269,7 @@ async fn navigate_active_tab(app: &AppHandle, state: &State<'_, Backend>, url: &
         let tab = tabs
             .active_tab_mut()
             .ok_or_else(|| "No active browser tab.".to_string())?;
-        tab.navigate(url, &settings.browser.default_search_engine);
+        tab.navigate(url, settings.browser.search_prefs());
         let result = (tab.id.clone(), tab.url.clone());
         tabs.dashboard_open = false;
         result
@@ -1905,6 +2197,58 @@ mod tests {
         assert!(loaded.chunks.is_empty());
     }
 
+    // A source the user deleted must not leave its vectors in the sidecar until
+    // some later save happens to cross the compaction thresholds. The text goes
+    // immediately — the metadata file is rewritten whole — so without this the
+    // residue of a deleted page is exactly the part that outlives the delete.
+    #[test]
+    fn deleting_reclaims_vector_slots_below_the_compaction_thresholds() {
+        let dir = TempDir::new();
+        let path = dir.path("chunks.json");
+
+        // Deliberately far below VECTOR_COMPACTION_MIN_SLOTS: this is the case the
+        // ratio thresholds decline to act on, and the case a delete must still clear.
+        let mut store = VectorStoreData::default();
+        store.push_chunks(
+            (0..4).map(|index| vector_chunk(&format!("c{index}"), vec![index as f32, 0.0, 0.0, 0.0])),
+        );
+        block_on(save_vectors(&path, &mut store)).expect("save");
+        assert_eq!(store.next_slot, 4);
+
+        store.chunks.retain(|chunk| chunk.capture_id != "c1");
+
+        // The routine save path declines, as designed.
+        assert!(
+            !block_on(compact_vectors_if_needed(&path, &mut store)).expect("threshold check"),
+            "four slots is well under the compaction floor"
+        );
+        assert_eq!(
+            fs::metadata(vector_data_path(&path)).expect("sidecar").len(),
+            4 * 4 * 4,
+            "the deleted chunk's vector is still on disk at this point"
+        );
+
+        // An explicit delete does not.
+        block_on(compact_vectors(&path, &mut store)).expect("forced compaction");
+        block_on(save_vector_metadata(&path, &store)).expect("save metadata");
+
+        assert_eq!(store.next_slot, 3);
+        assert_eq!(
+            fs::metadata(vector_data_path(&path)).expect("sidecar").len(),
+            3 * 4 * 4,
+            "the deleted chunk's vector should be gone from the file"
+        );
+
+        // Surviving chunks must still resolve to their own vectors afterwards.
+        let loaded = block_on(load_vectors(&path)).expect("load");
+        assert_eq!(loaded.chunks.len(), 3);
+        for chunk in &loaded.chunks {
+            let expected: f32 = chunk.capture_id.trim_start_matches('c').parse().unwrap();
+            assert_eq!(chunk.vector[0], expected, "{} lost its vector", chunk.capture_id);
+        }
+        assert!(loaded.chunks.iter().all(|chunk| chunk.capture_id != "c1"));
+    }
+
     #[test]
     fn vector_store_compacts_once_dead_slots_dominate() {
         let dir = TempDir::new();
@@ -2252,11 +2596,11 @@ mod tests {
             .iter()
             .map(|tab| tab.id.clone())
             .collect::<Vec<_>>();
-        let active = ids
-            .iter()
-            .any(|id| *id == session.active_tab_id)
-            .then(|| session.active_tab_id.clone())
-            .unwrap_or_else(|| ids[0].clone());
+        let active = if ids.contains(&session.active_tab_id) {
+            session.active_tab_id.clone()
+        } else {
+            ids[0].clone()
+        };
         assert_eq!(active, "tab-b");
 
         // A stale active id must fall back to the first tab, not to an empty string.
@@ -2269,11 +2613,11 @@ mod tests {
             .iter()
             .map(|tab| tab.id.clone())
             .collect::<Vec<_>>();
-        let active = ids
-            .iter()
-            .any(|id| *id == stale.active_tab_id)
-            .then(|| stale.active_tab_id.clone())
-            .unwrap_or_else(|| ids[0].clone());
+        let active = if ids.contains(&stale.active_tab_id) {
+            stale.active_tab_id.clone()
+        } else {
+            ids[0].clone()
+        };
         assert_eq!(active, "tab-a");
     }
 
@@ -2665,6 +3009,155 @@ mod tests {
         }
     }
 
+    fn library_fixture(captures: &[(&str, &str)]) -> LibraryData {
+        LibraryData {
+            collections: vec![CollectionSummary {
+                id: "hub-1".to_string(),
+                name: "Reading".to_string(),
+                description: String::new(),
+                icon: None,
+                created_at: "2026-07-01T00:00:00Z".to_string(),
+                updated_at: "2026-07-01T00:00:00Z".to_string(),
+                capture_count: captures.len(),
+                chunk_count: captures.len(),
+            }],
+            captures: captures
+                .iter()
+                .map(|(id, url)| CaptureSummary {
+                    id: (*id).to_string(),
+                    collection_id: "hub-1".to_string(),
+                    title: "Page".to_string(),
+                    url: (*url).to_string(),
+                    app_id: "browser".to_string(),
+                    captured_at: "2026-07-01T00:00:00Z".to_string(),
+                    chunk_count: 1,
+                    metadata: None,
+                    from_private_tab: false,
+                })
+                .collect(),
+            ..LibraryData::default()
+        }
+    }
+
+    // A crash between the two stores used to be able to leave a capture whose
+    // collection was already gone. It stays out of the hub list but keeps matching
+    // searches, so the user sees a source they deleted come back.
+    #[test]
+    fn reconciliation_drops_captures_whose_collection_is_gone() {
+        let mut library = library_fixture(&[("cap-1", "https://example.com/a")]);
+        library.captures.push(CaptureSummary {
+            id: "cap-orphan".to_string(),
+            collection_id: "hub-deleted".to_string(),
+            title: "Orphan".to_string(),
+            url: "https://example.com/orphan".to_string(),
+            app_id: "browser".to_string(),
+            captured_at: "2026-07-01T00:00:00Z".to_string(),
+            chunk_count: 1,
+            metadata: None,
+            from_private_tab: false,
+        });
+
+        assert_eq!(drop_captures_without_collections(&mut library), 1);
+        assert_eq!(library.captures.len(), 1);
+        assert_eq!(library.captures[0].id, "cap-1");
+    }
+
+    #[test]
+    fn reconciliation_leaves_a_healthy_library_alone() {
+        let mut library = library_fixture(&[("cap-1", "https://a"), ("cap-2", "https://b")]);
+
+        assert_eq!(drop_captures_without_collections(&mut library), 0);
+        assert_eq!(library.captures.len(), 2);
+    }
+
+    #[test]
+    fn reconciliation_drops_chunks_whose_capture_is_gone() {
+        let mut chunks = vec![
+            chunk_for_search("cap-1", "Kept", "https://example.com/a", "body"),
+            chunk_for_search("cap-gone", "Orphan", "https://example.com/b", "body"),
+        ];
+        let live = HashSet::from(["cap-1".to_string()]);
+
+        assert_eq!(retain_chunks_with_live_captures(&mut chunks, &live), 1);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].capture_id, "cap-1");
+    }
+
+    // The capture path writes the library entry first and the chunks second, so a
+    // capture that has committed but not yet indexed is the normal in-flight state.
+    // Reconciliation must not read that as an orphan and delete the entry out from
+    // under a capture that is still running.
+    #[test]
+    fn reconciliation_tolerates_a_capture_that_has_no_chunks_yet() {
+        let mut library = library_fixture(&[("cap-indexing", "https://example.com/new")]);
+        let mut chunks: Vec<ChunkRecord> = Vec::new();
+
+        assert_eq!(drop_captures_without_collections(&mut library), 0);
+        let live = library
+            .captures
+            .iter()
+            .map(|capture| capture.id.clone())
+            .collect::<HashSet<_>>();
+        assert_eq!(retain_chunks_with_live_captures(&mut chunks, &live), 0);
+        assert_eq!(
+            library.captures.len(),
+            1,
+            "a capture mid-index must survive reconciliation"
+        );
+    }
+
+    // The duplicate check moved out of the capture command so it could run twice:
+    // once before the embedding spend and once inside the write lock. Both callers
+    // depend on it comparing normalized keys rather than raw URLs, so the same page
+    // reached via an in-page anchor is not captured a second time.
+    //
+    // Note what this does *not* cover: normalize_capture_url_key keeps the query
+    // string, so `?utm_source=…` is still a distinct capture. That is the existing
+    // contract, asserted here so a change to it shows up as a failure rather than
+    // as a silent shift in what counts as the same page.
+    #[test]
+    fn duplicate_capture_detection_ignores_anchors_and_trailing_slashes() {
+        let library = library_fixture(&[("cap-1", "https://example.com/article")]);
+
+        for equivalent in [
+            "https://example.com/article",
+            "https://example.com/article#section-2",
+            "https://example.com/article/",
+        ] {
+            let key = normalize_capture_url_key(equivalent);
+            assert!(
+                is_duplicate_capture(&library, "hub-1", &key),
+                "{equivalent} should be the same page"
+            );
+        }
+
+        let tracked = normalize_capture_url_key("https://example.com/article?utm_source=news");
+        assert!(!is_duplicate_capture(&library, "hub-1", &tracked));
+    }
+
+    #[test]
+    fn duplicate_capture_detection_is_scoped_to_one_collection() {
+        let library = library_fixture(&[("cap-1", "https://example.com/article")]);
+        let key = normalize_capture_url_key("https://example.com/article");
+
+        assert!(is_duplicate_capture(&library, "hub-1", &key));
+        assert!(
+            !is_duplicate_capture(&library, "hub-2", &key),
+            "the same page in another hub is a separate capture, not a duplicate"
+        );
+    }
+
+    // Scope validation used to cost a second full read of library.json. It now runs
+    // against the library already in hand, so the miss has to still be an error —
+    // silently searching everything would quietly widen the user's chosen scope.
+    #[test]
+    fn finding_a_collection_reports_a_miss_rather_than_falling_back() {
+        let library = library_fixture(&[]);
+
+        assert_eq!(find_collection(&library, "hub-1").map(|c| c.name), Ok("Reading".to_string()));
+        assert!(find_collection(&library, "nope").is_err());
+    }
+
     // A remembered page name should outrank an incidental body mention, otherwise
     // the page the user is picturing gets buried under passing references to it.
     #[test]
@@ -2747,6 +3240,783 @@ mod tests {
                 "{raw} should not be capturable"
             );
         }
+    }
+
+    // A capture is persisted, so a click identifier left on the URL would outlive
+    // the visit and stay attached to the record forever.
+    #[test]
+    fn capture_target_strips_tracking_params() {
+        assert_eq!(
+            capture_target_url("https://example.com/post?utm_source=news&id=7&fbclid=abc"),
+            Ok("https://example.com/post?id=7".to_string())
+        );
+    }
+
+    #[test]
+    fn tracking_params_are_stripped_from_navigation() {
+        assert_eq!(
+            normalize_url(
+                "https://shop.example/item?gclid=1&utm_medium=cpc",
+                search_prefs("duckduckgo")
+            ),
+            "https://shop.example/item"
+        );
+    }
+
+    // The expensive mistake here is over-matching: a stripped parameter that the
+    // site actually needed breaks navigation in a way the user cannot diagnose.
+    #[test]
+    fn ordinary_query_parameters_survive() {
+        for url in [
+            "https://example.com/search?q=rust&page=2",
+            "https://example.com/watch?v=abc123",
+            "https://example.com/?id=1&sort=desc",
+        ] {
+            assert_eq!(
+                normalize_url(url, search_prefs("duckduckgo")),
+                url,
+                "{url} must be intact"
+            );
+        }
+    }
+
+    // Untouched input must come back byte for byte, not reserialised: a URL that
+    // round-trips through the parser can pick up a trailing slash or reordered
+    // query and stop matching the records already stored against it.
+    #[test]
+    fn urls_without_tracking_params_are_returned_verbatim() {
+        for url in [
+            "https://example.com/a/b",
+            "aether://start",
+            "http://localhost:3000/x?y=1",
+        ] {
+            assert_eq!(strip_tracking_params(url), url);
+        }
+    }
+
+    #[test]
+    fn stripping_the_only_param_drops_the_question_mark() {
+        assert_eq!(
+            strip_tracking_params("https://example.com/p?utm_source=x"),
+            "https://example.com/p"
+        );
+    }
+
+    // An unset or unrecognised engine must not fall back to the one that profiles.
+    #[test]
+    fn search_engine_falls_back_to_duckduckgo() {
+        assert_eq!(search_engine_prefix("nonsense"), "https://duckduckgo.com/?q=");
+        assert_eq!(normalize_search_engine_id("nonsense"), "duckduckgo");
+        assert_eq!(BrowserSettings::default().default_search_engine, "duckduckgo");
+        // An explicit choice is still honoured.
+        assert_eq!(search_engine_prefix("google"), "https://www.google.com/search?q=");
+    }
+
+    /// Search preferences for an engine with AI-free search left at its default.
+    fn search_prefs(engine: &str) -> SearchPrefs<'_> {
+        SearchPrefs {
+            engine,
+            ai_free: default_ai_free_search(),
+        }
+    }
+
+    fn plain_prefs(engine: &str) -> SearchPrefs<'_> {
+        SearchPrefs {
+            engine,
+            ai_free: false,
+        }
+    }
+
+    // The mechanisms are per-engine and unrelated to one another, so each is
+    // asserted against the exact string the engine documents. A wrong parameter
+    // fails silently: the search still works, it just quietly carries the AI
+    // answers the user asked not to see.
+    #[test]
+    fn ai_free_search_uses_each_engines_own_mechanism() {
+        // Google: the Web vertical. Note `&`, not `?` — the prefix already has one.
+        assert_eq!(
+            search_url("neural network", search_prefs("google")),
+            "https://www.google.com/search?q=neural+network&udm=14"
+        );
+        // Bing: a real operator, appended to the terms rather than to the URL.
+        assert_eq!(
+            search_url("neural network", search_prefs("bing")),
+            "https://www.bing.com/search?q=neural+network+-ai"
+        );
+        // DuckDuckGo: a whole host, so the prefix is replaced rather than extended.
+        assert_eq!(
+            search_url("neural network", search_prefs("duckduckgo")),
+            "https://noai.duckduckgo.com/?q=neural+network"
+        );
+    }
+
+    // The two engines with no URL-level opt-out must produce exactly the ordinary
+    // search URL. Inventing a parameter for them would be worse than doing nothing:
+    // an unrecognised parameter can change how the engine parses the rest.
+    #[test]
+    fn engines_without_an_opt_out_are_left_alone() {
+        for engine in ["yahoo", "ecosia"] {
+            assert_eq!(
+                search_url("neural network", search_prefs(engine)),
+                search_url("neural network", plain_prefs(engine)),
+                "{engine} has no mechanism, so the URL must be unchanged"
+            );
+        }
+    }
+
+    // Google's `-ai` is the trap this guards. It is a Bing operator; on Google it is
+    // an ordinary negative keyword, so it would drop every result that mentions
+    // "ai" — exactly the results an iCE concept like "neural network" needs.
+    #[test]
+    fn google_never_receives_the_bing_operator() {
+        let url = search_url("neural network", search_prefs("google"));
+        assert!(!url.contains("-ai"), "negative keyword leaked into Google: {url}");
+        assert!(url.ends_with("&udm=14"));
+    }
+
+    // Turning the setting off has to yield the untouched engine URL, or "off" is
+    // not actually off.
+    #[test]
+    fn disabling_ai_free_search_restores_the_plain_url() {
+        assert_eq!(
+            search_url("rust traits", plain_prefs("google")),
+            "https://www.google.com/search?q=rust+traits"
+        );
+        assert_eq!(
+            search_url("rust traits", plain_prefs("duckduckgo")),
+            "https://duckduckgo.com/?q=rust+traits"
+        );
+    }
+
+    // A bare query typed into the address bar goes through normalize_url, not
+    // search_url, so it needs its own assertion — this is the highest-traffic
+    // search path in the app and the easiest one to leave behind.
+    #[test]
+    fn the_address_bar_honours_ai_free_search() {
+        assert_eq!(
+            normalize_url("neural network", search_prefs("google")),
+            "https://www.google.com/search?q=neural+network&udm=14"
+        );
+        // A real URL is still passed through untouched.
+        assert_eq!(
+            normalize_url("https://example.com/x", search_prefs("google")),
+            "https://example.com/x"
+        );
+    }
+
+    // Only DuckDuckGo has an AI-free *home*, because only its opt-out is a host.
+    #[test]
+    fn only_the_alt_host_engine_changes_its_home_page() {
+        assert_eq!(
+            search_engine_home(search_prefs("duckduckgo")),
+            "https://noai.duckduckgo.com"
+        );
+        assert_eq!(
+            search_engine_home(plain_prefs("duckduckgo")),
+            "https://duckduckgo.com"
+        );
+        // udm=14 needs a query to apply to, so Google's home is unchanged.
+        assert_eq!(
+            search_engine_home(search_prefs("google")),
+            "https://www.google.com"
+        );
+    }
+
+    // What the Settings screen says out loud, derived from the same table the URL
+    // builder uses so the two cannot disagree.
+    #[test]
+    fn reported_mechanism_matches_the_selected_engine() {
+        let status = |engine: &str| {
+            ai_free_search_status(&BrowserSettings {
+                default_search_engine: engine.to_string(),
+                ai_free_search: true,
+                ..BrowserSettings::default()
+            })
+        };
+
+        assert_eq!(status("google").mechanism, "udm=14 Web filter");
+        assert_eq!(status("bing").mechanism, "-ai operator");
+        assert_eq!(status("duckduckgo").mechanism, "noai.duckduckgo.com");
+        assert!(status("google").available);
+
+        // The honest state: the setting is on, and the engine cannot honour it.
+        let yahoo = status("yahoo");
+        assert!(yahoo.enabled);
+        assert!(!yahoo.available);
+        assert!(yahoo.mechanism.is_empty());
+    }
+
+    // Existing installs predate the field, so a settings.json without it must read
+    // as on. Off would be a silent downgrade for every user who already had one.
+    #[test]
+    fn ai_free_search_defaults_on_for_an_existing_settings_file() {
+        let existing = serde_json::json!({ "defaultSearchEngine": "google" });
+        let parsed: BrowserSettings = serde_json::from_value(existing).expect("parse");
+        assert_eq!(parsed.default_search_engine, "google");
+        assert!(parsed.ai_free_search, "a missing field must not mean off");
+        assert!(BrowserSettings::default().ai_free_search);
+    }
+
+    // Only two transports exist below this layer. Anything else has to be refused
+    // at the settings screen, because the alternative is accepting it, failing to
+    // apply it, and browsing directly under a UI that says "proxy on".
+    #[test]
+    fn only_supported_proxy_schemes_are_accepted() {
+        for good in [
+            "socks5://127.0.0.1:9050",
+            "socks5://127.0.0.1:9150",
+            "http://192.168.1.10:8080",
+            "http://proxy.example.com:3128",
+        ] {
+            assert!(parse_proxy_url(good).is_ok(), "{good} should be accepted");
+        }
+
+        // This set has to match Tauri's own parse_proxy_url exactly, which maps
+        // only http and socks5. `https` and `socks5h` look reasonable and are
+        // refused there, so accepting them here would defer the failure to the
+        // first tab the user opens. A bare host:port parses as a URL with scheme
+        // "127.0.0.1" and no host, which is why it needs its own rejection.
+        for bad in [
+            "https://proxy.example.com:3128",
+            "socks5h://127.0.0.1:9050",
+            "socks4://127.0.0.1:9050",
+            "ftp://127.0.0.1:21",
+            "127.0.0.1:9050",
+            "not a url",
+            "",
+        ] {
+            assert!(parse_proxy_url(bad).is_err(), "{bad} should be refused");
+        }
+    }
+
+    // The webview needs socks5; reqwest needs socks5h or it resolves hostnames
+    // locally and leaks a DNS query for every host the app fetches.
+    #[test]
+    fn the_http_client_asks_the_proxy_to_resolve_dns() {
+        let url = parse_proxy_url("socks5://127.0.0.1:9050").expect("valid");
+        assert_eq!(reqwest_proxy_scheme(&url), "socks5h://127.0.0.1:9050");
+
+        // HTTP CONNECT already passes the hostname to the proxy, so it is untouched.
+        let http = parse_proxy_url("http://127.0.0.1:8080").expect("valid");
+        assert_eq!(reqwest_proxy_scheme(&http), "http://127.0.0.1:8080/");
+    }
+
+    // Neither Tor (9050), a Tor Browser bundle (9150), nor an arbitrary HTTP proxy
+    // shares a default port, so a guess would be wrong more often than right.
+    #[test]
+    fn a_proxy_address_must_name_its_port() {
+        assert!(parse_proxy_url("socks5://127.0.0.1").is_err());
+        assert!(parse_proxy_url("http://proxy.example.com").is_err());
+    }
+
+    fn proxied(enabled: bool, url: &str) -> BrowserSettings {
+        BrowserSettings {
+            proxy: ProxySettings {
+                enabled,
+                url: url.to_string(),
+            },
+            ..BrowserSettings::default()
+        }
+    }
+
+    // `active` is the field the UI keys its "IP hidden" claim off, so it has to be
+    // false in every state where traffic is not in fact being proxied.
+    #[test]
+    fn proxy_is_only_active_when_it_can_actually_carry_traffic() {
+        let off = proxy_status(&proxied(false, DEFAULT_PROXY_URL));
+        assert!(!off.active, "a disabled proxy is not active");
+
+        // Enabled but unusable. The setting reads as on and nothing is proxied —
+        // the state that must never be reported as protection.
+        let broken = proxy_status(&proxied(true, "socks4://127.0.0.1:9050"));
+        assert!(broken.enabled);
+        assert!(!broken.active, "an invalid endpoint is not active");
+        assert!(active_proxy_url(&proxied(true, "socks4://127.0.0.1:9050")).is_none());
+
+        let on = proxy_status(&proxied(true, DEFAULT_PROXY_URL));
+        // Only assert the positive case where the platform supports it at all;
+        // on macOS 13 or Android `available` is legitimately false.
+        if on.available {
+            assert!(on.active);
+            assert_eq!(
+                active_proxy_url(&proxied(true, DEFAULT_PROXY_URL))
+                    .map(|url| url.to_string())
+                    .as_deref(),
+                Some("socks5://127.0.0.1:9050")
+            );
+        } else {
+            assert!(!on.active, "unsupported platforms must not report active");
+            assert!(on.unsupported_reason.is_some(), "and must say why");
+        }
+    }
+
+    // The webviews and the app's own HTTP client must agree, always. If they ever
+    // disagree, every visited origin gets a favicon request from the real IP.
+    #[test]
+    fn webview_and_http_client_read_the_same_routing() {
+        for settings in [
+            proxied(false, DEFAULT_PROXY_URL),
+            proxied(true, DEFAULT_PROXY_URL),
+            proxied(true, "socks4://bad:1"),
+        ] {
+            let expected = active_proxy_url(&settings);
+            let routing = NetworkRouting::new(expected.clone());
+            assert_eq!(
+                routing.proxy, expected,
+                "the client was built with different routing than the tabs"
+            );
+        }
+    }
+
+    // Proxying is off unless asked for, and a settings.json written before the
+    // field existed must not silently acquire a proxy.
+    #[test]
+    fn proxy_defaults_off_with_tors_port_prefilled() {
+        let existing = serde_json::json!({ "defaultSearchEngine": "google" });
+        let parsed: BrowserSettings = serde_json::from_value(existing).expect("parse");
+        assert!(!parsed.proxy.enabled);
+        assert_eq!(parsed.proxy.url, DEFAULT_PROXY_URL);
+        assert!(active_proxy_url(&parsed).is_none());
+    }
+
+    // A proxy endpoint that parses but cannot carry traffic is the worst outcome
+    // available: browsing continues, unproxied, while Settings reads "on". Each
+    // case here is one that would produce exactly that if it were accepted.
+    #[test]
+    fn unusable_proxy_endpoints_are_refused() {
+        for good in [
+            "socks5://127.0.0.1:9050",
+            "socks5://127.0.0.1:9150",
+            "http://127.0.0.1:8080",
+            "http://proxy.example.com:3128",
+        ] {
+            assert!(parse_proxy_url(good).is_ok(), "{good} should be accepted");
+        }
+
+        for bad in [
+            "",
+            "   ",
+            // Real Tor-adjacent mistakes: a scheme wry cannot carry, and the bare
+            // host:port people type from memory.
+            "socks4://127.0.0.1:9050",
+            "socks://127.0.0.1:9050",
+            // Rejected even though reqwest would take it: tauri-runtime-wry maps
+            // only `http` and `socks5` to a ProxyConfig, so an https endpoint
+            // would proxy the app's fetches and leave every tab going direct.
+            "https://proxy.example.com:3128",
+            "127.0.0.1:9050",
+            "localhost:9050",
+            // Parses as a URL, but there is no port to connect to and no default
+            // worth guessing between Tor's 9050 and a bundle's 9150.
+            "socks5://127.0.0.1",
+            "not a url",
+        ] {
+            assert!(
+                parse_proxy_url(bad).is_err(),
+                "{bad:?} should have been refused"
+            );
+        }
+    }
+
+    // `active` is the only thing the UI should trust, so it has to stay false in
+    // every partial state rather than tracking the checkbox.
+    #[test]
+    fn proxy_reports_active_only_when_traffic_really_moves() {
+        let status = |enabled: bool, url: &str| {
+            proxy_status(&BrowserSettings {
+                proxy: ProxySettings {
+                    enabled,
+                    url: url.to_string(),
+                },
+                ..BrowserSettings::default()
+            })
+        };
+
+        let off = status(false, DEFAULT_PROXY_URL);
+        assert!(!off.enabled && !off.active);
+
+        // On, but pointed at something unusable: enabled stays true because that
+        // is what the user set, and active is false because nothing is proxied.
+        let broken = status(true, "socks4://127.0.0.1:9050");
+        assert!(broken.enabled, "the user's choice is reported back");
+        assert!(!broken.active, "an unusable endpoint is not active");
+
+        let on = status(true, DEFAULT_PROXY_URL);
+        assert_eq!(on.active, on.available, "usable config follows platform support");
+    }
+
+    // Off unless asked for, and — unlike the proxy — off is also the right answer
+    // for a fresh install, because the cost lands on ordinary browsing.
+    #[test]
+    fn timezone_pinning_defaults_off_and_reports_honestly() {
+        let existing = serde_json::json!({ "defaultSearchEngine": "google" });
+        let parsed: BrowserSettings = serde_json::from_value(existing).expect("parse");
+        assert!(!parsed.pin_timezone, "a missing field must not mean on");
+
+        let off = timezone_pin_status(&parsed);
+        assert!(!off.enabled && !off.active);
+
+        let on = timezone_pin_status(&BrowserSettings {
+            pin_timezone: true,
+            ..BrowserSettings::default()
+        });
+        assert!(on.enabled);
+        // `active` tracks what pages are actually told, which on a platform with
+        // nowhere to inject the script is nothing.
+        assert_eq!(on.active, on.available);
+        assert_eq!(on.available, timezone_pin_platform_support().is_ok());
+    }
+
+    // The script only helps if it runs before page scripts and in every frame, and
+    // only stays useful if it covers the places a fingerprinter actually reads.
+    // Asserting on the source is crude, but the alternative is no coverage at all
+    // for a string that is easy to edit into uselessness.
+    #[cfg(desktop)]
+    #[test]
+    fn the_timezone_script_covers_the_readable_surfaces() {
+        for needle in [
+            // Offset, and the string forms the engine builds from its own zone
+            // rather than from getTimezoneOffset.
+            "getTimezoneOffset",
+            "toLocaleString",
+            "toLocaleDateString",
+            "toLocaleTimeString",
+            // Where a modern script actually looks: the IANA zone name.
+            "resolvedOptions",
+            "Intl.DateTimeFormat",
+            "'UTC'",
+            // The other free bit sitting next to the timezone.
+            "language",
+            "languages",
+        ] {
+            assert!(
+                TIMEZONE_PIN_SCRIPT.contains(needle),
+                "the pinning script no longer covers {needle}"
+            );
+        }
+
+        // A shim that prints its own source announces itself louder than the zone
+        // it was hiding.
+        assert!(
+            TIMEZONE_PIN_SCRIPT.contains("[native code]"),
+            "overrides must not be trivially detectable via toString"
+        );
+    }
+
+    // A settings file written before the proxy existed must read as off. On would
+    // point every request at a daemon the user never installed.
+    #[test]
+    fn proxy_defaults_off_for_an_existing_settings_file() {
+        let existing = serde_json::json!({ "defaultSearchEngine": "google" });
+        let parsed: BrowserSettings = serde_json::from_value(existing).expect("parse");
+        assert!(!parsed.proxy.enabled, "a missing field must not mean on");
+        assert_eq!(parsed.proxy.url, DEFAULT_PROXY_URL);
+    }
+
+    // The whole point of the feature: one endpoint for tabs and for the app's own
+    // fetches. If these ever came from different places, favicon requests would
+    // keep leaving from the user's own address while tabs looked proxied.
+    #[test]
+    fn tabs_and_app_fetches_read_the_same_endpoint() {
+        let browser = BrowserSettings {
+            proxy: ProxySettings {
+                enabled: true,
+                url: DEFAULT_PROXY_URL.to_string(),
+            },
+            ..BrowserSettings::default()
+        };
+
+        let for_tabs = active_proxy_url(&browser);
+        let for_client = NetworkRouting::new(active_proxy_url(&browser)).proxy;
+        assert_eq!(for_tabs, for_client);
+
+        // And both go direct together when it is switched off.
+        let off = BrowserSettings::default();
+        assert!(active_proxy_url(&off).is_none());
+        assert!(NetworkRouting::new(active_proxy_url(&off)).proxy.is_none());
+    }
+
+    // Library hygiene rather than protection: the mark is what keeps a private
+    // session's sources findable once they are saved, so they can be purged as a
+    // group. It must survive a round trip, and must stay absent from every
+    // ordinary record so library.json is untouched for normal captures.
+    #[test]
+    fn private_origin_survives_the_library_round_trip() {
+        let capture = CaptureSummary {
+            id: "capture".to_string(),
+            collection_id: "hub".to_string(),
+            title: "Title".to_string(),
+            url: "https://example.com/".to_string(),
+            app_id: "browser".to_string(),
+            captured_at: now(),
+            chunk_count: 1,
+            metadata: None,
+            from_private_tab: true,
+        };
+
+        let json = serde_json::to_value(&capture).expect("serialize");
+        assert_eq!(json["fromPrivateTab"], serde_json::json!(true));
+        let parsed: CaptureSummary = serde_json::from_value(json).expect("parse");
+        assert!(parsed.from_private_tab);
+
+        // Ordinary captures leave library.json byte-identical to before the field
+        // existed, and a record written before it reads as not-private.
+        let ordinary = CaptureSummary {
+            from_private_tab: false,
+            ..capture
+        };
+        let json = serde_json::to_value(&ordinary).expect("serialize");
+        assert!(
+            json.get("fromPrivateTab").is_none(),
+            "false must not be written out"
+        );
+        let parsed: CaptureSummary = serde_json::from_value(json).expect("parse");
+        assert!(!parsed.from_private_tab);
+    }
+
+    // The end-to-end check the unit tests above cannot make: that the client the
+    // app actually fetches with reaches the internet from somewhere else.
+    //
+    // Ignored by default because it needs a running SOCKS5 proxy and the network.
+    // With Tor on its default port:
+    //
+    //     tor --SocksPort 9050 &
+    //     cargo test proxy_actually_changes_the_source_address -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore = "requires a live SOCKS5 proxy on 127.0.0.1:9050 and network access"]
+    async fn proxy_actually_changes_the_source_address() {
+        const ECHO: &str = "https://api.ipify.org";
+
+        let direct = NetworkRouting::new(None);
+        let direct_ip = direct
+            .client
+            .get(ECHO)
+            .send()
+            .await
+            .expect("direct request failed")
+            .text()
+            .await
+            .expect("direct body");
+
+        let proxy = active_proxy_url(&BrowserSettings {
+            proxy: ProxySettings {
+                enabled: true,
+                url: DEFAULT_PROXY_URL.to_string(),
+            },
+            ..BrowserSettings::default()
+        })
+        .expect("proxy should be usable on this platform");
+
+        let routed = NetworkRouting::new(Some(proxy));
+        let routed_ip = routed
+            .client
+            .get(ECHO)
+            .send()
+            .await
+            .expect("proxied request failed — is the SOCKS5 proxy running?")
+            .text()
+            .await
+            .expect("proxied body");
+
+        assert_ne!(
+            direct_ip.trim(),
+            routed_ip.trim(),
+            "the proxied client reported the same address as the direct one, \
+             which means the proxy was not applied"
+        );
+    }
+
+    // The reason `search` exists on CreateTabInput at all: these names would each be
+    // read as a hostname by normalize_url's dot heuristic and never searched for.
+    #[test]
+    fn concept_names_that_look_like_hosts_are_still_searched() {
+        for concept in ["Node.js", "Web 2.0", "ASP.NET"] {
+            let url = search_url(concept, search_prefs("duckduckgo"));
+            assert!(
+                url.starts_with("https://noai.duckduckgo.com/?q="),
+                "{concept} was not searched for: {url}"
+            );
+        }
+        // And the heuristic really would have mangled the dotted one.
+        assert_eq!(
+            normalize_url("Node.js", search_prefs("duckduckgo")),
+            "https://Node.js",
+            "this is exactly why the search field is separate from url"
+        );
+    }
+
+    // Every one of these is a silent failure: nothing looks wrong, the tab just
+    // quietly persists. The session filter is the one most likely to be lost to a
+    // refactor, since it reads as an unrelated start-page exclusion.
+    #[test]
+    fn private_tabs_are_excluded_from_the_saved_session() {
+        let tabs = [
+            ManagedTab::new_with_privacy("browser", "https://example.com/normal", false, None),
+            ManagedTab::new_with_privacy("browser", "https://example.com/secret", true, None),
+            ManagedTab::new("browser", START_PAGE_URL),
+        ];
+        // Mirrors the filter in persist_session_tabs.
+        let persisted = tabs
+            .iter()
+            .filter(|tab| {
+                !tab.private && tab.url != START_PAGE_URL && !tab.url.starts_with("aether://")
+            })
+            .map(|tab| tab.url.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(persisted, vec!["https://example.com/normal".to_string()]);
+    }
+
+    // The identifier must be a pure function of the name: if it drifted between
+    // launches, the container's cookies would be orphaned on disk and the user
+    // would be logged out every restart with no visible cause.
+    #[test]
+    fn container_store_ids_are_stable_and_distinct() {
+        assert_eq!(
+            container_data_store_id("work"),
+            container_data_store_id("work")
+        );
+        assert_eq!(
+            container_data_store_id("Work  "),
+            container_data_store_id("work"),
+            "names should be compared case- and whitespace-insensitively"
+        );
+        assert_ne!(
+            container_data_store_id("work"),
+            container_data_store_id("personal")
+        );
+    }
+
+    // A private tab is already in a non-persistent store; a persistent container
+    // on top of it would defeat the point entirely.
+    #[test]
+    fn a_private_tab_never_keeps_a_container() {
+        let tab = ManagedTab::new_with_privacy(
+            "browser",
+            "https://example.com",
+            true,
+            Some("work".to_string()),
+        );
+        assert!(tab.private);
+        assert_eq!(tab.container, None);
+    }
+
+    #[test]
+    fn an_ordinary_tab_keeps_its_container() {
+        let tab = ManagedTab::new_with_privacy(
+            "browser",
+            "https://example.com",
+            false,
+            Some("work".to_string()),
+        );
+        assert_eq!(tab.container.as_deref(), Some("work"));
+        assert_eq!(tab.summary(true).container.as_deref(), Some("work"));
+    }
+
+    #[test]
+    fn privacy_is_off_unless_asked_for_and_survives_into_the_summary() {
+        let normal = ManagedTab::new("browser", "https://example.com");
+        assert!(!normal.private);
+        assert!(!normal.summary(true).is_private);
+
+        let private = ManagedTab::new_with_privacy("browser", "https://example.com", true, None);
+        assert!(private.private);
+        assert!(private.summary(true).is_private);
+    }
+
+    // Inline JavaScript is a text node, so `.text()` collected it as prose and
+    // embedded it. This is the exact page shape that demonstrated the bug.
+    #[test]
+    fn body_text_excludes_scripts_styles_and_page_chrome() {
+        let document = Html::parse_document(
+            r#"<html><body>
+                 <nav>Home About Contact</nav>
+                 <article>The actual article body text.</article>
+                 <script>var tracker = {id:"abc123"}; function track(){}</script>
+                 <style>.ad { display: none; }</style>
+                 <footer>Copyright 2026. Privacy Policy.</footer>
+               </body></html>"#,
+        );
+        let text = select_body_text(&document);
+        assert_eq!(text, "The actual article body text.");
+        assert!(!text.contains("var tracker"), "script source leaked: {text}");
+        assert!(!text.contains("display"), "stylesheet leaked: {text}");
+        assert!(!text.contains("Home About"), "nav leaked: {text}");
+        assert!(!text.contains("Copyright"), "footer leaked: {text}");
+    }
+
+    #[test]
+    fn body_text_keeps_nested_content_inside_ordinary_elements() {
+        let document = Html::parse_document(
+            r#"<html><body><div><p>First <em>emphasised</em> part.</p>
+               <ul><li>One</li><li>Two</li></ul></div></body></html>"#,
+        );
+        assert_eq!(
+            select_body_text(&document),
+            "First emphasised part. One Two"
+        );
+    }
+
+    // The regression this guards: `body_text` came from the live DOM's innerText
+    // while the stripping only ever applied to the cloned `html`, so the cleaning
+    // had no effect on what was actually indexed.
+    #[test]
+    fn a_snapshot_prefers_the_cleaned_html_over_raw_inner_text() {
+        let snapshot = BrowserPageSnapshot {
+            url: Some("https://example.com/post".to_string()),
+            title: Some("Post".to_string()),
+            description: Some(String::new()),
+            html: Some(
+                "<html><body><nav>Home About Contact</nav><article>Cleaned article \
+                 body, written at enough length that the capture comfortably clears \
+                 the minimum readable-text threshold on its own merits.</article>\
+                 <footer>Copyright 2026.</footer></body></html>"
+                    .to_string(),
+            ),
+            body_text: Some(
+                "Home About Contact We use cookies to improve your experience. \
+                 Accept All. Cleaned article body. Copyright 2026."
+                    .to_string(),
+            ),
+        };
+        let page = snapshot_to_captured_page(snapshot, "fallback").unwrap();
+        assert!(page.text.contains("Cleaned article body"));
+        assert!(!page.text.contains("We use cookies"), "{}", page.text);
+        assert!(!page.text.contains("Home About Contact"), "{}", page.text);
+    }
+
+    // A page whose cleaned clone is too thin — a heavily scripted app, say —
+    // must still capture rather than fail, so innerText remains the fallback.
+    #[test]
+    fn a_snapshot_falls_back_to_inner_text_when_the_clone_is_empty() {
+        let long_text = "Readable text recovered from innerText. ".repeat(6);
+        let snapshot = BrowserPageSnapshot {
+            url: Some("https://example.com/app".to_string()),
+            title: Some("App".to_string()),
+            description: Some(String::new()),
+            html: Some("<html><body><div id=\"root\"></div></body></html>".to_string()),
+            body_text: Some(long_text.clone()),
+        };
+        let page = snapshot_to_captured_page(snapshot, "fallback").unwrap();
+        assert!(page.text.contains("recovered from innerText"));
+    }
+
+    // The old single constant claimed macOS Safari on every desktop target, which
+    // contradicted navigator.platform everywhere except macOS.
+    #[test]
+    fn user_agent_matches_the_platform_it_is_compiled_for() {
+        if cfg!(target_os = "macos") {
+            assert!(BROWSER_USER_AGENT.contains("Macintosh"));
+            assert!(BROWSER_USER_AGENT.contains("Safari"));
+        } else if cfg!(target_os = "windows") {
+            assert!(BROWSER_USER_AGENT.contains("Windows NT"));
+        } else if cfg!(target_os = "android") {
+            assert!(BROWSER_USER_AGENT.contains("Android"));
+        } else {
+            assert!(BROWSER_USER_AGENT.contains("X11; Linux"));
+        }
+        // The webview and the Rust client must not disagree; the capture fallback
+        // used to identify itself as "Aether/1.0 Tauri".
+        assert!(!BROWSER_USER_AGENT.contains("Aether"));
     }
 
     #[test]
@@ -3132,3 +4402,4 @@ mod tests {
         }
     }
 }
+

@@ -10,7 +10,11 @@
     radial-gradient(circle at 16% 8%, rgb(var(--surface-rgb) / 0.96), transparent 20%),
     radial-gradient(circle at 82% 14%, rgb(var(--sky-mist-rgb) / 0.24), transparent 26%),
     radial-gradient(circle at 48% 92%, rgb(var(--aurora-rgb) / 0.14), transparent 34%),
-    linear-gradient(180deg, rgb(var(--surface-tint-warm-rgb) / 0.8), rgb(var(--surface-tint-rgb) / 0.58));
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-tint-warm-rgb) / 0.8),
+      rgb(var(--surface-tint-rgb) / 0.58)
+    );
 }
 
 .air-view::before {
@@ -418,7 +422,11 @@
   border-radius: 8px;
   padding: 14px;
   background:
-    linear-gradient(180deg, rgb(var(--surface-rgb) / 0.82), rgb(var(--surface-tint-warm-rgb) / 0.72)),
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-rgb) / 0.82),
+      rgb(var(--surface-tint-warm-rgb) / 0.72)
+    ),
     rgb(var(--surface-rgb) / 0.7);
   color: rgb(var(--ink-slate-rgb));
   font-family: 'SFMono-Regular', 'SF Mono', Consolas, monospace;

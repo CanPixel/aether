@@ -1,7 +1,12 @@
 import {
+  AiFreeSearchStatus,
   BrowserTabSummary,
+  ContentBlockingStatus,
   IcebergItem,
+  ModelDownloadChoice,
+  ProxyStatus,
   SavedIcebergSummary,
+  TimezonePinStatus,
   UpdateInstallProgress
 } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
@@ -194,6 +199,111 @@ function formatBrandedModelName(
   return 'AiON'
 }
 
+/// One position on the chat-model slider.
+export interface ChatModelRung {
+  // Stable React key: the ladder id for a known model, the path for anything else.
+  key: string
+  name: string
+  // One short phrase on what picking this costs or buys.
+  detail: string
+  // The installed model's path. Undefined means this rung is a gap — the model is
+  // known to the app but not on disk, so the rung is shown greyed as an install
+  // affordance rather than hidden. Hiding it is what sent people hunting for the
+  // onboarding modal.
+  model?: string
+  // Set when the app can fetch this rung itself. A model the user placed by hand
+  // has no download to offer, so a gap for it would be unactionable — those only
+  // ever appear as rungs when already installed.
+  installChoice?: ModelDownloadChoice
+}
+
+// Ordered by capability, cheapest first, because that is what makes the control a
+// slider rather than a list: moving right always means "more model, more time".
+//
+// `canonical` marks the two the app can download. Those always get a rung, present
+// or not. Anything else appears only when it is actually installed.
+const CHAT_MODEL_LADDER: Array<{
+  id: string
+  name: string
+  detail: string
+  installChoice?: ModelDownloadChoice
+  matches: (normalized: string, isCommunity: boolean) => boolean
+}> = [
+  {
+    id: 'tiny',
+    name: 'AiON TiNY',
+    detail: 'Community build',
+    matches: (normalized, isCommunity) => normalized.includes('gemma-4-e2b') && isCommunity
+  },
+  {
+    id: 'lite',
+    name: 'AiON LiTE',
+    detail: 'Faster, everyday answers',
+    installChoice: 'lite',
+    matches: (normalized, isCommunity) => normalized.includes('gemma-4-e2b') && !isCommunity
+  },
+  {
+    id: 'wise',
+    name: 'AiON WiSE',
+    detail: 'Deeper synthesis and iCE maps',
+    installChoice: 'wise',
+    matches: (normalized) => normalized.includes('gemma-4-e4b')
+  },
+  {
+    id: 'prime',
+    name: 'AiON PRiME',
+    detail: 'Largest, slowest',
+    matches: (normalized) => normalized.includes('gemma-4-12b')
+  }
+]
+
+function modelMatchesRung(model: string, rung: (typeof CHAT_MODEL_LADDER)[number]): boolean {
+  const filename = model.split(/[\\/]/).pop() ?? model
+  const normalized = filename.replace(/\.gguf$/i, '').toLowerCase()
+  return rung.matches(normalized, /q4_k_m|lmstudio|community/.test(model.toLowerCase()))
+}
+
+/**
+ * The slider's positions, given what is installed.
+ *
+ * Returns the two downloadable rungs plus any other installed chat model, so a
+ * hand-placed model is still selectable and is never silently dropped from the UI.
+ * Empty only when nothing is installed *and* nothing is installable, which is not a
+ * state this app reaches — the caller shows its own "Install Models" button when
+ * every rung is a gap.
+ */
+export function chatModelRungs(installed: string[]): ChatModelRung[] {
+  const claimed = new Set<string>()
+
+  const rungs: ChatModelRung[] = CHAT_MODEL_LADDER.flatMap((rung) => {
+    const model = installed.find((candidate) => modelMatchesRung(candidate, rung))
+    if (model) claimed.add(model)
+    // A gap is only worth showing when the app can act on it.
+    if (!model && !rung.installChoice) return []
+    return [
+      {
+        key: rung.id,
+        name: rung.name,
+        detail: rung.detail,
+        model,
+        installChoice: rung.installChoice
+      }
+    ]
+  })
+
+  // Anything the ladder does not recognise, appended so it stays reachable.
+  const extras = installed
+    .filter((model) => !claimed.has(model))
+    .map((model) => ({
+      key: model,
+      name: formatBrandedModelName(model, 'chat') ?? model,
+      detail: 'Installed locally',
+      model
+    }))
+
+  return [...rungs, ...extras]
+}
+
 export function formatVisibleModelName(
   model?: string | null,
   options: { developerMode?: boolean; role?: 'chat' | 'embedding' } = {}
@@ -299,4 +409,82 @@ export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {
   }
 
   return baseActions
+}
+
+// One sentence describing the protection this build actually has, built from what
+// the backend reports rather than from the user agent.
+//
+// The Windows wording is the point of the whole thing. Blocking there is per
+// request against a host list, and WebView2 has no equivalent of the rule that
+// stops third-party cookies — so a tracker that is not on the list still sets
+// them. Saying "tracker blocking is on" and stopping there would be true and
+// misleading at the same time.
+export function describeContentBlocking(status: ContentBlockingStatus): string {
+  if (!status.available) {
+    return 'Not available on this platform. Requests are not filtered.'
+  }
+
+  const blocked = `Blocks ${countLabel(status.blockedHostCount, 'known tracker domain')} using ${status.engine}.`
+
+  return status.blocksThirdPartyCookies
+    ? `${blocked} Third-party cookies are blocked too.`
+    : `${blocked} Third-party cookies are not blocked on this platform, so a tracker that is not on the list can still set them.`
+}
+
+// Same contract as describeContentBlocking: say what is actually happening for the
+// engine in use, including when the answer is "nothing". A toggle that reads as on
+// while the selected engine ignores it is the failure this exists to prevent.
+export function describeAiFreeSearch(status: AiFreeSearchStatus, engineName: string): string {
+  if (!status.available) {
+    return `${engineName} has no way to turn AI answers off from a search link, so this setting does nothing while it is selected. Google, Bing and DuckDuckGo all do.`
+  }
+  return status.enabled
+    ? `Searches ask ${engineName} for results without AI-generated answers, using its ${status.mechanism}.`
+    : `Off. ${engineName} can suppress AI-generated answers via its ${status.mechanism} when enabled.`
+}
+
+// Deliberately never says "anonymous". A proxy hides the IP address and nothing
+// else: the browser still presents the same fingerprint to every site, so two
+// visits are still joinable to each other even when neither is joinable to a
+// location. Overstating that here is how someone ends up trusting this with
+// something it was never built to carry. See docs/PRINCIPLES.md.
+export function describeProxy(status: ProxyStatus): string {
+  if (!status.available) {
+    return status.unsupportedReason ?? 'Proxy support is unavailable on this platform.'
+  }
+  if (!status.enabled) {
+    return 'Off. Web traffic goes directly from your own IP address.'
+  }
+  if (!status.active) {
+    return 'On, but the address is not usable — traffic is not being proxied. Check the endpoint below.'
+  }
+  return `Web traffic and the app's own fetches both route through ${status.url}. This hides your IP address from sites; it does not hide your browser fingerprint.`
+}
+
+// Says what it removes and what it does not, because the gap is where someone
+// would otherwise assume too much: two bits of entropy is a real improvement and
+// nothing like anonymity. See docs/SECURITY.md.
+export function describeTimezonePin(status: TimezonePinStatus): string {
+  if (!status.available) {
+    return status.unsupportedReason ?? 'Timezone pinning is unavailable on this platform.'
+  }
+  return status.active
+    ? 'Pages are told UTC and en-US instead of your own timezone and language, removing two of the bits sites use to recognise a browser. Local times on sites will read wrong.'
+    : 'Off. Pages can read your exact timezone and language, which together narrow down who you are. Turning this on reports UTC instead — at the cost of wrong local times.'
+}
+
+export function timezonePinChangeNotice(enabled: boolean): string {
+  return enabled
+    ? 'Timezone pinning enabled. Tabs opened from now on report UTC; reload existing tabs to apply it.'
+    : 'Timezone pinning disabled. Tabs opened from now on report your real timezone.'
+}
+
+// Open tabs keep whatever routing they were created with, because a webview's
+// proxy is fixed when it is built. Worth saying plainly at the moment of change:
+// a user who flips this on and watches an already-open tab keep loading has been
+// told something true, rather than left to assume the switch failed.
+export function proxyChangeNotice(enabled: boolean): string {
+  return enabled
+    ? 'Proxy enabled. Tabs opened from now on will use it; reload existing tabs to move them across.'
+    : 'Proxy disabled. Tabs opened from now on will connect directly.'
 }

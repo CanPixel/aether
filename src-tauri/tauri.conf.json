@@ -27,7 +27,7 @@
         "default-src": "'self'",
         "script-src": "'self'",
         "style-src": ["'self'", "'unsafe-inline'"],
-        "img-src": ["'self'", "data:", "blob:", "https:", "http:"],
+        "img-src": ["'self'", "data:", "blob:"],
         "font-src": "'self'",
         "connect-src": ["'self'", "ipc:", "http://ipc.localhost"],
         "media-src": ["'self'", "data:", "blob:"],
@@ -40,7 +40,7 @@
         "default-src": "'self'",
         "script-src": ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
         "style-src": ["'self'", "'unsafe-inline'"],
-        "img-src": ["'self'", "data:", "blob:", "https:", "http:"],
+        "img-src": ["'self'", "data:", "blob:"],
         "font-src": "'self'",
         "connect-src": [
           "'self'",
@@ -59,9 +59,7 @@
   },
   "plugins": {
     "updater": {
-      "endpoints": [
-        "https://github.com/CanPixel/aether/releases/latest/download/latest.json"
-      ],
+      "endpoints": ["https://github.com/CanPixel/aether/releases/latest/download/latest.json"],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQ5QzUwQTk2MkJFQjA4MEIKUldRTENPc3JsZ3JGU1FWamQrMkUrb0hmSDR2MktHZjltZVJyb0RCcHQzNFdEelIxNlYzdmlvOFgK",
       "windows": {
         "installMode": "passive"
@@ -70,14 +68,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "app"
-    ],
-    "icon": [
-      "../resources/icon.png",
-      "../build/icon.icns",
-      "../build/icon.ico"
-    ],
+    "targets": ["app"],
+    "icon": ["../resources/icon.png", "../build/icon.icns", "../build/icon.ico"],
     "macOS": {
       "minimumSystemVersion": "10.15",
       "dmg": {

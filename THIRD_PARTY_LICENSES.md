@@ -13,6 +13,7 @@ All three models Æther uses are licensed under the **Apache License, Version
 2.0** (full text at the bottom of this file).
 
 ### Gemma 4 — E2B and E4B (chat / generation)
+
 - Publisher: Google DeepMind
 - Project: https://ai.google.dev/gemma
 - License: Apache License 2.0
@@ -23,6 +24,7 @@ All three models Æther uses are licensed under the **Apache License, Version
   file here if one is present in the release you ship.
 
 ### Qwen3-Embedding-0.6B (text embeddings)
+
 - Publisher: Qwen Team, Alibaba Group
 - Project: https://huggingface.co/Qwen/Qwen3-Embedding-0.6B
 - License: Apache License 2.0
@@ -38,15 +40,15 @@ All three models Æther uses are licensed under the **Apache License, Version
 The desktop application links or bundles open-source libraries, including
 (non-exhaustive):
 
-| Component | License |
-|---|---|
-| llama.cpp / ggml | MIT |
-| Tauri (and tauri-plugin-opener) | MIT OR Apache-2.0 |
-| candle, candle-nn, candle-transformers | MIT OR Apache-2.0 |
-| tokenizers | Apache-2.0 |
+| Component                                                                  | License           |
+| -------------------------------------------------------------------------- | ----------------- |
+| llama.cpp / ggml                                                           | MIT               |
+| Tauri (and tauri-plugin-opener)                                            | MIT OR Apache-2.0 |
+| candle, candle-nn, candle-transformers                                     | MIT OR Apache-2.0 |
+| tokenizers                                                                 | Apache-2.0        |
 | reqwest, serde, serde_json, tokio, url, uuid, scraper, chrono, encoding_rs | MIT OR Apache-2.0 |
-| framer-motion | MIT |
-| lucide-react | ISC |
+| framer-motion                                                              | MIT               |
+| lucide-react                                                               | ISC               |
 
 This table is a summary. Regenerate the authoritative, complete list with full
 license texts from the dependency tree:

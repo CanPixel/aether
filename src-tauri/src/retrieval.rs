@@ -10,7 +10,7 @@ pub(crate) async fn search_collection(
     if query.is_empty() {
         return Ok(Vec::new());
     }
-    get_collection(&state.paths.library_path, &input.collection_id).await?;
+    get_collection(state, &input.collection_id).await?;
     let settings = load_settings(&state.paths.settings_path).await?;
     let query_vector = local_embed_query(state, &settings, query).await?;
     with_vectors_read(state, |vectors| {
@@ -59,15 +59,20 @@ pub(crate) async fn search_library(
         });
     }
 
-    let library = load_library(&state.paths.library_path).await?;
-    let collection_names = library
-        .collections
-        .iter()
-        .map(|collection| (collection.id.clone(), collection.name.clone()))
-        .collect::<HashMap<_, _>>();
-    if let Some(collection_id) = input.collection_id.as_deref() {
-        get_collection(&state.paths.library_path, collection_id).await?;
-    }
+    // One pass over the library for both the labels and the scope check. These
+    // used to be two independent reads, each parsing the whole file, to answer
+    // questions about the same snapshot.
+    let collection_names = with_library_read(state, |library| -> Cmd<HashMap<String, String>> {
+        if let Some(collection_id) = input.collection_id.as_deref() {
+            find_collection(library, collection_id)?;
+        }
+        Ok(library
+            .collections
+            .iter()
+            .map(|collection| (collection.id.clone(), collection.name.clone()))
+            .collect())
+    })
+    .await??;
 
     let settings = load_settings(&state.paths.settings_path).await?;
     let limit = input.limit.unwrap_or(20).clamp(1, 60);
@@ -285,26 +290,28 @@ pub(crate) async fn semantic_trail_generate(
         )
     };
 
-    let library = load_library(&state.paths.library_path).await?;
-    let collection_names = library
-        .collections
-        .iter()
-        .map(|collection| (collection.id.clone(), collection.name.clone()))
-        .collect::<HashMap<_, _>>();
-    let root_collection_ids = root_url_key
-        .as_deref()
-        .map(|key| {
-            library
-                .captures
-                .iter()
-                .filter(|capture| normalize_capture_url_key(&capture.url) == key)
-                .map(|capture| capture.collection_id.clone())
-                .collect::<HashSet<_>>()
-        })
-        .unwrap_or_default();
-    let chunks = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
+    let (collection_names, root_collection_ids) = with_library_read(state, |library| {
+        let names = library
+            .collections
+            .iter()
+            .map(|collection| (collection.id.clone(), collection.name.clone()))
+            .collect::<HashMap<_, _>>();
+        let roots = root_url_key
+            .as_deref()
+            .map(|key| {
+                library
+                    .captures
+                    .iter()
+                    .filter(|capture| normalize_capture_url_key(&capture.url) == key)
+                    .map(|capture| capture.collection_id.clone())
+                    .collect::<HashSet<_>>()
+            })
+            .unwrap_or_default();
+        (names, roots)
+    })
+    .await?;
 
-    if chunks.is_empty() {
+    if with_vectors_read(state, |vectors| vectors.chunks.is_empty()).await? {
         return Ok(SemanticTrailResult {
             query: visible_query,
             generated_at: now(),
@@ -317,31 +324,38 @@ pub(crate) async fn semantic_trail_generate(
     let settings = load_settings(&state.paths.settings_path).await?;
     let query_vector = local_embed_query(state, &settings, embedding_query).await?;
 
-    let mut candidates = chunks
-        .into_iter()
-        .filter_map(|chunk| {
-            let distance = cosine_distance(&query_vector, &chunk.vector);
-            if !distance.is_finite() {
-                return None;
-            }
-            let same_collection = root_collection_ids.contains(&chunk.collection_id);
-            let score = semantic_trail_score_breakdown(distance, &chunk.captured_at);
-            if score.semantic < SEMANTIC_TRAIL_MIN_SCORE {
-                return None;
-            }
-            let reasons = semantic_trail_reasons(&score, same_collection);
-            let collection_name = collection_names
-                .get(&chunk.collection_id)
-                .cloned()
-                .unwrap_or_else(|| "Knowledge Hub".to_string());
-            Some(SemanticTrailChunkCandidate {
-                chunk,
-                collection_name,
-                score,
-                reasons,
+    // Scored inside the read lock so only the chunks that survive the score
+    // threshold are cloned. Cloning the store first and filtering after copied
+    // every chunk's text and vector to throw almost all of them away.
+    let mut candidates = with_vectors_read(state, |vectors| {
+        vectors
+            .chunks
+            .iter()
+            .filter_map(|chunk| {
+                let distance = cosine_distance(&query_vector, &chunk.vector);
+                if !distance.is_finite() {
+                    return None;
+                }
+                let same_collection = root_collection_ids.contains(&chunk.collection_id);
+                let score = semantic_trail_score_breakdown(distance, &chunk.captured_at);
+                if score.semantic < SEMANTIC_TRAIL_MIN_SCORE {
+                    return None;
+                }
+                let reasons = semantic_trail_reasons(&score, same_collection);
+                let collection_name = collection_names
+                    .get(&chunk.collection_id)
+                    .cloned()
+                    .unwrap_or_else(|| "Knowledge Hub".to_string());
+                Some(SemanticTrailChunkCandidate {
+                    chunk: chunk.clone(),
+                    collection_name,
+                    score,
+                    reasons,
+                })
             })
-        })
-        .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+    })
+    .await?;
 
     candidates.sort_by(|left, right| {
         right
@@ -392,12 +406,11 @@ pub(crate) async fn suggest_capture_hub(
         Err(_) => return Ok(None),
     };
 
-    let library = load_library(&state.paths.library_path).await?;
-    if library.collections.is_empty() {
+    let names = collection_names(state).await?;
+    if names.is_empty() {
         return Ok(None);
     }
-    let chunks = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
-    if chunks.is_empty() {
+    if with_vectors_read(state, |vectors| vectors.chunks.is_empty()).await? {
         return Ok(None);
     }
 
@@ -410,21 +423,28 @@ pub(crate) async fn suggest_capture_hub(
 
     // A hub is a strong home for this page if it already holds a source whose meaning is
     // close to it, so score each hub by its single closest chunk.
-    let mut best_by_collection: HashMap<String, (f64, String)> = HashMap::new();
-    for chunk in &chunks {
-        let distance = cosine_distance(&query_vector, &chunk.vector);
-        if !distance.is_finite() {
-            continue;
+    //
+    // Folded inside the read lock: the result is one entry per collection, so
+    // cloning the whole chunk store to produce it was pure waste.
+    let best_by_collection = with_vectors_read(state, |vectors| {
+        let mut best: HashMap<String, (f64, String)> = HashMap::new();
+        for chunk in &vectors.chunks {
+            let distance = cosine_distance(&query_vector, &chunk.vector);
+            if !distance.is_finite() {
+                continue;
+            }
+            let semantic = semantic_score_from_distance(distance);
+            let entry = best
+                .entry(chunk.collection_id.clone())
+                .or_insert((0.0, String::new()));
+            if semantic > entry.0 {
+                entry.0 = semantic;
+                entry.1 = chunk.title.clone();
+            }
         }
-        let semantic = semantic_score_from_distance(distance);
-        let entry = best_by_collection
-            .entry(chunk.collection_id.clone())
-            .or_insert((0.0, String::new()));
-        if semantic > entry.0 {
-            entry.0 = semantic;
-            entry.1 = chunk.title.clone();
-        }
-    }
+        best
+    })
+    .await?;
 
     let Some((collection_id, (confidence, sample_title))) =
         best_by_collection.into_iter().max_by(|left, right| {
@@ -441,11 +461,9 @@ pub(crate) async fn suggest_capture_hub(
         return Ok(None);
     }
 
-    let collection_name = library
-        .collections
-        .iter()
-        .find(|collection| collection.id == collection_id)
-        .map(|collection| collection.name.clone())
+    let collection_name = names
+        .get(&collection_id)
+        .cloned()
         .unwrap_or_else(|| "Knowledge Hub".to_string());
 
     Ok(Some(CaptureHubSuggestion {

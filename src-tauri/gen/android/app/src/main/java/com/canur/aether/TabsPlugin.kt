@@ -10,6 +10,7 @@ import android.util.Base64
 import android.util.LruCache
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -222,6 +223,17 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
     view.settings.useWideViewPort = true
     // target=_blank falls back to same-view navigation with multiple windows off.
     view.settings.setSupportMultipleWindows(false)
+
+    // Matches BROWSER_USER_AGENT in src-tauri/src/lib.rs. The stock WebView UA
+    // carries a "; wv" token that marks every request as coming from an embedded
+    // view rather than a browser, which is a needless narrowing of the crowd.
+    view.settings.userAgentString =
+      "Mozilla/5.0 (Linux; Android 15; K) AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/137.0.0.0 Mobile Safari/537.36"
+
+    // Android is the one platform whose webview exposes a third-party cookie
+    // switch; wry has no desktop equivalent, so this defence is mobile-only.
+    CookieManager.getInstance().setAcceptThirdPartyCookies(view, false)
 
     view.webViewClient = object : WebViewClient() {
       override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {

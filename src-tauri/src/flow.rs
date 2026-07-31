@@ -11,47 +11,72 @@ pub(crate) async fn flow_graph_generate(
         .source_limit
         .unwrap_or(DEFAULT_FLOW_GRAPH_SOURCE_LIMIT)
         .clamp(1, MAX_FLOW_GRAPH_SOURCE_LIMIT);
-    let library = load_library(&state.paths.library_path).await?;
-    let collection_names = library
-        .collections
+    let (collections, mut captures) = with_library_read(state, |library| {
+        (library.collections.clone(), library.captures.clone())
+    })
+    .await?;
+    let collection_names = collections
         .iter()
         .map(|collection| (collection.id.clone(), collection.name.clone()))
         .collect::<HashMap<_, _>>();
-    let chunks = with_vectors_read(state, |vectors| vectors.chunks.clone()).await?;
-    let mut chunks_by_capture = HashMap::<String, Vec<ChunkRecord>>::new();
-    for chunk in chunks {
-        chunks_by_capture
-            .entry(chunk.capture_id.clone())
-            .or_default()
-            .push(chunk);
-    }
 
-    let mut captures = library.captures.clone();
     captures.sort_by(|left, right| right.captured_at.cmp(&left.captured_at));
-    let indexed_source_count = captures
-        .iter()
-        .filter(|capture| chunks_by_capture.contains_key(&capture.id))
-        .count();
+
+    // The graph needs two things per capture: one averaged vector and one excerpt.
+    // Both are derived inside the read lock, and only for the newest
+    // `source_limit` captures that actually have chunks — the rest of the store is
+    // never touched. Cloning `vectors.chunks` first, as this used to, copied every
+    // chunk's text and vector in the library to build a summary of at most 180.
+    let (indexed_source_count, mut summaries) = with_vectors_read(state, |vectors| {
+        // Borrowed, so grouping costs pointers rather than records.
+        let mut grouped = HashMap::<&str, Vec<&ChunkRecord>>::new();
+        for chunk in &vectors.chunks {
+            grouped
+                .entry(chunk.capture_id.as_str())
+                .or_default()
+                .push(chunk);
+        }
+
+        let indexed = captures
+            .iter()
+            .filter(|capture| grouped.contains_key(capture.id.as_str()))
+            .count();
+
+        let summaries = captures
+            .iter()
+            .filter_map(|capture| grouped.get(capture.id.as_str()).map(|chunks| (capture, chunks)))
+            .filter_map(|(capture, chunks)| {
+                let vector = average_flow_source_vector(chunks)?;
+                let excerpt = chunks
+                    .iter()
+                    .max_by_key(|chunk| chunk.text.chars().count())
+                    .map(|chunk| semantic_trail_excerpt(&chunk.text, 300))
+                    .unwrap_or_default();
+                Some((capture.id.clone(), (vector, excerpt)))
+            })
+            // After the filter, not before: a capture whose chunks are all parked
+            // for re-embedding averages to nothing, and taking first would let
+            // those consume slots and shrink the graph. Lazy, so this still stops
+            // at `source_limit` successes rather than summarising everything.
+            .take(source_limit)
+            .collect::<HashMap<_, _>>();
+
+        (indexed, summaries)
+    })
+    .await?;
+
     let mut sources = Vec::<FlowSourceCandidate>::new();
     for capture in captures {
         if sources.len() >= source_limit {
             break;
         }
-        let Some(chunks) = chunks_by_capture.get(&capture.id) else {
-            continue;
-        };
-        let Some(vector) = average_flow_source_vector(chunks) else {
+        let Some((vector, excerpt)) = summaries.remove(&capture.id) else {
             continue;
         };
         let collection_name = collection_names
             .get(&capture.collection_id)
             .cloned()
             .unwrap_or_else(|| "Knowledge Hub".to_string());
-        let excerpt = chunks
-            .iter()
-            .max_by_key(|chunk| chunk.text.chars().count())
-            .map(|chunk| semantic_trail_excerpt(&chunk.text, 300))
-            .unwrap_or_default();
         sources.push(FlowSourceCandidate {
             capture,
             collection_name,
@@ -97,7 +122,7 @@ pub(crate) async fn flow_graph_generate(
         });
     }
 
-    for collection in &library.collections {
+    for collection in &collections {
         nodes.push(FlowGraphNode {
             id: flow_hub_node_id(&collection.id),
             kind: FlowGraphNodeKind::Hub,
@@ -217,13 +242,15 @@ pub(crate) async fn flow_graph_generate(
         generated_at: now(),
         nodes,
         edges,
-        hub_count: library.collections.len(),
+        hub_count: collections.len(),
         source_count: sources.len(),
         omitted_source_count: indexed_source_count.saturating_sub(sources.len()),
     })
 }
 
-pub(crate) fn average_flow_source_vector(chunks: &[ChunkRecord]) -> Option<Vec<f32>> {
+// Takes references rather than owned records: the caller groups borrowed chunks
+// inside the vector store's read lock, and nothing here needs ownership.
+pub(crate) fn average_flow_source_vector(chunks: &[&ChunkRecord]) -> Option<Vec<f32>> {
     let first = chunks.first()?;
     let dimensions = first.vector.len();
     if dimensions == 0 {

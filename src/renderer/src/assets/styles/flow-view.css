@@ -10,7 +10,11 @@
     radial-gradient(circle at 14% 14%, rgb(var(--surface-rgb) / 0.94), transparent 18%),
     radial-gradient(circle at 78% 18%, rgba(147, 239, 255, 0.18), transparent 26%),
     radial-gradient(circle at 48% 84%, rgba(73, 167, 174, 0.1), transparent 32%),
-    linear-gradient(180deg, rgb(var(--surface-tint-warm-rgb) / 0.78), rgb(var(--surface-tint-rgb) / 0.56));
+    linear-gradient(
+      180deg,
+      rgb(var(--surface-tint-warm-rgb) / 0.78),
+      rgb(var(--surface-tint-rgb) / 0.56)
+    );
 }
 
 .flow-view::before {

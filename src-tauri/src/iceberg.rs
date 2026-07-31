@@ -101,7 +101,7 @@ fn recover_complete_iceberg_items(json_text: &str) -> Option<serde_json::Value> 
         }
     }
 
-    (!objects.is_empty()).then(|| serde_json::Value::Array(objects))
+    (!objects.is_empty()).then_some(serde_json::Value::Array(objects))
 }
 
 pub(crate) fn normalize_iceberg_items(response: &str) -> Cmd<Vec<IcebergItem>> {

@@ -5,7 +5,7 @@ use super::*;
 
 pub(crate) async fn system_status(state: &State<'_, Backend>) -> Cmd<SystemStatus> {
     let settings = load_settings(&state.paths.settings_path).await?;
-    let library = load_library(&state.paths.library_path).await?;
+    let collections = with_library_read(state, |library| library.collections.clone()).await?;
     let catalog = model_catalog(&state.paths, &settings.local_model);
     Ok(SystemStatus {
         runtime_ready: catalog.chat_model.is_some() || catalog.embedding_model.is_some(),
@@ -38,13 +38,200 @@ pub(crate) async fn system_status(state: &State<'_, Backend>) -> Cmd<SystemStatu
         model_dir: state.paths.models_path.display().to_string(),
         db_path: state.paths.db_path.display().to_string(),
         library_path: state.paths.library_path.display().to_string(),
-        collections: library.collections,
+        collections,
+        content_blocking: content_blocking::content_blocking_status(),
+        ai_free_search: ai_free_search_status(&settings.browser),
+        proxy: proxy_status(&settings.browser),
+        timezone_pin: timezone_pin_status(&settings.browser),
         error: catalog.error,
     })
 }
 
 pub(crate) async fn load_library(path: &Path) -> Cmd<LibraryData> {
     read_json_or_default(path).await
+}
+
+/// Drops captures whose collection no longer exists, returning how many went.
+///
+/// A capture in this state is not reachable from the hub list, but it is still in
+/// `captures`, so it keeps answering searches — under the "Knowledge Hub" fallback
+/// name, because there is no collection left to name it. To the user that is a
+/// source they deleted coming back.
+pub(crate) fn drop_captures_without_collections(library: &mut LibraryData) -> usize {
+    let collections = library
+        .collections
+        .iter()
+        .map(|collection| collection.id.clone())
+        .collect::<HashSet<_>>();
+    let before = library.captures.len();
+    library
+        .captures
+        .retain(|capture| collections.contains(&capture.collection_id));
+    before - library.captures.len()
+}
+
+/// Drops chunks whose capture is gone, returning how many went.
+///
+/// Deliberately keyed on the capture rather than the collection: a chunk belongs
+/// to a capture, and `drop_captures_without_collections` has already removed the
+/// captures of dead collections, so one rule covers both kinds of orphan.
+pub(crate) fn retain_chunks_with_live_captures(
+    chunks: &mut Vec<ChunkRecord>,
+    live_captures: &HashSet<String>,
+) -> usize {
+    let before = chunks.len();
+    chunks.retain(|chunk| live_captures.contains(&chunk.capture_id));
+    before - chunks.len()
+}
+
+/// Clears orphans left behind by a crash mid-delete, once, at startup.
+///
+/// The delete paths now commit in the order that makes an interrupted delete leave
+/// only the harmless orphan, so this is not needed for anything written after that
+/// change. It is here for stores that predate it: the bad ordering was live, and a
+/// store carrying its orphans has no other way to shed them.
+///
+/// **On the lock nesting.** The library write lock is held across the vector
+/// mutation, which is the only way this is safe against a capture running at the
+/// same time: capture commits its library entry first and writes chunks second, so
+/// a snapshot of live captures taken without that lock could miss an entry whose
+/// chunks then land — and those brand-new chunks would look exactly like orphans.
+/// Holding the library lock makes that interleaving impossible. It cannot deadlock
+/// against capture, which never holds the library lock while waiting for the
+/// vector one; the helpers each acquire and release in turn.
+pub(crate) async fn reconcile_orphans(state: &State<'_, Backend>) -> Cmd<(usize, usize)> {
+    let mut library_guard = state.library.write().await;
+    if library_guard.is_none() {
+        *library_guard = Some(load_library(&state.paths.library_path).await?);
+    }
+    let library = library_guard.as_mut().expect("library cache");
+
+    let dropped_captures = drop_captures_without_collections(library);
+    let live_captures = library
+        .captures
+        .iter()
+        .map(|capture| capture.id.clone())
+        .collect::<HashSet<_>>();
+
+    let mut vectors_guard = state.vectors.write().await;
+    if vectors_guard.is_none() {
+        *vectors_guard = Some(load_vectors(&state.paths.chunks_path).await?);
+    }
+    let vectors = vectors_guard.as_mut().expect("vector store cache");
+    let dropped_chunks = retain_chunks_with_live_captures(&mut vectors.chunks, &live_captures);
+
+    // Nothing to write in the common case, which is every launch after the first
+    // on a healthy store. Both saves rewrite whole files, so skipping them matters.
+    if dropped_chunks > 0 {
+        // Same reasoning as a user-initiated delete: the point is that the vectors
+        // of an unreachable source actually leave the sidecar.
+        compact_vectors(&state.paths.chunks_path, vectors).await?;
+        save_vector_metadata(&state.paths.chunks_path, vectors).await?;
+    }
+    if dropped_captures > 0 {
+        save_json(&state.paths.library_path, library).await?;
+    }
+
+    if dropped_captures > 0 || dropped_chunks > 0 {
+        diag_info!(
+            "reconciled an interrupted delete: dropped {dropped_captures} orphaned capture(s) and {dropped_chunks} orphaned chunk(s)"
+        );
+    }
+    Ok((dropped_captures, dropped_chunks))
+}
+
+/// Looks a collection up in an already-loaded library. Split from `get_collection`
+/// so a caller that holds the library can check an id without a second read — the
+/// double read this replaced was the whole cost of validating a search's scope.
+pub(crate) fn find_collection(
+    library: &LibraryData,
+    collection_id: &str,
+) -> Cmd<CollectionSummary> {
+    library
+        .collections
+        .iter()
+        .find(|collection| collection.id == collection_id)
+        .cloned()
+        .ok_or_else(|| "Collection not found.".to_string())
+}
+
+pub(crate) async fn get_collection(
+    state: &State<'_, Backend>,
+    collection_id: &str,
+) -> Cmd<CollectionSummary> {
+    with_library_read(state, |library| find_collection(library, collection_id)).await?
+}
+
+/// Collection id -> display name, for labelling search hits and graph nodes.
+///
+/// Every retrieval path needs exactly this and nothing else from the library, so
+/// it is worth a named helper: the alternative each site reached for was cloning
+/// the whole collection list to build the same map.
+pub(crate) async fn collection_names(
+    state: &State<'_, Backend>,
+) -> Cmd<HashMap<String, String>> {
+    with_library_read(state, |library| {
+        library
+            .collections
+            .iter()
+            .map(|collection| (collection.id.clone(), collection.name.clone()))
+            .collect()
+    })
+    .await
+}
+
+/// Reads the cached library, loading it from disk on first use.
+pub(crate) async fn with_library_read<T>(
+    state: &State<'_, Backend>,
+    read: impl FnOnce(&LibraryData) -> T,
+) -> Cmd<T> {
+    {
+        let guard = state.library.read().await;
+        if let Some(library) = guard.as_ref() {
+            return Ok(read(library));
+        }
+    }
+    let mut guard = state.library.write().await;
+    if guard.is_none() {
+        *guard = Some(load_library(&state.paths.library_path).await?);
+    }
+    Ok(read(guard.as_ref().expect("library cache")))
+}
+
+/// Mutates the cached library under the write lock and persists the result, so a
+/// read-modify-write cannot interleave with another command's.
+///
+/// The closure is fallible because most callers validate against the library they
+/// are about to change ("Collection not found", "Page is already in X"), and doing
+/// that outside the lock is the race this function exists to close. A closure that
+/// returns `Err` may already have edited the library, so the cache is dropped
+/// rather than saved: the next read reloads the last known-good file, and a
+/// half-applied edit never becomes visible.
+pub(crate) async fn with_library_mut<T>(
+    state: &State<'_, Backend>,
+    mutate: impl FnOnce(&mut LibraryData) -> Cmd<T>,
+) -> Cmd<T> {
+    let mut guard = state.library.write().await;
+    if guard.is_none() {
+        *guard = Some(load_library(&state.paths.library_path).await?);
+    }
+    let library = guard.as_mut().expect("library cache");
+
+    let result = match mutate(library) {
+        Ok(result) => result,
+        Err(error) => {
+            *guard = None;
+            return Err(error);
+        }
+    };
+
+    // Same reasoning as the error path: if the write fails, what is on disk and
+    // what is in memory have diverged, and memory is the wrong one to trust.
+    if let Err(error) = save_json(&state.paths.library_path, library).await {
+        *guard = None;
+        return Err(error);
+    }
+    Ok(result)
 }
 
 pub(crate) async fn load_settings(path: &Path) -> Cmd<UserSettings> {
@@ -112,8 +299,11 @@ pub(crate) async fn persist_session_tabs(state: &State<'_, Backend>) -> Cmd<()> 
         let tabs = guard
             .tabs
             .iter()
-            // A tab parked on the internal start page has nothing to reopen.
-            .filter(|tab| tab.url != START_PAGE_URL && !tab.url.starts_with("aether://"))
+            // A tab parked on the internal start page has nothing to reopen, and a
+            // private tab must not survive the session that opened it.
+            .filter(|tab| {
+                !tab.private && tab.url != START_PAGE_URL && !tab.url.starts_with("aether://")
+            })
             .map(|tab| SessionTab {
                 id: tab.id.clone(),
                 url: tab.url.clone(),

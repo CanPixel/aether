@@ -73,7 +73,9 @@ if (isTauri) {
       find: (tabId, query, action) => call<void>('aether_tabs_find', { tabId, query, action }),
       goBack: (tabId) => call<void>('aether_tabs_go_back', { tabId }),
       goForward: (tabId) => call<void>('aether_tabs_go_forward', { tabId }),
-      thumbnail: (tabId) => call<string | null>('aether_tabs_thumbnail', { tabId })
+      thumbnail: (tabId) => call<string | null>('aether_tabs_thumbnail', { tabId }),
+      favicon: (url) => call<string | null>('aether_browser_favicon', { url }),
+      clearBrowsingData: () => call<void>('aether_browser_clear_data')
     },
     dashboard: {
       open: () => call<void>('aether_dashboard_open')
@@ -122,8 +124,7 @@ if (isTauri) {
     chat: {
       ask: (input) => call<ChatResult>('aether_chat_ask', { input }),
       cancel: () => call<void>('aether_chat_cancel'),
-      history: (collectionId) =>
-        call<ConversationTurn[]>('aether_chat_history', { collectionId }),
+      history: (collectionId) => call<ConversationTurn[]>('aether_chat_history', { collectionId }),
       clearHistory: (collectionId) => call<void>('aether_chat_clear_history', { collectionId })
     },
     crystallizer: {
@@ -145,8 +146,7 @@ if (isTauri) {
       relaunch: () => call<void>('aether_system_relaunch'),
       exportLibrary: () => call<LibraryExportResult>('aether_system_export_library'),
       diagnostics: () => call<DiagnosticEntry[]>('aether_system_diagnostics'),
-      exportDiagnostics: () =>
-        call<DiagnosticsExportResult>('aether_system_export_diagnostics'),
+      exportDiagnostics: () => call<DiagnosticsExportResult>('aether_system_export_diagnostics'),
       indexStatus: () => call<LibraryIndexStatus>('aether_library_index_status'),
       reindexLibrary: () => call<LibraryReindexResult>('aether_library_reindex'),
       openExternalUrl: (url) => call<void>('aether_system_open_external_url', { url }),

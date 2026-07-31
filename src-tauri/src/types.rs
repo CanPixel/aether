@@ -14,10 +14,31 @@ pub(crate) struct Backend {
     // aether_layout_set_web_content_bounds. Both shells use it; on desktop it takes
     // precedence over the SIDEBAR_WIDTH/BROWSER_VIEW_TOP/PANEL_WIDTH constants.
     pub(crate) web_content_bounds: Mutex<WebContentBounds>,
-    pub(crate) client: Client,
-    pub(crate) native_runtime: Arc<Mutex<NativeModelRuntime>>,
+    // Every outbound request the *app* makes, as opposed to the ones a webview
+    // makes: favicons, the capture re-fetch, model downloads. Behind a lock
+    // because the proxy setting can change while the app is running and a
+    // reqwest client's proxy is fixed when it is built, so the client has to be
+    // replaced rather than adjusted. Read it through `Backend::http_client`.
+    pub(crate) network: Mutex<NetworkRouting>,
+    // Session-scoped favicon cache, origin -> data URI, with None recording a host
+    // that has no usable icon so it is not refetched. Memory only on purpose: see
+    // the module comment in favicon.rs.
+    pub(crate) favicon_cache: Mutex<HashMap<String, Option<String>>>,
+    pub(crate) native_runtime: Arc<NativeModelRuntime>,
     pub(crate) vectors: tokio::sync::RwLock<Option<VectorStoreData>>,
+    // Collections, captures and shortcuts, cached the same way as the vectors.
+    // Two reasons, and the second is the load-bearing one: every command used to
+    // re-read and re-parse library.json from disk, and — because a mutation was a
+    // bare load/modify/save with no lock held across the pair — two commands in
+    // flight could interleave and silently drop one of the writes. The lock is
+    // what makes a read-modify-write atomic; the caching is the side benefit.
+    pub(crate) library: tokio::sync::RwLock<Option<LibraryData>>,
     pub(crate) generation_cancelled: Arc<AtomicBool>,
+    // Read when a tab's webview is built, which is a sync path, so it is cached
+    // here rather than re-read from settings.json. Kept beside the proxy and
+    // refreshed by the same `apply_browser_privacy` call for the same reason:
+    // one place decides, so tabs cannot disagree with what Settings reports.
+    pub(crate) pin_timezone: AtomicBool,
     // Throttle for window geometry writes; resize/move fire continuously.
     #[cfg(desktop)]
     pub(crate) window_geometry_saved_at: Mutex<Option<Instant>>,
@@ -25,6 +46,79 @@ pub(crate) struct Backend {
     // Finished event, so without this the completion toast has nothing to reveal.
     #[cfg(desktop)]
     pub(crate) pending_downloads: Mutex<HashMap<String, PathBuf>>,
+}
+
+/// Where the app's own HTTP requests go, and the client that takes them there.
+///
+/// The pair is kept together so they cannot drift: `proxy` is what the webviews
+/// were built with, and `client` is a reqwest client built with that same proxy.
+/// If those two ever disagreed, tabs would go one way and favicon fetches the
+/// other — which is precisely the correlation leak the proxy exists to close.
+pub(crate) struct NetworkRouting {
+    pub(crate) proxy: Option<Url>,
+    pub(crate) client: Client,
+}
+
+impl NetworkRouting {
+    /// Builds a client routed through `proxy`, or direct when it is `None`.
+    ///
+    /// Note that *everything* the app fetches goes through here when the proxy is
+    /// on, model downloads included. Sending multi-gigabyte pulls over Tor is
+    /// slow and a poor use of the network, and exempting them was the obvious
+    /// alternative — but a silent exemption is the same class of bug as the
+    /// favicon leak: traffic the user believes is proxied, quietly is not. A slow
+    /// or refused download is a visible failure the user can act on, so that is
+    /// the one we take.
+    pub(crate) fn new(proxy: Option<Url>) -> Self {
+        let mut builder = Client::builder().user_agent(BROWSER_USER_AGENT);
+        if let Some(url) = proxy.as_ref() {
+            // `all` rather than `http`/`https` separately: a proxy that covered
+            // only one scheme would leak the other.
+            match reqwest::Proxy::all(reqwest_proxy_scheme(url)) {
+                Ok(configured) => builder = builder.proxy(configured),
+                // Unreachable in practice — `parse_proxy_url` has already accepted
+                // this URL — but a client that silently fell back to direct here
+                // would be the leak. Refuse to resolve any host instead: requests
+                // fail, browsing still works, and nothing goes out unproxied.
+                Err(_) => builder = builder.no_proxy().dns_resolver(Arc::new(NoDnsResolver)),
+            }
+        }
+        Self {
+            proxy,
+            client: builder.build().expect("reqwest client"),
+        }
+    }
+}
+
+/// Rewrites `socks5://` to `socks5h://` for reqwest, and only for reqwest.
+///
+/// The two schemes differ in who resolves the hostname. Under plain `socks5`
+/// reqwest resolves it locally and sends the proxy an IP, which means the
+/// network operator still sees a DNS query for every host fetched — the IP is
+/// hidden and the destination is not, which is most of the leak back again.
+/// `socks5h` hands the name to the proxy instead.
+///
+/// It stays out of the settings field because Tauri's proxy parser accepts only
+/// `socks5` and would reject `socks5h` when a tab is created. So the user writes
+/// the scheme the webview needs, and the app quietly asks for the stronger one
+/// where it can — the two are the same endpoint either way.
+pub(crate) fn reqwest_proxy_scheme(url: &Url) -> String {
+    match url.scheme() {
+        "socks5" => format!("socks5h://{}", &url.as_str()["socks5://".len()..]),
+        _ => url.to_string(),
+    }
+}
+
+/// Fails every hostname lookup, so a misconfigured proxy cannot fall back to a
+/// direct connection. See `NetworkRouting::new`.
+pub(crate) struct NoDnsResolver;
+
+impl reqwest::dns::Resolve for NoDnsResolver {
+    fn resolve(&self, _name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async {
+            Err("proxy is configured but unusable; refusing to connect directly".into())
+        })
+    }
 }
 
 #[cfg(desktop)]
@@ -45,11 +139,34 @@ pub(crate) struct WebContentBounds {
     pub(crate) height: f64,
 }
 
+/// The loaded llama.cpp models, with chat and embedding locked separately.
+///
+/// One lock over all of it used to be held for the entire duration of a chat
+/// generation, so a search, a Flow graph or an AiR lens — all of which need to
+/// embed a query — blocked until the answer finished streaming. That is tens of
+/// seconds of a frozen library for something that shares no state with the chat
+/// model: the two are already independent `LlamaModel`s.
+///
+/// `LlamaBackend` is a zero-sized proof-of-initialization token that can only be
+/// created once per process, and neither `load_from_file` nor `new_context`
+/// retains the reference it is given, so it is shared rather than locked. The
+/// `backend_init` mutex exists only to make the one-time init a single winner;
+/// `LlamaBackend::init()` returns `BackendAlreadyInitialized` to the loser, which
+/// on the second model load would be a spurious failure.
+///
+/// The cost of the split, worth knowing before tuning anything here: a chat and an
+/// embedding context can now be live at the same time, so peak memory is both KV
+/// caches rather than the larger one, and both size their thread pools from
+/// `auto_thread_count()` independently. On desktop that is the trade this is meant
+/// to make. On mobile — where weights are already malloc'd rather than mmapped for
+/// exactly these pressure reasons — it is the first thing to suspect if capture
+/// during generation starts thrashing.
 #[derive(Default)]
 pub(crate) struct NativeModelRuntime {
-    pub(crate) backend: Option<LlamaBackend>,
-    pub(crate) chat: Option<LoadedNativeModel>,
-    pub(crate) embedding: Option<LoadedNativeModel>,
+    pub(crate) backend: OnceLock<LlamaBackend>,
+    pub(crate) backend_init: Mutex<()>,
+    pub(crate) chat: Mutex<Option<LoadedNativeModel>>,
+    pub(crate) embedding: Mutex<Option<LoadedNativeModel>>,
 }
 
 pub(crate) struct LoadedNativeModel {
@@ -152,6 +269,21 @@ pub(crate) struct ManagedTab {
     // the WebView never saw — most notably the aether://start page.
     pub(crate) native_can_go_back: Option<bool>,
     pub(crate) native_can_go_forward: Option<bool>,
+    // A private tab gets a non-persistent webview data store, is never written to
+    // the session, and cannot be captured. The last of those is the one that is
+    // easy to forget: ÆTHER's whole point is a durable local index of what you
+    // read, and that is precisely what a private tab must not produce.
+    pub(crate) private: bool,
+    // Opt-in storage partition. `None` shares the default store with every other
+    // ordinary tab; `Some(name)` gets its own persistent cookie jar and local
+    // storage, isolated from the default and from every other container.
+    //
+    // Chosen over always-on per-site isolation because navigation reuses the
+    // webview (see navigate_native_webview): the data store is fixed when the
+    // webview is built, so a tab that started on one site and navigated to
+    // another would file the second site's cookies under the first. Same site,
+    // two jars, depending on how you arrived — worse than not partitioning.
+    pub(crate) container: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -185,6 +317,9 @@ pub(crate) struct BrowserTabSummary {
     pub(crate) favicon: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) theme_color: Option<String>,
+    pub(crate) is_private: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) container: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -216,6 +351,60 @@ pub(crate) struct HubShortcutSummary {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct BrowserSettings {
     pub(crate) default_search_engine: String,
+    /// Ask the search engine for results without AI-generated answers.
+    ///
+    /// `serde(default)` rather than plain `bool`, so an existing settings.json
+    /// written before this field existed reads as on rather than off — the same
+    /// direction as tracker blocking, which is also on without being asked for.
+    #[serde(default = "default_ai_free_search")]
+    pub(crate) ai_free_search: bool,
+    /// Route web traffic through a proxy, typically a local Tor daemon.
+    ///
+    /// Unlike `ai_free_search` this defaults to *off*, and the difference is not
+    /// stylistic: an AI-free search URL still works when the mechanism is wrong,
+    /// but a proxy pointing at nothing fails every request in the app. A default
+    /// that assumes a daemon the user never installed would present as "ÆTHER is
+    /// broken", so it stays off until someone asks for it.
+    #[serde(default)]
+    pub(crate) proxy: ProxySettings,
+    /// Report UTC and a fixed locale to pages instead of the machine's own.
+    ///
+    /// Default off, and this one is genuinely a judgement call rather than
+    /// caution. Timezone is among the highest-entropy bits a page reads for
+    /// free, and pinning it is *uniformity* rather than randomisation — UTC is a
+    /// large existing crowd, so unlike canvas noise it makes the user commoner
+    /// instead of rarer. Against that: every web calendar, booking form and
+    /// "posted 2 hours ago" then reads wrong, in ordinary use, for a benefit the
+    /// user cannot see. Tracker blocking defaults on because it costs nothing
+    /// visible; this costs something visible, so it waits to be asked for.
+    #[serde(default)]
+    pub(crate) pin_timezone: bool,
+}
+
+/// Where web traffic goes, when the user has redirected it.
+///
+/// One endpoint for the whole app rather than per tab. Per-tab proxying reads as
+/// a stronger feature and is a weaker one: two tabs on different exits, sharing
+/// one process and one clock, are trivially correlated, and the split invites the
+/// belief that a "proxied tab" is isolated from an unproxied one when the only
+/// thing separating them is which socket the bytes left by.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProxySettings {
+    pub(crate) enabled: bool,
+    /// `socks5://host:port`, or `http://host:port` for an HTTP CONNECT proxy.
+    pub(crate) url: String,
+}
+
+impl Default for ProxySettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            // Tor's default SOCKS port. Prefilling it means the common case is a
+            // toggle rather than a lookup, and it is inert while `enabled` is false.
+            url: DEFAULT_PROXY_URL.to_string(),
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -273,6 +462,16 @@ pub(crate) struct CaptureSummary {
     pub(crate) chunk_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) metadata: Option<CaptureMetadata>,
+    /// Whether this source came out of a private tab.
+    ///
+    /// Library hygiene, not a privacy control — capture writes to your own disk
+    /// and sends nothing anywhere, so there is nothing here to protect against.
+    /// It exists so that research done in private tabs stays *findable* after the
+    /// fact: without it those sources are indistinguishable from any other, and
+    /// "delete everything I looked at that way" becomes impossible. Skipped when
+    /// false, so library.json is unchanged for every ordinary capture.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) from_private_tab: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -678,14 +877,106 @@ pub(crate) struct SystemStatus {
     pub(crate) db_path: String,
     pub(crate) library_path: String,
     pub(crate) collections: Vec<CollectionSummary>,
+    pub(crate) content_blocking: ContentBlockingStatus,
+    pub(crate) ai_free_search: AiFreeSearchStatus,
+    pub(crate) proxy: ProxyStatus,
+    pub(crate) timezone_pin: TimezonePinStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
+}
+
+/// What tracker blocking this build provides, reported rather than assumed.
+///
+/// `blocks_third_party_cookies` is the one that matters: macOS and Linux get it
+/// from the `block-cookies` rule the WebKit engine evaluates, and Windows has no
+/// WebView2 equivalent — a request either happens or does not, so a tracker that
+/// is not on the host list still sets cookies there. That is the largest
+/// behavioural difference between the platforms and the user should be told.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ContentBlockingStatus {
+    pub(crate) engine: String,
+    pub(crate) blocked_host_count: usize,
+    pub(crate) blocks_third_party_cookies: bool,
+    pub(crate) available: bool,
+}
+
+/// Whether the *currently selected* engine can be asked for AI-free results.
+///
+/// Same reasoning as `ContentBlockingStatus`: the five engines have five unrelated
+/// answers and two of them have none, so a fixed string in the renderer would keep
+/// promising AI-free results on Yahoo long after anyone remembered that Yahoo has
+/// no control to offer. `available == false` with the setting on is a real state,
+/// and the screen should say so rather than imply the toggle did something.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AiFreeSearchStatus {
+    pub(crate) enabled: bool,
+    /// What is actually being sent, for the UI to state plainly: "udm=14 Web
+    /// filter", "-ai operator", "noai.duckduckgo.com". Empty when unavailable.
+    pub(crate) mechanism: String,
+    /// False when the selected engine offers no URL-level opt-out at all.
+    pub(crate) available: bool,
+}
+
+/// Whether this build can actually route traffic through the configured proxy.
+///
+/// Same reasoning as the two above, and the stakes are higher: a search engine
+/// that ignores an AI opt-out shows you an AI answer, while a proxy that silently
+/// does nothing shows you the page you asked for over your own address. The
+/// failure is invisible from inside the app, so it has to be stated.
+///
+/// `unsupported_reason` carries the *why* rather than a bare false, because the
+/// two causes have different remedies — an OS upgrade on macOS 13, and nothing at
+/// all on Android.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ProxyStatus {
+    pub(crate) enabled: bool,
+    pub(crate) url: String,
+    pub(crate) available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) unsupported_reason: Option<String>,
+    /// True once traffic is genuinely going through the proxy: enabled, supported,
+    /// and a valid endpoint. The renderer should key its "your IP is hidden"
+    /// affordance off this and nothing else.
+    pub(crate) active: bool,
+}
+
+/// Whether pages are actually being told UTC, as opposed to asked to be.
+///
+/// Reported for the same reason as the proxy: the pinning is an injected
+/// document-start script, and the mobile shell drives its WebViews through a
+/// different path that has nowhere to inject one. Claiming it uniformly would be
+/// wrong on exactly the platform that cannot do it.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct TimezonePinStatus {
+    pub(crate) enabled: bool,
+    pub(crate) available: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) unsupported_reason: Option<String>,
+    pub(crate) active: bool,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CreateTabInput {
     pub(crate) url: Option<String>,
+    /// Search terms, for callers that have a *concept* rather than a URL — the iCE
+    /// cards' "Explore in Web".
+    ///
+    /// Separate from `url` on purpose. `normalize_url` has to guess whether a bare
+    /// string is a query or a host, and it guesses by looking for a dot: a concept
+    /// named "Node.js" or "Web 2.0" would be sent to `https://Node.js` instead of
+    /// being searched for. A caller that already knows it holds search terms should
+    /// not have to route them through that guess.
+    #[serde(default)]
+    pub(crate) search: Option<String>,
+    #[serde(default)]
+    pub(crate) private: bool,
+    #[serde(default)]
+    pub(crate) container: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -898,6 +1189,16 @@ pub(crate) struct UpdateSettingsInput {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct PartialBrowserSettings {
     pub(crate) default_search_engine: Option<String>,
+    pub(crate) ai_free_search: Option<bool>,
+    pub(crate) proxy: Option<PartialProxySettings>,
+    pub(crate) pin_timezone: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PartialProxySettings {
+    pub(crate) enabled: Option<bool>,
+    pub(crate) url: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1212,7 +1513,12 @@ pub(crate) struct LocalModelSettings {
 impl Default for BrowserSettings {
     fn default() -> Self {
         Self {
-            default_search_engine: "google".to_string(),
+            // Existing installs keep whatever is already in settings.json; this
+            // only changes where a fresh profile starts. See search_engine_prefix.
+            default_search_engine: DEFAULT_SEARCH_ENGINE.to_string(),
+            ai_free_search: default_ai_free_search(),
+            proxy: ProxySettings::default(),
+            pin_timezone: false,
         }
     }
 }
@@ -1244,6 +1550,13 @@ pub(crate) fn default_settings_version() -> u8 {
 }
 
 pub(crate) fn default_update_auto_check() -> bool {
+    true
+}
+
+/// On unless turned off. AI answers are inserted above the results the user asked
+/// for, by a mechanism they did not opt into, so the default that respects the
+/// user's intent is the one that declines them.
+pub(crate) fn default_ai_free_search() -> bool {
     true
 }
 

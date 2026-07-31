@@ -23,6 +23,14 @@ export interface BrowserTabSummary {
   canGoForward: boolean
   favicon?: string
   themeColor?: string
+  // Non-persistent webview data store, never written to the session. Capture and
+  // AiON both read these normally — they are local writes, not emissions — and a
+  // capture from one is marked with `fromPrivateTab` so it stays findable.
+  isPrivate: boolean
+  // Opt-in storage partition. Cookies and local storage are isolated from the
+  // default jar and from every other container, and persist across restarts.
+  // macOS 14+ only; elsewhere the tab shares the default store.
+  container?: string
 }
 
 export interface HubShortcutSummary {
@@ -39,6 +47,22 @@ export type SearchEngineId = 'google' | 'bing' | 'yahoo' | 'ecosia' | 'duckduckg
 
 export interface BrowserSettings {
   defaultSearchEngine: SearchEngineId
+  // Ask the search engine for results without AI-generated answers. On unless
+  // turned off, including for settings files written before the field existed.
+  // What it actually sends depends on the engine — see SystemStatus.aiFreeSearch.
+  aiFreeSearch: boolean
+  proxy: ProxySettings
+  // Report UTC and a fixed locale to pages. Off by default: the cost (wrong local
+  // times in web calendars) is visible in ordinary use and the benefit is not.
+  pinTimezone: boolean
+}
+
+// Off by default, unlike aiFreeSearch: a proxy pointing at a daemon that isn't
+// running fails every request, so it waits to be asked for.
+export interface ProxySettings {
+  enabled: boolean
+  // socks5://host:port, or http://host:port for an HTTP CONNECT proxy.
+  url: string
 }
 
 export interface UpdateSettings {
@@ -55,6 +79,20 @@ export interface AppSettings {
   developerMode: boolean
   updates: UpdateSettings
   appearance: Appearance
+}
+
+// Mirrors UpdateSettingsInput in src-tauri/src/types.rs, where every field of every
+// group is optional. `Partial<AppSettings>` was not the same thing: it makes the
+// groups optional but each group whole, so sending one field of `browser` only
+// type-checked while BrowserSettings happened to have exactly one field.
+// `browser.proxy` needs the same treatment one level down: Partial<BrowserSettings>
+// would make `proxy` optional but whole, so toggling `enabled` alone would force
+// the caller to resend `url`. PartialProxySettings mirrors the Rust type instead.
+export interface UpdateSettingsInput {
+  browser?: Omit<Partial<BrowserSettings>, 'proxy'> & { proxy?: Partial<ProxySettings> }
+  developerMode?: boolean
+  updates?: Partial<UpdateSettings>
+  appearance?: Appearance
 }
 
 export interface CollectionSummary {
@@ -81,6 +119,10 @@ export interface CaptureSummary {
     summary?: string
     tags?: string[]
   }
+  // Present only when the source came out of a private tab. Library hygiene, not
+  // a privacy control: it keeps private-session research findable so it can be
+  // purged later, rather than blending into every other source.
+  fromPrivateTab?: boolean
 }
 
 export interface CaptureResult extends CaptureSummary {
@@ -391,7 +433,63 @@ export interface SystemStatus {
   dbPath: string
   libraryPath: string
   collections: CollectionSummary[]
+  contentBlocking: ContentBlockingStatus
+  aiFreeSearch: AiFreeSearchStatus
+  proxy: ProxyStatus
+  timezonePin: TimezonePinStatus
   error?: string
+}
+
+// Whether traffic is genuinely being proxied, which is not the same as whether
+// the setting is on: proxying needs macOS 14+ and is unavailable on Android.
+// A search engine ignoring an AI opt-out shows an AI answer; a proxy silently
+// doing nothing shows the page over the user's own IP, so `active` is the only
+// field an "IP hidden" affordance should key off.
+// Whether pages are actually being told UTC. Separate from the setting because
+// the mobile shell has nowhere to inject the document-start script that does it.
+export interface TimezonePinStatus {
+  enabled: boolean
+  available: boolean
+  unsupportedReason?: string
+  active: boolean
+}
+
+export interface ProxyStatus {
+  enabled: boolean
+  url: string
+  available: boolean
+  unsupportedReason?: string
+  active: boolean
+}
+
+// Reported by the backend rather than inferred from the user agent: the three
+// platforms block genuinely different things, and a claim hardcoded here would
+// keep asserting cookie blocking on Windows long after anyone remembered that
+// WebView2 has no equivalent for it.
+// Reported per selected engine, for the same reason as ContentBlockingStatus: the
+// five engines have five unrelated answers and two of them have none, so a fixed
+// string here would keep promising AI-free results on Yahoo forever.
+export interface AiFreeSearchStatus {
+  enabled: boolean
+  // What is actually sent: "udm=14 Web filter", "-ai operator",
+  // "noai.duckduckgo.com". Empty when the engine offers nothing.
+  mechanism: string
+  // False when the selected engine has no URL-level opt-out (Yahoo has no control
+  // of its own; Ecosia's is an account setting, and region-gated). `enabled` with
+  // `available: false` is a real state and the UI should say so rather than imply
+  // the toggle did something.
+  available: boolean
+}
+
+export interface ContentBlockingStatus {
+  // Human-readable name of the engine doing the blocking, e.g. "WebKit content
+  // rules". Empty when there is none.
+  engine: string
+  blockedHostCount: number
+  // False on Windows. A tracker that is not on the host list still sets
+  // third-party cookies there.
+  blocksThirdPartyCookies: boolean
+  available: boolean
 }
 
 export interface LibraryExportResult {
@@ -517,7 +615,17 @@ export interface AetherApi {
   }
   tabs: {
     list(): Promise<BrowserTabSummary[]>
-    create(input?: { url?: string }): Promise<BrowserTabSummary>
+    create(input?: {
+      url?: string
+      // Search terms, for callers holding a concept rather than a URL. Kept apart
+      // from `url` because the backend has to guess whether a bare string is a
+      // query or a host, and it guesses on the presence of a dot — so a concept
+      // named "Node.js" would open https://Node.js instead of being searched for.
+      // Takes precedence over `url` when both are given.
+      search?: string
+      private?: boolean
+      container?: string
+    }): Promise<BrowserTabSummary>
     activate(tabId: string): Promise<void>
     close(tabId: string): Promise<void>
     reorder(ids: string[]): Promise<BrowserTabSummary[]>
@@ -528,6 +636,16 @@ export interface AetherApi {
     goForward(tabId: string): Promise<void>
     // Android-only tab-grid preview (data-URI JPEG); resolves null on desktop.
     thumbnail(tabId: string): Promise<string | null>
+    // Site icon as a data URI, fetched in Rust. The privileged window must not
+    // request one directly: that is an outbound call to every visited host from
+    // the context that holds the IPC bridge. Resolves null when there is none.
+    favicon(url: string): Promise<string | null>
+    // Clears the shared webview data store: cookies, caches, local storage.
+    // Touches nothing ÆTHER stores itself, and leaves private and container tabs
+    // alone — they have their own stores. Desktop only; on Windows it needs
+    // WebView2 runtime 1.0.1518.46 or newer and reports when it does not have it.
+    // See docs/SECURITY.md.
+    clearBrowsingData(): Promise<void>
   }
   dashboard: {
     open(): Promise<void>
@@ -615,7 +733,7 @@ export interface AetherApi {
   system: {
     status(): Promise<SystemStatus>
     settings(): Promise<AppSettings>
-    updateSettings(input: Partial<AppSettings>): Promise<AppSettings>
+    updateSettings(input: UpdateSettingsInput): Promise<AppSettings>
     updateModels(input: { embeddingModel?: string; chatModel?: string }): Promise<SystemStatus>
     checkForUpdate(): Promise<UpdateCheckResult>
     // Downloads, signature-verifies, and installs the newest signed release.
