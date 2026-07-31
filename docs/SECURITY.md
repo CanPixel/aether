@@ -1,6 +1,8 @@
 # Security Notes
 
 Not a policy document — a record of the decisions that are easy to undo by accident.
+For _why_ these are the decisions, see [PRINCIPLES.md](PRINCIPLES.md); this file is
+the mechanism, that one is the position.
 
 ## Two kinds of webview
 

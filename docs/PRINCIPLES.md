@@ -94,7 +94,22 @@ there too — on Windows they are not, and the app says so rather than implying
 otherwise. Click identifiers are stripped from URLs on navigation _and_ on capture, so an ad
 attribution never gets a permanent home in your library.
 
-## 11. We say what we don't do
+## 11. The leak you don't think about is the one that gets you
+
+Point ÆTHER at a proxy — Tor's port comes prefilled — and the app routes its _own_
+traffic the same way: favicons, capture re-fetches, model downloads included.
+Nothing is exempted for speed, because traffic you believe is proxied and quietly
+isn't is worse than a slow download you can see.
+
+When the route cannot be honoured it fails closed, refusing to resolve any host
+rather than quietly going direct. Hostnames are handed to the proxy rather than
+resolved locally, because a hidden IP address paired with a visible DNS query for
+every site is most of the leak back again.
+
+Off until you turn it on — as is pinning your timezone to UTC, which patches
+`Intl.resolvedOptions`, where fingerprinting scripts actually look.
+
+## 12. We say what we don't do
 
 The app reports its own coverage per platform rather than claiming a uniform story:
 where third-party cookie blocking is unavailable, the Settings screen says so; where

@@ -85,6 +85,8 @@ See [Local Wisdom Setup](#local-wisdom-setup).
 ## The Æther That Is
 
 > **New here?** Read the plain-language introduction: [What is ÆTHER?](docs/WHAT-IS-AETHER.md)
+>
+> **Why it is built this way?** The position behind it: [Principles](docs/PRINCIPLES.md)
 
 ÆTHER is a Tauri-native desktop engine built for local knowledge work. It turns ordinary browsing into a private research loop: save useful pages, organize them into knowledge hubs, embed them on-device, and ask AiON for citation-backed answers grounded in what you actually captured.
 
@@ -147,7 +149,8 @@ that without shipping its own engine. A hidden IP with an unchanged fingerprint 
 leaves your sessions joinable to each other. If you need anonymity, use Tor Browser.
 
 The full account, including every known gap and which platform has which protection,
-is in [docs/SECURITY.md](docs/SECURITY.md).
+is in [docs/SECURITY.md](docs/SECURITY.md). The reasoning behind these choices — and
+what ÆTHER deliberately refuses to claim — is in [docs/PRINCIPLES.md](docs/PRINCIPLES.md).
 
 ## Local Wisdom Setup
 
