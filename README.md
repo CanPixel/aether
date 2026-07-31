@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  A private research browser using local AI for capturing the web, running entirely on your own hardware. <br>
+  A private research engine using local AI for capturing the web, running entirely on your own hardware. <br>
   Build Knowledge Hubs, generate new research hooks, and ask grounded questions to the web pages you explore.
 </p>
 
@@ -86,7 +86,7 @@ See [Local Wisdom Setup](#local-wisdom-setup).
 
 > **New here?** Read the plain-language introduction: [What is ÆTHER?](docs/WHAT-IS-AETHER.md)
 
-ÆTHER is a Tauri-native desktop browser built for local knowledge work. It turns ordinary browsing into a private research loop: save useful pages, organize them into knowledge hubs, embed them on-device, and ask AiON for citation-backed answers grounded in what you actually captured.
+ÆTHER is a Tauri-native desktop engine built for local knowledge work. It turns ordinary browsing into a private research loop: save useful pages, organize them into knowledge hubs, embed them on-device, and ask AiON for citation-backed answers grounded in what you actually captured.
 
 It is not a cloud wrapper and it is not an external chatbot sidebar. The local wisdom path runs in the app process through GGUF models and a bundled llama.cpp runtime.
 
