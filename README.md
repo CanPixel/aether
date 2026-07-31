@@ -327,7 +327,7 @@ It generates five depth layers:
 2. Formation: adjacent concepts
 3. Cold Current: methods and mechanisms
 4. Black Ice: specialist patterns
-5. Abyssal Lattice: hidden edge knowledge
+5. Abyssal Deep: hidden edge knowledge
 
 The iCE canvas includes:
 

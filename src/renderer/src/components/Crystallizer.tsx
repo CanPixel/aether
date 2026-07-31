@@ -144,7 +144,7 @@ const LAYERS: LayerDefinition[] = [
   },
   {
     level: 5,
-    name: 'Abyssal Lattice',
+    name: 'Abyssal Deep',
     shortName: 'Abyssal',
     caption: 'Hidden edge knowledge',
     accent: '#b76e2d'
