@@ -452,6 +452,56 @@ pub(crate) struct CaptureMetadata {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct CaptureProvenance {
+    #[serde(default)]
+    pub(crate) receipt_version: u8,
+    #[serde(default)]
+    pub(crate) extractor_version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) requested_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) canonical_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) author: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) published_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) site_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) language: Option<String>,
+    pub(crate) content_hash: String,
+    pub(crate) extraction_method: ExtractionMethod,
+    #[serde(default)]
+    pub(crate) content_scope: CaptureScope,
+    #[serde(default)]
+    pub(crate) content_selector: String,
+    #[serde(default)]
+    pub(crate) word_count: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) fallback_reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) selection_context_before: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) selection_context_after: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ExtractionMethod {
+    LiveDom,
+    HttpFetch,
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum CaptureScope {
+    #[default]
+    Page,
+    Selection,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct CaptureSummary {
     pub(crate) id: String,
     pub(crate) collection_id: String,
@@ -462,6 +512,10 @@ pub(crate) struct CaptureSummary {
     pub(crate) chunk_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) metadata: Option<CaptureMetadata>,
+    /// Describes the live web source and the exact locally extracted text. Older
+    /// library records predate provenance and therefore deserialize as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) provenance: Option<CaptureProvenance>,
     /// Whether this source came out of a private tab.
     ///
     /// Library hygiene, not a privacy control — capture writes to your own disk
@@ -1052,6 +1106,12 @@ pub(crate) struct UpdateCollectionInput {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CaptureCurrentPageInput {
+    pub(crate) collection_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CaptureSelectionInput {
     pub(crate) collection_id: String,
 }
 

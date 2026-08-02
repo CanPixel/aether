@@ -119,6 +119,26 @@ export interface CaptureSummary {
     summary?: string
     tags?: string[]
   }
+  /** Provenance for the locally extracted representation of the live web source. */
+  provenance?: {
+    receiptVersion: number
+    extractorVersion: string
+    requestedUrl?: string
+    canonicalUrl?: string
+    author?: string
+    publishedAt?: string
+    siteName?: string
+    language?: string
+    /** SHA-256 of the normalized text that was chunked and embedded. */
+    contentHash: string
+    extractionMethod: 'live-dom' | 'http-fetch'
+    contentScope: 'page' | 'selection'
+    contentSelector: string
+    wordCount: number
+    fallbackReason?: string
+    selectionContextBefore?: string
+    selectionContextAfter?: string
+  }
   // Present only when the source came out of a private tab. Library hygiene, not
   // a privacy control: it keeps private-session research findable so it can be
   // purged later, rather than blending into every other source.
@@ -676,6 +696,7 @@ export interface AetherApi {
   }
   capture: {
     currentPage(input: { collectionId: string }): Promise<CaptureResult>
+    selection(input: { collectionId: string }): Promise<CaptureResult>
     // Captures a page ÆTHER never loaded, by fetching the URL directly.
     url(input: { collectionId: string; url: string }): Promise<CaptureResult>
     // Bulk sibling of url(); reports per-link failures instead of aborting.

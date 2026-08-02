@@ -26,6 +26,8 @@ import {
   getCaptureHost
 } from '../utils/aether-ui'
 import { claimTextForCitation, renderAnswerMarkdown } from './answer-markdown'
+import { buildEvidenceBundle } from '../utils/evidence-bundle'
+import { writeClipboardText } from '../utils/clipboard'
 import { CrystallizingOrb } from './CrystallizingOrb'
 import { ModelLevelSlider } from './ModelLevelSlider'
 import { AetherSigilIcon, ChevronRightIcon, GearIcon } from './icons'
@@ -971,24 +973,6 @@ function LocalModelSettings({
   )
 }
 
-// Build the clipboard text: drop the inline [n] / [1, 2] citation markers from the
-// prose and move the sources to a footnote list, matching the on-screen citation chips.
-function buildAnswerClipboardText(result: ChatResult): string {
-  const body = result.answer
-    .replace(/ ?\[(?:\d+\s*,\s*)*\d+\]/g, '')
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/[ \t]+\n/g, '\n')
-    .trim()
-
-  if (result.citations.length === 0) return body
-
-  const sources = result.citations
-    .map((citation, index) => `[${index + 1}] ${citation.title} - ${getCaptureHost(citation.url)}`)
-    .join('\n')
-
-  return `${body}\n\nSources:\n${sources}`
-}
-
 function formatAnswerMetrics(result: ChatResult): string {
   const tokensPerSecond = Number.isFinite(result.metrics.tokensPerSecond)
     ? result.metrics.tokensPerSecond
@@ -1010,12 +994,16 @@ function AnswerCard({
   result: ChatResult
   onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>
 }): React.JSX.Element {
-  const [copied, setCopied] = useState(false)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
 
   async function copyAnswer(): Promise<void> {
-    await navigator.clipboard.writeText(buildAnswerClipboardText(result))
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1400)
+    try {
+      await writeClipboardText(buildEvidenceBundle(result))
+      setCopyState('copied')
+    } catch {
+      setCopyState('failed')
+    }
+    window.setTimeout(() => setCopyState('idle'), 1600)
   }
 
   return (
@@ -1042,7 +1030,11 @@ function AnswerCard({
       <footer>
         <span>{countLabel(result.citations.length, 'local citation')}</span>
         <button className="answer-copy-button responsive-button" onClick={copyAnswer} type="button">
-          {copied ? 'Copied' : 'Copy'}
+          {copyState === 'copied'
+            ? 'Copied'
+            : copyState === 'failed'
+              ? 'Copy failed'
+              : 'Copy evidence'}
         </button>
       </footer>
     </article>

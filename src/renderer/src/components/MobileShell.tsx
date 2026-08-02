@@ -11,6 +11,7 @@ import { QuickAction } from '../types/ui'
 import { countLabel, formatVisibleModelName, getTabTint } from '../utils/aether-ui'
 import { useSiteFavicon } from '../utils/site-favicon'
 import { renderAnswerMarkdown } from './answer-markdown'
+import { buildEvidenceBundle } from '../utils/evidence-bundle'
 import {
   AetherSigilIcon,
   ChevronRightIcon,
@@ -22,7 +23,17 @@ import {
   PlusIcon,
   SpinnerIcon
 } from './icons'
-import { ArrowUpRight, BookmarkPlus, Download, RefreshCw, Search, Snowflake, X } from 'lucide-react'
+import {
+  ArrowUpRight,
+  BookmarkPlus,
+  Copy,
+  Download,
+  RefreshCw,
+  Search,
+  Snowflake,
+  TextSelect,
+  X
+} from 'lucide-react'
 
 // ÆTHER's dedicated Android shell: Samsung-style bottom chrome (mini tab strip
 // + compact address row) that auto-hides on page scroll, an Opera-style
@@ -79,6 +90,7 @@ type MobileShellProps = {
   selectedCollectionId: string
   tabs: BrowserTabSummary[]
   onCapture: () => Promise<void>
+  onCaptureSelection: () => Promise<void>
   onCaptureIntent: () => Promise<void>
   onCloseTab: (tabId: string) => Promise<void>
   onCreateCollection: () => void
@@ -115,6 +127,7 @@ export function MobileShell({
   selectedCollectionId,
   tabs,
   onCapture,
+  onCaptureSelection,
   onCaptureIntent,
   onCloseTab,
   onCreateCollection,
@@ -135,6 +148,7 @@ export function MobileShell({
   const [aionOpen, setAionOpen] = useState(false)
   const [addressEditing, setAddressEditing] = useState(false)
   const [addressDraft, setAddressDraft] = useState('')
+  const [evidenceCopied, setEvidenceCopied] = useState(false)
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({})
   // Unfolded / tablet-width screens (Z Fold inner display): AiON docks as a
   // persistent right-hand panel beside the page instead of a bottom sheet.
@@ -440,10 +454,25 @@ export function MobileShell({
             </div>
           )}
 
-          {!asking && ask.chatResult && ask.chatResult.metrics.tokensPerSecond > 0 && (
+          {!asking && ask.chatResult && (
             <div className="mobile-aion-metrics">
-              {formatVisibleModelName(ask.chatResult.model) ?? ask.chatResult.model} ·{' '}
-              {ask.chatResult.metrics.tokensPerSecond.toFixed(1)} tok/s
+              {ask.chatResult.metrics.tokensPerSecond > 0 && (
+                <span>
+                  {formatVisibleModelName(ask.chatResult.model) ?? ask.chatResult.model} ·{' '}
+                  {ask.chatResult.metrics.tokensPerSecond.toFixed(1)} tok/s
+                </span>
+              )}
+              <button
+                onClick={() => {
+                  if (!ask.chatResult) return
+                  void navigator.clipboard.writeText(buildEvidenceBundle(ask.chatResult))
+                  setEvidenceCopied(true)
+                  window.setTimeout(() => setEvidenceCopied(false), 1400)
+                }}
+                type="button"
+              >
+                <Copy size={13} /> {evidenceCopied ? 'Copied' : 'Copy evidence'}
+              </button>
             </div>
           )}
 
@@ -720,6 +749,16 @@ export function MobileShell({
           </div>
 
           <div className="mobile-action-list">
+            <button
+              disabled={!isWebPage || Boolean(busy) || capturesBlocked}
+              onClick={() => {
+                setActionsOpen(false)
+                void onCaptureSelection()
+              }}
+              type="button"
+            >
+              <TextSelect /> Capture Selected Passage
+            </button>
             <button
               disabled={portalSaveBlocked || Boolean(busy)}
               onClick={() => {

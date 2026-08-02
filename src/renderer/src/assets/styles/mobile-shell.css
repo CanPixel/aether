@@ -988,10 +988,24 @@
 }
 
 .mobile-aion-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin: 2px 0 8px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
+}
+
+.mobile-aion-metrics button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: 10px;
 }
 
 .mobile-aion-citations {

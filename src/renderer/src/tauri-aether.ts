@@ -97,6 +97,7 @@ if (isTauri) {
     },
     capture: {
       currentPage: (input) => call<CaptureResult>('aether_capture_current_page', { input }),
+      selection: (input) => call<CaptureResult>('aether_capture_selection', { input }),
       url: (input) => call<CaptureResult>('aether_capture_url', { input }),
       urls: (input) => call<BulkCaptureResult>('aether_capture_urls', { input }),
       move: (input) => call<CaptureSummary>('aether_capture_move', { input }),

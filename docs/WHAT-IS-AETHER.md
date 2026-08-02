@@ -8,7 +8,7 @@ Think of it as three things merged into one app:
 
 1. **A browser** - tabs, address bar, search. Nothing to relearn.
 2. **A filing cabinet that organizes itself** — one click saves the page you're reading into a topic collection.
-3. **A research assistant who has actually read your files** — ask a question, get an answer built from the pages you saved, with citations pointing back to them.
+3. **A research assistant who has actually read the web pages you chose** - ask a question, get an answer built from their locally extracted text, with citations pointing back to the live sources.
 
 And the key twist: the "assistant" is an AI that runs entirely **on your own machine**. No cloud, no account, no subscription, no telemetry. Once the models are downloaded, the intelligence works with the network cable unplugged.
 
@@ -25,6 +25,17 @@ Everything in ÆTHER revolves around one simple cycle:
 **Browse.** Use ÆTHER like any browser. Open tabs, search, read.
 
 **Capture.** Found something worth keeping? Hit capture. ÆTHER extracts the readable text of the page (the article, not the ads), stores it locally, and quietly indexes it by _meaning_ — so later you can find it even if you don't remember any exact words from it.
+
+You can capture the page's main readable content or explicitly select a passage and
+save only that evidence. Both become immutable local records with an extraction
+receipt. The receipt records the extractor version, chosen content root, fallback
+path, source identity, capture time, and content fingerprint. Neither capture mode
+turns the source into a managed file.
+
+The original source stays on the web. ÆTHER is not a file cabinet and does not import a second copy into a document vault. It keeps the locally derived research layer: readable text, source provenance, embeddings, connections, notes, and answers. Opening a citation takes you back to the living source.
+
+A capture is persistent rather than refreshable. If the live page later changes,
+ÆTHER keeps the extraction you originally saved instead of silently replacing it.
 
 **Organize.** Captures live in **Knowledge Hubs** — collections you create per topic ("Thesis sources", "Kitchen renovation", "Rust learning"). ÆTHER can even suggest which hub a page belongs in, based on what it's about.
 
@@ -83,6 +94,7 @@ On first launch, ÆTHER offers to download a recommended model pack (a couple of
 
 **ÆTHER is not:**
 
+- A file or document manager - it extracts knowledge from web sources instead of importing PDFs, scans, email archives, or office files into a vault
 - A cloud chatbot — it won't answer from the whole internet, and that's the point: answers come from _your_ captured sources
 - An anonymity tool. It does block trackers and third-party cookies, strip click identifiers, and offer opt-in proxy and UTC-timezone reporting — but sites still see your browser's fingerprint, and a hidden IP does not change that. For anonymity, use Tor Browser
 - A lightweight app for very old machines — the local AI wants a reasonably modern computer (8 GB of RAM is the practical floor; see the README for specifics)

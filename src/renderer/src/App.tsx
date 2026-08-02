@@ -1712,6 +1712,28 @@ function App(): React.JSX.Element {
     })
   }
 
+  async function captureSelection(): Promise<void> {
+    if (!selectedCollection) {
+      await openCollectionDialog({ mode: 'create' })
+      reportBlocked('Create a hub before capturing a passage.')
+      return
+    }
+
+    await runTask('Capturing selection', async () => {
+      const result = await window.aether.capture.selection({
+        collectionId: selectedCollection.id
+      })
+      setLastCapture(result)
+      await refreshCollections(result.collectionId)
+      setStatus(await window.aether.system.status())
+      setSemanticTrailResult(null)
+      setFlowGraphResult(null)
+      reportSuccess(
+        `Saved ${countLabel(result.provenance?.wordCount ?? 0, 'selected word')} into ${result.collectionName}.`
+      )
+    })
+  }
+
   async function deleteCapture(captureId: string): Promise<void> {
     await runTask('Deleting capture', async () => {
       await window.aether.capture.delete(captureId)
@@ -2707,6 +2729,7 @@ function App(): React.JSX.Element {
           selectedCollectionId={selectedCollectionId}
           tabs={tabs}
           onCapture={capturePage}
+          onCaptureSelection={captureSelection}
           onCaptureIntent={maybeSuggestCaptureHub}
           onCloseTab={closeTab}
           onCreateCollection={() => {
@@ -2878,6 +2901,7 @@ function App(): React.JSX.Element {
             void createTab({ url, container })
           }}
           onCapture={capturePage}
+          onCaptureSelection={captureSelection}
           onCreateCollection={() => {
             void openCollectionDialog({ mode: 'create' })
           }}

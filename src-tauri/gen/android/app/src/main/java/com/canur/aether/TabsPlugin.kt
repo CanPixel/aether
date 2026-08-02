@@ -410,6 +410,28 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
         return@runOnUiThread
       }
       val script = """(() => {
+        const schemaTypes = new Set(['Article', 'NewsArticle', 'BlogPosting', 'TechArticle', 'Report']);
+        const schemaNodes = Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
+          .flatMap((node) => {
+            try {
+              const parsed = JSON.parse(node.textContent || 'null');
+              const roots = Array.isArray(parsed) ? parsed : [parsed];
+              return roots.flatMap((root) => Array.isArray(root?.['@graph']) ? root['@graph'] : [root]);
+            } catch (_) { return []; }
+          });
+        const articleSchema = schemaNodes.find((node) => {
+          const types = Array.isArray(node?.['@type']) ? node['@type'] : [node?.['@type']];
+          return types.some((type) => schemaTypes.has(type));
+        }) || {};
+        const schemaName = (value) => {
+          if (typeof value === 'string') return value;
+          if (Array.isArray(value)) return value.map(schemaName).filter(Boolean).join(', ');
+          return typeof value?.name === 'string' ? value.name : '';
+        };
+        const schemaUrl = (value) => {
+          if (typeof value === 'string') return value;
+          return typeof value?.['@id'] === 'string' ? value['@id'] : '';
+        };
         const clone = document.documentElement.cloneNode(true);
         clone.querySelectorAll('script, style, noscript, iframe, form, nav, footer, svg').forEach((node) => node.remove());
         return {
@@ -417,7 +439,20 @@ class TabsPlugin(private val activity: Activity) : Plugin(activity) {
           url: location.href,
           title: document.title,
           description: document.querySelector('meta[name="description"]')?.getAttribute('content') || '',
-          bodyText: document.body?.innerText || ''
+          bodyText: document.body?.innerText || '',
+          canonicalUrl: document.querySelector('link[rel~="canonical"]')?.href ||
+            document.querySelector('meta[property="og:url"]')?.getAttribute('content') ||
+            schemaUrl(articleSchema.mainEntityOfPage) || schemaUrl(articleSchema.url),
+          author: document.querySelector('meta[name="author"]')?.getAttribute('content') ||
+            document.querySelector('meta[property="article:author"]')?.getAttribute('content') ||
+            schemaName(articleSchema.author),
+          publishedAt: document.querySelector('meta[property="article:published_time"]')?.getAttribute('content') ||
+            document.querySelector('meta[itemprop="datePublished"]')?.getAttribute('content') ||
+            articleSchema.datePublished || articleSchema.dateCreated || '',
+          siteName: document.querySelector('meta[property="og:site_name"]')?.getAttribute('content') ||
+            schemaName(articleSchema.publisher) || schemaName(articleSchema.isPartOf),
+          language: document.documentElement.lang || articleSchema.inLanguage || '',
+          selectedText: window.getSelection()?.toString() || ''
         };
       })()"""
       view.evaluateJavascript(script) { value ->

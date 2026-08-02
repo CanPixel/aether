@@ -70,14 +70,24 @@ visited under another name.
 
 ## 8. Your data is yours in the boring, literal sense
 
-Plain files in a folder you can open, back up, and export whole. No account, no
-sign-in, no proprietary vault. Nothing is held hostage to a subscription, because
-there is no subscription.
+The web remains the source. ÆTHER keeps only the local research layer it derives
+from sources you chose: extracted text, provenance, embeddings, connections, notes,
+maps, and answers. Those local stores can be backed up and exported whole. No
+account, no sign-in, no proprietary document vault. Nothing is held hostage to a
+subscription, because there is no subscription.
 
 You can leave and take everything. That is the only version of data ownership that
 means anything.
 
-## 9. There is nothing pointed at you to degrade
+## 9. A capture is a record, not a cache
+
+Once captured, extracted text and its fingerprint remain stable. A later change to
+the live page may be detected, but it never silently rewrites the research record
+you originally saved. There is no refresh-in-place pipeline and no background
+recapture. Persistence means the evidence you used yesterday is still the evidence
+you can retrieve tomorrow.
+
+## 10. There is nothing pointed at you to degrade
 
 Enshittification needs a mechanism: ads to insert, engagement to farm, a free tier
 to squeeze, telemetry to justify it. ÆTHER has none of them and never sends
@@ -86,7 +96,7 @@ analytics, crash reports, or usage data anywhere.
 **It cannot get worse for you to make it better for someone else. There is no
 someone else.**
 
-## 10. Trackers die before the request leaves
+## 11. Trackers die before the request leaves
 
 On WebKit, blocked requests are refused inside the network path — a tracker learns
 nothing, not even that something was attempted. Third-party cookies are blocked
@@ -94,7 +104,7 @@ there too — on Windows they are not, and the app says so rather than implying
 otherwise. Click identifiers are stripped from URLs on navigation _and_ on capture, so an ad
 attribution never gets a permanent home in your library.
 
-## 11. The leak you don't think about is the one that gets you
+## 12. The leak you don't think about is the one that gets you
 
 Point ÆTHER at a proxy — Tor's port comes prefilled — and the app routes its _own_
 traffic the same way: favicons, capture re-fetches, model downloads included.
@@ -109,7 +119,7 @@ every site is most of the leak back again.
 Off until you turn it on — as is pinning your timezone to UTC, which patches
 `Intl.resolvedOptions`, where fingerprinting scripts actually look.
 
-## 12. We say what we don't do
+## 13. We say what we don't do
 
 The app reports its own coverage per platform rather than claiming a uniform story:
 where third-party cookie blocking is unavailable, the Settings screen says so; where

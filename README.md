@@ -92,6 +92,8 @@ See [Local Wisdom Setup](#local-wisdom-setup).
 
 It is not a cloud wrapper and it is not an external chatbot sidebar. The local wisdom path runs in the app process through GGUF models and a bundled llama.cpp runtime.
 
+It is also deliberately not a document vault. Original sources remain on the web. ÆTHER stores the locally extracted research layer: readable text, source provenance, embeddings, connections, notes, maps, and answers. Citations lead back to the living source.
+
 <img src="docs/images/readme/aether-browser-flow.png" alt="ÆTHER Browser + Flow" />
 
 ## Pillars of Eternity
@@ -106,8 +108,12 @@ It is not a cloud wrapper and it is not an external chatbot sidebar. The local w
 ## Highlights
 
 - **Automatic Setup**: fresh installs can download the recommended local model pack from official sources.
-- **Private Local Capture Pipeline**: readable page text is extracted, chunked, embedded, and stored locally.
+- **Private Local Capture Pipeline**: scored article candidates, main-content roots, and an explicit body fallback extract readable web text before it is chunked, embedded, and stored locally.
+- **Web Source Provenance**: new captures retain canonical URL, available authorship and publication metadata, extraction method, scope, selector, word count, extractor version, and a SHA-256 fingerprint of the normalized extracted text.
+- **Focused Passage Capture**: explicitly selected web text, its DOM location, and nearby context can become an immutable local research record without importing the surrounding document.
+- **Extraction Receipts**: source cards expose a versioned, copyable receipt including capture time, extraction path, redirects, fallbacks, and fingerprint.
 - **Grounded Local Answers**: AiON renders markdown answers with copy support, compact metrics, and clickable citations.
+- **Portable Evidence Bundles**: copy an AiON answer with intact citation markers, exact retrieved passages, live URLs, capture IDs, capture times, and local model attribution as Markdown.
 - **Knowledge Hubs**: create, reorder, edit, and organize captured pages into persistent local collections.
 - **iCE Maps**: generate layered concept atlases for research topics. Create a Cartography of Topics for new research hooks.
 - **Native Shell**: Tauri, Rust commands, Vite renderer, and no required local server sidecar.
@@ -905,11 +911,12 @@ iCE depends on the local chat model returning parseable JSON. Try:
 Likely next improvements:
 
 - Production signing and notarization flow ([setup guide](docs/SIGNING.md)), and generating the updater keypair that switches in-app updates on.
-- Import/export for knowledge hubs.
+- Restore/import for ÆTHER's own exported local knowledge stores, without general file ingestion.
 - Full capture library view with filtering and bulk actions.
+- Detect when a web source has materially changed while preserving the original local extraction as an immutable research record.
+- Broader extraction coverage for dynamic articles, documentation, transcripts, forums, and web-hosted PDFs.
 - Per-hub retrieval/model settings.
 - Better authenticated-app compatibility coverage.
-- Capture selected text or a selected DOM region.
 - More precise token-aware chunking.
 - Richer iCE export/share behavior.
 - More complete settings surface.

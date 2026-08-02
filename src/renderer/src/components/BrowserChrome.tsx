@@ -54,6 +54,7 @@ type BrowserChromeProps = {
   onCreatePrivateTab: () => void
   onCreateContainerTab: (url: string, container: string) => void
   onCapture: () => Promise<void>
+  onCaptureSelection: () => Promise<void>
   onCaptureIntent?: () => void | Promise<void>
   onCaptureSelectBlur?: () => void
   onCreateCollection: () => void
@@ -95,6 +96,7 @@ export function BrowserChrome({
   onCreatePrivateTab,
   onCreateContainerTab,
   onCapture,
+  onCaptureSelection,
   onCaptureIntent,
   onCaptureSelectBlur,
   onCreateCollection,
@@ -487,11 +489,20 @@ export function BrowserChrome({
             <button
               className="capture-page-button"
               disabled={Boolean(busy) || capturesBlocked}
+              onClick={onCaptureSelection}
+              title="Capture the passage currently selected on the page"
+              type="button"
+            >
+              Selection
+            </button>
+            <button
+              className="capture-page-button"
+              disabled={Boolean(busy) || capturesBlocked}
               onClick={onCapture}
               title={lastCapture ? `Last saved to ${lastCapture.collectionName}` : 'Capture page'}
               type="button"
             >
-              Capture
+              Page
             </button>
           </div>
         </div>

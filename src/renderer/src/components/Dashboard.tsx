@@ -42,6 +42,8 @@ import {
 import { ChevronRightIcon, AetherSigilIcon, CloseIcon, CubeIcon } from './icons'
 import { SquarePen, Trash2 as TrashIcon } from 'lucide-react'
 import { portals } from '../constants/Features'
+import { writeClipboardText } from '../utils/clipboard'
+import { buildExtractionReceipt } from '../utils/extraction-receipt'
 
 type CollectionDialogState =
   | { mode: 'create' }
@@ -831,6 +833,18 @@ function CaptureCard({
   onReorderEnter: (event: DragEvent<HTMLElement>) => void
   openCapture: (capture: CaptureSummary) => Promise<void>
 }): React.JSX.Element {
+  const [receiptCopyState, setReceiptCopyState] = useState<'idle' | 'copied' | 'failed'>('idle')
+
+  async function copyReceipt(): Promise<void> {
+    try {
+      await writeClipboardText(buildExtractionReceipt(capture))
+      setReceiptCopyState('copied')
+    } catch {
+      setReceiptCopyState('failed')
+    }
+    window.setTimeout(() => setReceiptCopyState('idle'), 1600)
+  }
+
   return (
     <article
       className={`recent-card ${dragging ? 'dragging' : ''} ${
@@ -884,6 +898,109 @@ function CaptureCard({
           </span>
         ))}
       </div>
+      {capture.provenance && (
+        <details
+          className="extraction-receipt"
+          draggable={false}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <summary>Extraction receipt</summary>
+          <dl>
+            <div>
+              <dt>Captured</dt>
+              <dd>{capture.capturedAt}</dd>
+            </div>
+            <div>
+              <dt>Record</dt>
+              <dd>
+                Immutable · {capture.provenance.contentScope} · receipt{' '}
+                {capture.provenance.receiptVersion || 'legacy'}
+              </dd>
+            </div>
+            <div>
+              <dt>Extracted</dt>
+              <dd>
+                {capture.provenance.wordCount > 0
+                  ? countLabel(capture.provenance.wordCount, 'word')
+                  : 'Legacy record'}{' '}
+                · {capture.provenance.contentSelector || 'legacy extractor'}
+              </dd>
+            </div>
+            <div>
+              <dt>Method</dt>
+              <dd>{capture.provenance.extractionMethod}</dd>
+            </div>
+            <div>
+              <dt>Extractor</dt>
+              <dd>{capture.provenance.extractorVersion || 'legacy extractor'}</dd>
+            </div>
+            {capture.provenance.requestedUrl && capture.provenance.requestedUrl !== capture.url && (
+              <div>
+                <dt>Requested</dt>
+                <dd title={capture.provenance.requestedUrl}>
+                  {capture.provenance.requestedUrl}
+                </dd>
+              </div>
+            )}
+            {capture.provenance.author && (
+              <div>
+                <dt>Author</dt>
+                <dd>{capture.provenance.author}</dd>
+              </div>
+            )}
+            {capture.provenance.publishedAt && (
+              <div>
+                <dt>Published</dt>
+                <dd>{capture.provenance.publishedAt}</dd>
+              </div>
+            )}
+            {capture.provenance.canonicalUrl && (
+              <div>
+                <dt>Canonical</dt>
+                <dd title={capture.provenance.canonicalUrl}>
+                  {getCaptureHost(capture.provenance.canonicalUrl)}
+                </dd>
+              </div>
+            )}
+            {capture.provenance.siteName && (
+              <div>
+                <dt>Site</dt>
+                <dd>{capture.provenance.siteName}</dd>
+              </div>
+            )}
+            {capture.provenance.language && (
+              <div>
+                <dt>Language</dt>
+                <dd>{capture.provenance.language}</dd>
+              </div>
+            )}
+            {capture.provenance.fallbackReason && (
+              <div className="extraction-receipt-wide">
+                <dt>Fallback</dt>
+                <dd>{capture.provenance.fallbackReason}</dd>
+              </div>
+            )}
+            <div>
+              <dt>Fingerprint</dt>
+              <dd title={capture.provenance.contentHash}>
+                {capture.provenance.contentHash.slice(0, 12)}
+              </dd>
+            </div>
+          </dl>
+          <button
+            className="extraction-receipt-copy"
+            draggable={false}
+            onClick={copyReceipt}
+            type="button"
+          >
+            {receiptCopyState === 'copied'
+              ? 'Receipt copied'
+              : receiptCopyState === 'failed'
+                ? 'Copy failed'
+                : 'Copy full receipt'}
+          </button>
+        </details>
+      )}
     </article>
   )
 }

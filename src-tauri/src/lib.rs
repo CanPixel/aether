@@ -452,6 +452,7 @@ struct CapturedPage {
     title: String,
     url: String,
     text: String,
+    provenance: CaptureProvenance,
 }
 
 #[derive(Deserialize)]
@@ -462,6 +463,15 @@ struct BrowserPageSnapshot {
     title: Option<String>,
     description: Option<String>,
     body_text: Option<String>,
+    canonical_url: Option<String>,
+    author: Option<String>,
+    published_at: Option<String>,
+    site_name: Option<String>,
+    language: Option<String>,
+    selected_text: Option<String>,
+    selection_selector: Option<String>,
+    selection_context_before: Option<String>,
+    selection_context_after: Option<String>,
 }
 
 impl Backend {
@@ -1135,6 +1145,7 @@ pub fn run() {
             #[cfg(desktop)]
             aether_browser_clear_data,
             aether_capture_current_page,
+            aether_capture_selection,
             aether_capture_url,
             aether_capture_urls,
             aether_capture_move,
@@ -3032,6 +3043,7 @@ mod tests {
                     captured_at: "2026-07-01T00:00:00Z".to_string(),
                     chunk_count: 1,
                     metadata: None,
+                    provenance: None,
                     from_private_tab: false,
                 })
                 .collect(),
@@ -3054,6 +3066,7 @@ mod tests {
             captured_at: "2026-07-01T00:00:00Z".to_string(),
             chunk_count: 1,
             metadata: None,
+            provenance: None,
             from_private_tab: false,
         });
 
@@ -3145,6 +3158,34 @@ mod tests {
             !is_duplicate_capture(&library, "hub-2", &key),
             "the same page in another hub is a separate capture, not a duplicate"
         );
+    }
+
+    #[test]
+    fn duplicate_capture_does_not_check_or_report_live_source_changes() {
+        let mut library = library_fixture(&[("cap-1", "https://example.com/article")]);
+        library.captures[0].provenance = Some(CaptureProvenance {
+            receipt_version: 1,
+            extractor_version: "test-extractor".to_string(),
+            requested_url: None,
+            canonical_url: Some("https://example.com/article".to_string()),
+            author: None,
+            published_at: None,
+            site_name: None,
+            language: None,
+            content_hash: "old-hash".to_string(),
+            extraction_method: ExtractionMethod::LiveDom,
+            content_scope: CaptureScope::Page,
+            content_selector: "article".to_string(),
+            word_count: 120,
+            fallback_reason: None,
+            selection_context_before: None,
+            selection_context_after: None,
+        });
+        let existing = &library.captures[0];
+
+        let message = duplicate_capture_message(existing, "Reading");
+        assert_eq!(message, "This source is already in Reading.");
+        assert!(!message.contains("changed"));
     }
 
     // Scope validation used to cost a second full read of library.json. It now runs
@@ -3751,6 +3792,7 @@ mod tests {
             captured_at: now(),
             chunk_count: 1,
             metadata: None,
+            provenance: None,
             from_private_tab: true,
         };
 
@@ -3758,6 +3800,7 @@ mod tests {
         assert_eq!(json["fromPrivateTab"], serde_json::json!(true));
         let parsed: CaptureSummary = serde_json::from_value(json).expect("parse");
         assert!(parsed.from_private_tab);
+        assert!(parsed.provenance.is_none());
 
         // Ordinary captures leave library.json byte-identical to before the field
         // existed, and a record written before it reads as not-private.
@@ -3956,6 +3999,70 @@ mod tests {
         );
     }
 
+    #[test]
+    fn readable_extraction_prefers_article_over_body_chrome() {
+        let document = Html::parse_document(
+            r#"<html><body>
+              <aside>Trending links repeated across the site. Trending links repeated
+              across the site. Trending links repeated across the site.</aside>
+              <article>The durable research content starts here. It contains enough
+              explanatory prose to clear the article threshold and should become the
+              sole extracted body. The unrelated sidebar must not enter embeddings,
+              retrieval results, or later answers built from this saved source.</article>
+            </body></html>"#,
+        );
+        let content = select_readable_content(&document);
+        assert_eq!(content.selector, "article");
+        assert!(content.text.contains("durable research content"));
+        assert!(!content.text.contains("Trending links"));
+    }
+
+    #[test]
+    fn readable_extraction_scores_individual_articles_instead_of_joining_cards() {
+        let document = Html::parse_document(
+            r#"<html><body><main>
+              <article class="card"><p>Short linked card repeated for navigation.
+              <a href="/one">Read more</a></p></article>
+              <article class="card"><p>Another short linked card repeated for navigation.
+              <a href="/two">Read more</a></p></article>
+              <article id="research"><h1>Substantive research</h1><p>This is the primary
+              article with several complete explanatory sentences and enough durable content
+              to outrank navigation cards. It discusses the evidence carefully and continues
+              with material intended for reading rather than directing the user elsewhere.</p>
+              <p>A second paragraph adds detail, context, and a concrete conclusion.</p></article>
+            </main></body></html>"#,
+        );
+
+        let content = select_readable_content(&document);
+        assert!(content.selector.starts_with("article"));
+        assert!(content.text.contains("Substantive research"));
+        assert!(!content.text.contains("Short linked card"));
+        assert!(!content.text.contains("Another short linked card"));
+    }
+
+    #[test]
+    fn json_ld_supplies_article_provenance_when_meta_tags_are_absent() {
+        let document = Html::parse_document(
+            r#"<html><head><script type="application/ld+json">
+              {"@context":"https://schema.org","@graph":[
+                {"@type":"WebSite","name":"Example"},
+                {"@type":"NewsArticle","url":"/research/story",
+                 "author":[{"name":"Ada Example"},{"name":"Lin Example"}],
+                 "datePublished":"2026-08-01T09:00:00Z",
+                 "publisher":{"name":"Example Review"},"inLanguage":"en"}
+              ]}
+            </script></head><body></body></html>"#,
+        );
+        let metadata = select_json_ld_metadata(&document);
+        assert_eq!(metadata.canonical_url.as_deref(), Some("/research/story"));
+        assert_eq!(
+            metadata.author.as_deref(),
+            Some("Ada Example, Lin Example")
+        );
+        assert_eq!(metadata.site_name.as_deref(), Some("Example Review"));
+        assert_eq!(metadata.language.as_deref(), Some("en"));
+    }
+
     // The regression this guards: `body_text` came from the live DOM's innerText
     // while the stripping only ever applied to the cloned `html`, so the cleaning
     // had no effect on what was actually indexed.
@@ -3977,11 +4084,33 @@ mod tests {
                  Accept All. Cleaned article body. Copyright 2026."
                     .to_string(),
             ),
+            canonical_url: Some(
+                "https://example.com/post?utm_source=feed#comments".to_string(),
+            ),
+            author: Some("Ada Example".to_string()),
+            published_at: Some("2026-07-30T12:00:00Z".to_string()),
+            site_name: Some("Example Journal".to_string()),
+            language: Some("en-GB".to_string()),
+            selected_text: None,
+            selection_selector: None,
+            selection_context_before: None,
+            selection_context_after: None,
         };
         let page = snapshot_to_captured_page(snapshot, "fallback").unwrap();
         assert!(page.text.contains("Cleaned article body"));
         assert!(!page.text.contains("We use cookies"), "{}", page.text);
         assert!(!page.text.contains("Home About Contact"), "{}", page.text);
+        assert_eq!(
+            page.provenance.canonical_url.as_deref(),
+            Some("https://example.com/post")
+        );
+        assert_eq!(page.provenance.author.as_deref(), Some("Ada Example"));
+        assert_eq!(page.provenance.language.as_deref(), Some("en-GB"));
+        assert!(matches!(
+            page.provenance.extraction_method,
+            ExtractionMethod::LiveDom
+        ));
+        assert_eq!(page.provenance.content_hash, hash_extracted_content(&page.text));
     }
 
     // A page whose cleaned clone is too thin — a heavily scripted app, say —
@@ -3995,9 +4124,214 @@ mod tests {
             description: Some(String::new()),
             html: Some("<html><body><div id=\"root\"></div></body></html>".to_string()),
             body_text: Some(long_text.clone()),
+            canonical_url: None,
+            author: None,
+            published_at: None,
+            site_name: None,
+            language: None,
+            selected_text: None,
+            selection_selector: None,
+            selection_context_before: None,
+            selection_context_after: None,
         };
         let page = snapshot_to_captured_page(snapshot, "fallback").unwrap();
         assert!(page.text.contains("recovered from innerText"));
+    }
+
+    #[test]
+    fn provenance_metadata_is_read_from_html_and_relative_canonical_urls_are_resolved() {
+        let snapshot = BrowserPageSnapshot {
+            url: Some("https://example.com/articles/read?id=7".to_string()),
+            title: Some("A sourced article".to_string()),
+            description: Some(String::new()),
+            html: Some(
+                r#"<html lang="nl"><head>
+                  <link rel="canonical" href="/articles/seven?utm_campaign=test#section">
+                  <meta name="author" content="Can Example">
+                  <meta property="article:published_time" content="2026-08-01">
+                  <meta property="og:site_name" content="Example Research">
+                </head><body><article>This is the substantial article body used to
+                verify that source metadata remains attached to locally extracted
+                knowledge without storing or managing the original web document.</article></body></html>"#
+                    .to_string(),
+            ),
+            body_text: None,
+            canonical_url: None,
+            author: None,
+            published_at: None,
+            site_name: None,
+            language: None,
+            selected_text: None,
+            selection_selector: None,
+            selection_context_before: None,
+            selection_context_after: None,
+        };
+
+        let page = snapshot_to_captured_page(snapshot, "fallback").unwrap();
+        assert_eq!(
+            page.provenance.canonical_url.as_deref(),
+            Some("https://example.com/articles/seven")
+        );
+        assert_eq!(page.provenance.author.as_deref(), Some("Can Example"));
+        assert_eq!(page.provenance.published_at.as_deref(), Some("2026-08-01"));
+        assert_eq!(page.provenance.site_name.as_deref(), Some("Example Research"));
+        assert_eq!(page.provenance.language.as_deref(), Some("nl"));
+        assert_eq!(page.provenance.content_hash.len(), 64);
+    }
+
+    #[test]
+    fn selected_passage_capture_indexes_only_the_explicit_selection() {
+        let snapshot = BrowserPageSnapshot {
+            url: Some("https://example.com/long-read".to_string()),
+            title: Some("Long Read".to_string()),
+            description: Some(String::new()),
+            html: Some("<html><body>Short page.</body></html>".to_string()),
+            body_text: None,
+            canonical_url: None,
+            author: None,
+            published_at: None,
+            site_name: None,
+            language: None,
+            selected_text: Some(
+                "Only this deliberately selected passage belongs in the capture.".to_string(),
+            ),
+            selection_selector: Some("article > p:nth-of-type(2)".to_string()),
+            selection_context_before: Some("Context immediately before. ".to_string()),
+            selection_context_after: Some(" Context immediately after.".to_string()),
+        };
+
+        let page = snapshot_to_selected_page(snapshot, "fallback").unwrap();
+        assert!(page.text.contains("Only this deliberately selected passage"));
+        assert!(!page.text.contains("Short page"));
+        assert!(matches!(
+            page.provenance.content_scope,
+            CaptureScope::Selection
+        ));
+        assert_eq!(page.provenance.content_selector, "article > p:nth-of-type(2)");
+        assert_eq!(
+            page.provenance.selection_context_before.as_deref(),
+            Some("Context immediately before.")
+        );
+    }
+
+    #[test]
+    fn older_provenance_records_gain_safe_receipt_defaults() {
+        let provenance: CaptureProvenance = serde_json::from_value(serde_json::json!({
+            "contentHash": "legacy-hash",
+            "extractionMethod": "live-dom"
+        }))
+        .expect("legacy provenance should remain readable");
+
+        assert_eq!(provenance.receipt_version, 0);
+        assert!(provenance.extractor_version.is_empty());
+        assert!(provenance.requested_url.is_none());
+        assert!(matches!(provenance.content_scope, CaptureScope::Page));
+        assert!(provenance.fallback_reason.is_none());
+    }
+
+    #[test]
+    fn canonical_identity_deduplicates_page_variants_but_not_passage_captures() {
+        let mut library = library_fixture(&[("cap-1", "https://example.com/amp/story")]);
+        library.captures[0].provenance = Some(CaptureProvenance {
+            receipt_version: 1,
+            extractor_version: "test-extractor".to_string(),
+            requested_url: None,
+            canonical_url: Some("https://example.com/story".to_string()),
+            author: None,
+            published_at: None,
+            site_name: None,
+            language: None,
+            content_hash: "page-one".to_string(),
+            extraction_method: ExtractionMethod::LiveDom,
+            content_scope: CaptureScope::Page,
+            content_selector: "article".to_string(),
+            word_count: 400,
+            fallback_reason: None,
+            selection_context_before: None,
+            selection_context_after: None,
+        });
+        let page_provenance = CaptureProvenance {
+            receipt_version: 1,
+            extractor_version: "test-extractor".to_string(),
+            requested_url: None,
+            canonical_url: Some("https://example.com/story".to_string()),
+            author: None,
+            published_at: None,
+            site_name: None,
+            language: None,
+            content_hash: "page-two".to_string(),
+            extraction_method: ExtractionMethod::HttpFetch,
+            content_scope: CaptureScope::Page,
+            content_selector: "main".to_string(),
+            word_count: 410,
+            fallback_reason: None,
+            selection_context_before: None,
+            selection_context_after: None,
+        };
+        assert!(captures_are_duplicates(
+            &library.captures[0],
+            "https://example.com/story/print",
+            &page_provenance
+        ));
+
+        let selection_provenance = CaptureProvenance {
+            content_scope: CaptureScope::Selection,
+            content_hash: "selected-passage".to_string(),
+            word_count: 12,
+            content_selector: "user-selection".to_string(),
+            ..page_provenance
+        };
+        assert!(!captures_are_duplicates(
+            &library.captures[0],
+            "https://example.com/story",
+            &selection_provenance
+        ));
+    }
+
+    #[test]
+    fn duplicate_identity_rejects_suspicious_homepage_canonicals_and_sorts_queries() {
+        let mut library = library_fixture(&[(
+            "cap-1",
+            "https://example.com/article?edition=eu&lang=en&utm_source=feed",
+        )]);
+        let direct_provenance = CaptureProvenance {
+            receipt_version: 1,
+            extractor_version: "test-extractor".to_string(),
+            requested_url: None,
+            canonical_url: None,
+            author: None,
+            published_at: None,
+            site_name: None,
+            language: None,
+            content_hash: "incoming".to_string(),
+            extraction_method: ExtractionMethod::LiveDom,
+            content_scope: CaptureScope::Page,
+            content_selector: "article".to_string(),
+            word_count: 200,
+            fallback_reason: None,
+            selection_context_before: None,
+            selection_context_after: None,
+        };
+        assert!(captures_are_duplicates(
+            &library.captures[0],
+            "https://example.com/article?lang=en&edition=eu",
+            &direct_provenance
+        ));
+
+        library.captures[0].url = "https://example.com/first-story".to_string();
+        library.captures[0].provenance = Some(CaptureProvenance {
+            canonical_url: Some("https://example.com/".to_string()),
+            ..direct_provenance.clone()
+        });
+        let second_story = CaptureProvenance {
+            canonical_url: Some("https://example.com/".to_string()),
+            ..direct_provenance
+        };
+        assert!(!captures_are_duplicates(
+            &library.captures[0],
+            "https://example.com/second-story",
+            &second_story
+        ));
     }
 
     // The old single constant claimed macOS Safari on every desktop target, which
@@ -4402,4 +4736,3 @@ mod tests {
         }
     }
 }
-

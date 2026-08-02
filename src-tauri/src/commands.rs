@@ -795,6 +795,35 @@ pub(crate) async fn aether_capture_current_page(
     .await
 }
 
+#[tauri::command]
+pub(crate) async fn aether_capture_selection(
+    app: AppHandle,
+    state: State<'_, Backend>,
+    input: CaptureSelectionInput,
+) -> Cmd<CaptureResult> {
+    emit_capture_progress(&app, "Reading selected passage", None, None);
+    let active_tab = {
+        let tabs = lock_tabs(&state)?;
+        if tabs.dashboard_open {
+            return Err("Open a website before capturing a selection.".to_string());
+        }
+        tabs.active_tab()
+            .cloned()
+            .ok_or_else(|| "No active browser tab.".to_string())?
+    };
+    let app_id = active_tab.app_id.clone();
+    let captured = extract_selected_active_page(&state, &active_tab).await?;
+    capture_page_into_collection(
+        &app,
+        &state,
+        &input.collection_id,
+        captured,
+        &app_id,
+        active_tab.private,
+    )
+    .await
+}
+
 // Captures a page ÆTHER never had to load. This is what lets sources arrive from a
 // pasted link, a dropped link, or a batch of open tabs instead of only from the
 // active tab, so the library can grow without the app being the default browser.
@@ -866,6 +895,7 @@ pub(crate) async fn aether_capture_urls(
 // from the active-tab capture.
 // One page per collection, compared on the normalized URL key rather than the raw
 // URL so the same article behind different tracking parameters is one capture.
+#[cfg(test)]
 pub(crate) fn is_duplicate_capture(
     library: &LibraryData,
     collection_id: &str,
@@ -875,6 +905,115 @@ pub(crate) fn is_duplicate_capture(
         capture.collection_id == collection_id
             && normalize_capture_url_key(&capture.url) == captured_key
     })
+}
+
+fn duplicate_url_key(url: &str) -> String {
+    let cleaned = strip_tracking_params(url);
+    let Ok(mut parsed) = Url::parse(&cleaned) else {
+        return normalize_capture_url_key(&cleaned);
+    };
+    parsed.set_fragment(None);
+    let mut query = parsed
+        .query_pairs()
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect::<Vec<_>>();
+    query.sort();
+    if query.is_empty() {
+        parsed.set_query(None);
+    } else {
+        parsed.query_pairs_mut().clear().extend_pairs(query);
+    }
+    normalize_capture_url_key(parsed.as_str())
+}
+
+fn trusted_canonical_key(source_url: &str, canonical_url: &str) -> Option<String> {
+    let source = Url::parse(source_url).ok()?;
+    let canonical = Url::parse(canonical_url).ok()?;
+    let source_host = source.host_str()?.trim_start_matches("www.");
+    let canonical_host = canonical.host_str()?.trim_start_matches("www.");
+    if source_host != canonical_host
+        || source.port_or_known_default() != canonical.port_or_known_default()
+    {
+        return None;
+    }
+    let source_is_root = source.path().trim_matches('/').is_empty();
+    let canonical_is_root = canonical.path().trim_matches('/').is_empty();
+    if canonical_is_root && !source_is_root {
+        return None;
+    }
+    Some(duplicate_url_key(canonical_url))
+}
+
+fn capture_source_keys(url: &str, provenance: Option<&CaptureProvenance>) -> Vec<String> {
+    let mut keys = vec![duplicate_url_key(url)];
+    if let Some(canonical_url) = provenance.and_then(|item| item.canonical_url.as_deref()) {
+        if let Some(canonical_key) = trusted_canonical_key(url, canonical_url) {
+            if !keys.contains(&canonical_key) {
+                keys.push(canonical_key);
+            }
+        }
+    }
+    keys
+}
+
+fn capture_scope(provenance: Option<&CaptureProvenance>) -> CaptureScope {
+    provenance
+        .map(|item| item.content_scope)
+        .unwrap_or(CaptureScope::Page)
+}
+
+pub(crate) fn captures_are_duplicates(
+    existing: &CaptureSummary,
+    incoming_url: &str,
+    incoming_provenance: &CaptureProvenance,
+) -> bool {
+    if capture_scope(existing.provenance.as_ref()) != incoming_provenance.content_scope {
+        return false;
+    }
+
+    let existing_keys = capture_source_keys(&existing.url, existing.provenance.as_ref());
+    let incoming_keys = capture_source_keys(incoming_url, Some(incoming_provenance));
+    let same_source = existing_keys
+        .iter()
+        .any(|key| incoming_keys.contains(key));
+    if !same_source {
+        return false;
+    }
+
+    match incoming_provenance.content_scope {
+        CaptureScope::Page => true,
+        CaptureScope::Selection => existing
+            .provenance
+            .as_ref()
+            .is_some_and(|item| item.content_hash == incoming_provenance.content_hash),
+    }
+}
+
+fn duplicate_capture_for_page(
+    library: &LibraryData,
+    collection_id: &str,
+    incoming_url: &str,
+    incoming_provenance: &CaptureProvenance,
+) -> Option<CaptureSummary> {
+    library
+        .captures
+        .iter()
+        .find(|capture| {
+            capture.collection_id == collection_id
+                && captures_are_duplicates(capture, incoming_url, incoming_provenance)
+        })
+        .cloned()
+}
+
+pub(crate) fn duplicate_capture_message(
+    existing: &CaptureSummary,
+    collection_name: &str,
+) -> String {
+    if capture_scope(existing.provenance.as_ref()) == CaptureScope::Selection {
+        format!("This selected passage is already in {collection_name}.")
+    } else {
+        format!("This source is already in {collection_name}.")
+    }
 }
 
 pub(crate) async fn capture_page_into_collection(
@@ -891,9 +1030,17 @@ pub(crate) async fn capture_page_into_collection(
     // write lock below, which is the one that actually decides.
     let collection = get_collection(state, collection_id).await?;
     emit_capture_progress(app, "Chunking readable text", None, None);
-    let captured_key = normalize_capture_url_key(&captured.url);
-    if with_library_read(state, |library| is_duplicate_capture(library, &collection.id, &captured_key)).await? {
-        return Err(format!("Page is already in {}.", collection.name));
+    if let Some(existing) = with_library_read(state, |library| {
+        duplicate_capture_for_page(
+            library,
+            &collection.id,
+            &captured.url,
+            &captured.provenance,
+        )
+    })
+    .await?
+    {
+        return Err(duplicate_capture_message(&existing, &collection.name));
     }
 
     let (chunk_size, chunk_overlap) = capture_chunk_settings(&state.paths, &settings);
@@ -960,6 +1107,7 @@ pub(crate) async fn capture_page_into_collection(
         captured_at,
         chunk_count: records.len(),
         metadata: None,
+        provenance: Some(captured.provenance),
         from_private_tab,
     };
 
@@ -972,8 +1120,16 @@ pub(crate) async fn capture_page_into_collection(
     // capture with no chunks, which is visible and deletable. Chunks with no
     // capture would match searches with nothing in the UI to remove them.
     with_library_mut(state, |library| {
-        if is_duplicate_capture(library, &collection.id, &captured_key) {
-            return Err(format!("Page is already in {}.", collection.name));
+        if let Some(existing) = duplicate_capture_for_page(
+            library,
+            &collection.id,
+            &capture.url,
+            capture
+                .provenance
+                .as_ref()
+                .expect("new captures always carry provenance"),
+        ) {
+            return Err(duplicate_capture_message(&existing, &collection.name));
         }
         library.captures.push(capture.clone());
         if let Some(stored_collection) = library

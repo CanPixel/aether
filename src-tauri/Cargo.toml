@@ -28,6 +28,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 scraper = "0.24"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 # `macos-proxy` reaches wry's `mac-proxy`, which is what puts WKWebView traffic
 # through a SOCKS5/HTTP CONNECT endpoint. It is off by default in Tauri because
 # the underlying WKWebsiteDataStore key is macOS 14+; the runtime version gate
