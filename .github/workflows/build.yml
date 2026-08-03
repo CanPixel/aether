@@ -33,13 +33,15 @@ env:
 
 jobs:
   macos:
-    name: macOS DMG
+    name: macOS universal DMG
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -49,18 +51,21 @@ jobs:
       - id: updater
         uses: ./.github/actions/updater-flags
 
-      # These three mirror the `build` script in package.json. They are spelled out
-      # here only so the updater `--config` flag can be injected into the middle
-      # one; keep them in step with that script.
+      # Keep this in step with `build:macos-universal`. The updater config must be
+      # inserted into the Tauri invocation, so CI spells the command out here.
       - run: bun run typecheck
-      - run: bun run tauri build --bundles app ${{ steps.updater.outputs.config }}
-      - run: bun run dmg
+      - run: bun run tauri build --bundles app --target universal-apple-darwin ${{ steps.updater.outputs.config }}
+      - name: Verify universal app binary
+        run: |
+          lipo "src-tauri/target/universal-apple-darwin/release/bundle/macos/ÆTHER.app/Contents/MacOS/aether" \
+            -verify_arch arm64 x86_64
+      - run: AETHER_TAURI_TARGET=universal-apple-darwin bun run dmg
 
       - uses: actions/upload-artifact@v4
         with:
           name: aether-macos-dmg
           retention-days: 14
-          path: src-tauri/target/release/bundle/dmg/*.dmg
+          path: src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
 
       # The in-app updater installs this tarball, not the DMG: it replaces the
@@ -71,8 +76,8 @@ jobs:
           name: aether-macos-updater
           retention-days: 14
           path: |
-            src-tauri/target/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
           if-no-files-found: error
 
   linux:

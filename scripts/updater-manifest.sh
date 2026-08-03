@@ -38,10 +38,8 @@ if [[ -z "$mac_sig$win_sig$linux_sig" ]]; then
   exit 0
 fi
 
-# Both macOS arches map to the same tarball: the bundle is built on Apple Silicon,
-# and an Intel Mac running it under Rosetta still reports darwin-x86_64 to the
-# updater. Drop darwin-x86_64 here if a real Intel or universal build is ever
-# published as a separate asset.
+# The macOS updater archive contains a universal app binary, so both native
+# architectures correctly resolve to the same signed tarball.
 jq -n \
   --arg version "$version" \
   --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \

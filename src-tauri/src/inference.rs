@@ -321,12 +321,13 @@ impl NativeModelRuntime {
         } else {
             backend.supports_mmap()
         };
-        let mut params = LlamaModelParams::default().with_use_mmap(use_mmap);
         let use_gpu = match kind {
             NativeModelKind::Chat => local_gpu_enabled(),
             NativeModelKind::Embedding => embedding_gpu_enabled(),
         };
-        if use_gpu && backend.supports_gpu_offload() {
+        let using_gpu = use_gpu && backend.supports_gpu_offload();
+        let mut params = LlamaModelParams::default().with_use_mmap(use_mmap);
+        if using_gpu {
             params = params.with_n_gpu_layers(999);
         } else {
             params = params
@@ -334,9 +335,33 @@ impl NativeModelRuntime {
                 .with_devices(&[])
                 .map_err(|error| format!("Failed to select CPU model backend: {error}"))?;
         }
-        let model = LlamaModel::load_from_file(backend, &path, &params).map_err(|error| {
-            format!("Failed to load local model {}: {error}", model_label(&path))
-        })?;
+        let model = match LlamaModel::load_from_file(backend, &path, &params) {
+            Ok(model) => model,
+            // Intel Macs can expose a Metal device with too little VRAM for a full
+            // model offload. Keep local intelligence usable instead of turning an
+            // otherwise recoverable GPU allocation failure into a dead model picker.
+            Err(gpu_error) if using_gpu => {
+                let cpu_params = LlamaModelParams::default()
+                    .with_use_mmap(use_mmap)
+                    .with_n_gpu_layers(0)
+                    .with_devices(&[])
+                    .map_err(|error| format!("Failed to select CPU model backend: {error}"))?;
+                LlamaModel::load_from_file(backend, &path, &cpu_params).map_err(
+                    |cpu_error| {
+                        format!(
+                            "Failed to load local model {} with GPU ({gpu_error}) or CPU fallback ({cpu_error})",
+                            model_label(&path)
+                        )
+                    },
+                )?
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Failed to load local model {}: {error}",
+                    model_label(&path)
+                ));
+            }
+        };
         *slot = Some(LoadedNativeModel { path, model });
         Ok(())
     }
