@@ -18,20 +18,31 @@
 #   background actually landed before declaring success.
 #
 # Usage: bun run dmg        (expects `tauri build --bundles app` to have produced the .app)
+#        AETHER_TAURI_TARGET=universal-apple-darwin bun run dmg
+#        (expects `tauri build --target universal-apple-darwin`)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 VOLNAME="ÆTHER"
-APP="src-tauri/target/release/bundle/macos/${VOLNAME}.app"
-OUT_DIR="src-tauri/target/release/bundle/dmg"
+if [[ -n "${AETHER_TAURI_TARGET:-}" ]]; then
+  BUNDLE_DIR="src-tauri/target/${AETHER_TAURI_TARGET}/release/bundle"
+else
+  BUNDLE_DIR="src-tauri/target/release/bundle"
+fi
+APP="${BUNDLE_DIR}/macos/${VOLNAME}.app"
+OUT_DIR="${BUNDLE_DIR}/dmg"
 VERSION="$(bun -e 'console.log(require("./src-tauri/tauri.conf.json").version)')"
-case "$(uname -m)" in
-  arm64) ARCH="aarch64" ;;
-  x86_64) ARCH="x64" ;;
-  *) ARCH="$(uname -m)" ;;
-esac
+if [[ "${AETHER_TAURI_TARGET:-}" == "universal-apple-darwin" ]]; then
+  ARCH="universal"
+else
+  case "$(uname -m)" in
+    arm64) ARCH="aarch64" ;;
+    x86_64) ARCH="x64" ;;
+    *) ARCH="$(uname -m)" ;;
+  esac
+fi
 OUT="${OUT_DIR}/${VOLNAME}_${VERSION}_${ARCH}.dmg"
 BG_PNG="build/dmg-background.png"
 BG_TIFF="build/dmg-background.tiff"
@@ -43,7 +54,7 @@ bash scripts/prepare-dmg-background.sh
 # Derive everything from tauri.conf.json so the DMG never drifts from config.
 SPEC="$(mktemp -u -t aether-appdmg).json"
 trap 'rm -f "$SPEC" 2>/dev/null || true' EXIT
-SPEC="$SPEC" bun -e '
+BUNDLE_DIR="$BUNDLE_DIR" SPEC="$SPEC" bun -e '
   const fs = require("fs");
   const path = require("path");
   const conf = require("./src-tauri/tauri.conf.json");
@@ -60,7 +71,7 @@ SPEC="$SPEC" bun -e '
     window: { size: { width: d.windowSize.width, height: d.windowSize.height } },
     contents: [
       { x: d.appPosition.x, y: d.appPosition.y, type: "file",
-        path: path.resolve("src-tauri/target/release/bundle/macos/" + conf.productName + ".app") },
+        path: path.resolve(process.env.BUNDLE_DIR + "/macos/" + conf.productName + ".app") },
       { x: d.applicationFolderPosition.x, y: d.applicationFolderPosition.y, type: "link", path: "/Applications" },
     ],
   };

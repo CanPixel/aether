@@ -32,6 +32,7 @@
     "build:vite": "vite build",
     "prepare:dmg-background": "bash scripts/prepare-dmg-background.sh",
     "build": "bun run typecheck && tauri build --bundles app && bun run dmg",
+    "build:macos-universal": "bun run typecheck && tauri build --bundles app --target universal-apple-darwin && AETHER_TAURI_TARGET=universal-apple-darwin bun run dmg",
     "dmg": "bash scripts/make-styled-dmg.sh",
     "android:init": "bash scripts/android.sh init",
     "android:dev": "bash scripts/android.sh dev",

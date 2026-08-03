@@ -157,8 +157,9 @@ Install button reports `unconfigured` — _"This build has no update signing key
    ```bash
    curl -sL https://github.com/CanPixel/aether/releases/latest/download/latest.json | jq .
    ```
-   It should list `darwin-aarch64`, `windows-x86_64`, and `linux-x86_64`, each with a
-   non-empty `signature` and a URL pinned to the release tag.
+   It should list `darwin-aarch64`, `darwin-x86_64`, `windows-x86_64`, and
+   `linux-x86_64`, each with a non-empty `signature` and a URL pinned to the release
+   tag. The two macOS entries intentionally share the universal updater archive.
 
 ### What updates, and what does not
 

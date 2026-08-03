@@ -37,18 +37,18 @@
 Download the latest build for your platform from
 **[Releases](https://github.com/CanPixel/aether/releases/latest)**:
 
-| Platform                   | File                                         |
-| -------------------------- | -------------------------------------------- |
-| macOS (Apple Silicon, 11+) | `AETHER_macOS.dmg`                           |
-| Windows (x86_64)           | `AETHER_x64-setup.exe`                       |
-| Linux (x86_64)             | `AETHER_amd64.deb` · `AETHER_amd64.AppImage` |
-| Linux (ARM64)              | `AETHER_arm64.deb`                           |
+| Platform                            | File                                         |
+| ----------------------------------- | -------------------------------------------- |
+| macOS (Apple Silicon or Intel, 11+) | `AETHER_macOS.dmg`                           |
+| Windows (x86_64)                    | `AETHER_x64-setup.exe`                       |
+| Linux (x86_64)                      | `AETHER_amd64.deb` · `AETHER_amd64.AppImage` |
+| Linux (ARM64)                       | `AETHER_arm64.deb`                           |
 
 > [!NOTE]
-> **Intel Macs are not supported.** Releases are built `arm64` only, and Rosetta
-> translates Intel binaries to Apple Silicon — not the other way round — so there is
-> no way to run this DMG on an Intel Mac. Building `universal-apple-darwin` would fix
-> it at the cost of doubling an already slow llama.cpp compile.
+> The macOS DMG contains a universal binary for Apple Silicon and Intel Macs. Intel
+> machines with 16 GB RAM, a quad-core CPU, and an SSD are supported for MiST and
+> AiON LiTE. AiON WiSE and large contexts are likely to be slow on Intel hardware;
+> Apple Silicon is strongly recommended for the full local-AI experience.
 
 > [!IMPORTANT]
 > **Releases are not yet code-signed**, so your OS will block the first launch. This
@@ -719,7 +719,7 @@ LINUX_DOCKER_PLATFORM=linux/amd64 LINUX_TARGET=x86_64-unknown-linux-gnu LINUX_AR
 
 Because Tauri cannot cross-compile desktop targets, and llama.cpp builds natively per-OS, the cross-platform installers are produced by `.github/workflows/build.yml`:
 
-- `macos-latest` → styled `.dmg` installer.
+- `macos-latest` → universal Apple Silicon + Intel styled `.dmg` installer.
 - `windows-latest` → NSIS `.exe` / MSI installer.
 - `ubuntu-latest` → x86_64 `.deb` and AppImage.
 - `ubuntu-24.04-arm` → ARM64 `.deb` for devices such as Raspberry Pi / Compute Module boards.
@@ -757,28 +757,29 @@ bun run build
 
 ## Project Scripts
 
-| Script                        | Purpose                                                                                          |
-| ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| `bun run dev`                 | Start the Tauri desktop app in development.                                                      |
-| `bun run start`               | Alias for the Tauri desktop development app.                                                     |
-| `bun run dev:vite`            | Start only the Vite renderer dev server on `127.0.0.1:1420`.                                     |
-| `bun run format`              | Format the project with Prettier.                                                                |
-| `bun run typecheck:web`       | Run renderer TypeScript checks.                                                                  |
-| `bun run typecheck:tauri`     | Run Rust `cargo check` for the Tauri backend.                                                    |
-| `bun run typecheck`           | Run renderer TypeScript checks and Rust `cargo check` for the Tauri backend.                     |
-| `bun run version:bump 1.2.3`  | Sync `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to one app version. |
-| `bun run version:check`       | Verify the app version manifests match `package.json`.                                           |
-| `bun run lint`                | Run ESLint.                                                                                      |
-| `bun run build:vite`          | Build only the Vite renderer assets into `dist/`.                                                |
-| `bun run build`               | Typecheck and build the Tauri desktop app.                                                       |
-| `bun run build:desktop-local` | Build local desktop packages for the current Tauri target plus Docker Linux arm64/x64 packages.  |
-| `bun run android:dev`         | Run the Tauri Android app on a connected device or emulator.                                     |
-| `bun run android:build:apk`   | Build an Android APK.                                                                            |
-| `bun run android:build:aab`   | Build an Android App Bundle.                                                                     |
-| `bun run linux:arm64:build`   | Build an Ubuntu arm64 Tauri package in Docker.                                                   |
-| `bun run linux:x64:build`     | Build an Ubuntu x86_64 Tauri package in Docker.                                                  |
-| `bun run linux:arm64:deb`     | Build an Ubuntu arm64 `.deb` package in Docker.                                                  |
-| `bun run linux:x64:deb`       | Build an Ubuntu x86_64 `.deb` package in Docker.                                                 |
+| Script                          | Purpose                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `bun run dev`                   | Start the Tauri desktop app in development.                                                      |
+| `bun run start`                 | Alias for the Tauri desktop development app.                                                     |
+| `bun run dev:vite`              | Start only the Vite renderer dev server on `127.0.0.1:1420`.                                     |
+| `bun run format`                | Format the project with Prettier.                                                                |
+| `bun run typecheck:web`         | Run renderer TypeScript checks.                                                                  |
+| `bun run typecheck:tauri`       | Run Rust `cargo check` for the Tauri backend.                                                    |
+| `bun run typecheck`             | Run renderer TypeScript checks and Rust `cargo check` for the Tauri backend.                     |
+| `bun run version:bump 1.2.3`    | Sync `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to one app version. |
+| `bun run version:check`         | Verify the app version manifests match `package.json`.                                           |
+| `bun run lint`                  | Run ESLint.                                                                                      |
+| `bun run build:vite`            | Build only the Vite renderer assets into `dist/`.                                                |
+| `bun run build`                 | Typecheck and build the Tauri desktop app.                                                       |
+| `bun run build:macos-universal` | Typecheck and build the universal Apple Silicon + Intel macOS app and DMG.                       |
+| `bun run build:desktop-local`   | Build local desktop packages for the current Tauri target plus Docker Linux arm64/x64 packages.  |
+| `bun run android:dev`           | Run the Tauri Android app on a connected device or emulator.                                     |
+| `bun run android:build:apk`     | Build an Android APK.                                                                            |
+| `bun run android:build:aab`     | Build an Android App Bundle.                                                                     |
+| `bun run linux:arm64:build`     | Build an Ubuntu arm64 Tauri package in Docker.                                                   |
+| `bun run linux:x64:build`       | Build an Ubuntu x86_64 Tauri package in Docker.                                                  |
+| `bun run linux:arm64:deb`       | Build an Ubuntu arm64 `.deb` package in Docker.                                                  |
+| `bun run linux:x64:deb`         | Build an Ubuntu x86_64 `.deb` package in Docker.                                                 |
 
 ## Build Outputs
 
