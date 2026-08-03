@@ -937,9 +937,7 @@ function CaptureCard({
             {capture.provenance.requestedUrl && capture.provenance.requestedUrl !== capture.url && (
               <div>
                 <dt>Requested</dt>
-                <dd title={capture.provenance.requestedUrl}>
-                  {capture.provenance.requestedUrl}
-                </dd>
+                <dd title={capture.provenance.requestedUrl}>{capture.provenance.requestedUrl}</dd>
               </div>
             )}
             {capture.provenance.author && (
