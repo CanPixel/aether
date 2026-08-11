@@ -16,7 +16,7 @@ type SourceTrayProps = {
 export function SourceTray({
   sources,
   onOpenSource,
-  onToggleSource
+  onToggleSource,
 }: SourceTrayProps): React.JSX.Element {
   const includedCount = sources.filter((source) => source.included).length
 

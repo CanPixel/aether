@@ -5,7 +5,7 @@ import {
   ExternalLink,
   ShieldCheck,
   Wind,
-  Waves
+  Waves,
 } from 'lucide-react'
 import { LineWobble, Quantum, Ripples } from 'ldrs/react'
 import 'ldrs/react/LineWobble.css'
@@ -29,7 +29,7 @@ const MODEL_SETUP_OPTIONS: Array<{
     description:
       'Smaller, faster. Good for everyday capture, search, page summaries, and quick grounded answers.',
     size: '3.35 GB',
-    source: 'powered by Gemma 4 E2B QAT Q4_0'
+    source: 'powered by Gemma 4 E2B QAT Q4_0',
   },
   {
     id: 'wise',
@@ -37,27 +37,27 @@ const MODEL_SETUP_OPTIONS: Array<{
     title: 'Deeper reasoning flow',
     description: 'Larger, slower. Richer synthesis, iCE maps, and longer answers.',
     size: '5.15 GB',
-    source: 'powered by Gemma 4 E4B QAT Q4_0'
-  }
+    source: 'powered by Gemma 4 E4B QAT Q4_0',
+  },
 ]
 
 const MODEL_NOTICE_LINKS = [
   {
     label: 'Embedding source',
-    href: 'https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF'
+    href: 'https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF',
   },
   {
     label: 'LiTE source',
-    href: 'https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf'
+    href: 'https://huggingface.co/google/gemma-4-E2B-it-qat-q4_0-gguf',
   },
   {
     label: 'WiSE source',
-    href: 'https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf'
+    href: 'https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf',
   },
   {
     label: 'License details',
-    href: 'https://www.apache.org/licenses/LICENSE-2.0'
-  }
+    href: 'https://www.apache.org/licenses/LICENSE-2.0',
+  },
 ]
 
 function formatBytes(bytes?: number): string {
@@ -113,14 +113,14 @@ export function ModelSetupModal({
   selectedModels,
   onClose,
   onStart,
-  onToggleModel
+  onToggleModel,
 }: ModelSetupModalProps): React.JSX.Element {
   const progressTotal = [...progress]
     .reverse()
     .find((item) => item.overallTotalBytes)?.overallTotalBytes
   const progressDownloaded = progress.reduce(
     (max, item) => Math.max(max, item.overallDownloadedBytes),
-    0
+    0,
   )
   // `busy` is an install in flight: neither a backdrop click nor Escape should abandon
   // a download. `onClose` already no-ops in that state; this stops the attempt earlier.

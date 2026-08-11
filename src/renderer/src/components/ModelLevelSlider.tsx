@@ -33,7 +33,7 @@ export function ModelLevelSlider({
   disabled,
   developerMode,
   onSelect,
-  onInstall
+  onInstall,
 }: ModelLevelSliderProps): React.JSX.Element {
   const activeIndex = rungs.findIndex((rung) => rung.model && rung.model === activeModel)
 
@@ -48,7 +48,7 @@ export function ModelLevelSlider({
             className="model-level-thumb"
             style={{
               width: `${100 / rungs.length}%`,
-              left: `${(activeIndex * 100) / rungs.length}%`
+              left: `${(activeIndex * 100) / rungs.length}%`,
             }}
           />
         )}

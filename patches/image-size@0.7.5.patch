@@ -1,0 +1,18 @@
+diff --git a/lib/types/icns.js b/lib/types/icns.js
+index 199b0e651b3f9e310a821b80a517c76050fc44e6..e3048d9d1c6811d72ea331804f49ff77642bd750 100644
+--- a/lib/types/icns.js
++++ b/lib/types/icns.js
+@@ -107,7 +107,13 @@ function calculate (buffer) {
+   };
+   
+   while (imageOffset < fileLength && imageOffset < bufferLength) {
++    // GHSA-w3rx-r6r6-pgpr: every entry must declare a length covering at least
++    // its own 8-byte header. A crafted length of 0 leaves imageOffset unchanged
++    // and spins this loop forever; a short tail would make readImageHeader read
++    // past the end of the buffer. Stop instead of hanging.
++    if (imageOffset + SIZE_HEADER > bufferLength) break;
+     imageHeader = readImageHeader(buffer, imageOffset);
++    if (imageHeader[1] < SIZE_HEADER) break;
+     imageSize = getImageSize(imageHeader[0]);
+     imageOffset += imageHeader[1];
+     result.images.push(imageSize);

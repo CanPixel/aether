@@ -5,7 +5,7 @@ import {
   CollectionSummary,
   MOBILE_TAB_SCROLL_EVENT,
   NativeTabEvent,
-  SearchResult
+  SearchResult,
 } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
 import { countLabel, formatVisibleModelName, getTabTint } from '../utils/aether-ui'
@@ -21,7 +21,7 @@ import {
   GlobeIcon,
   GridIcon,
   PlusIcon,
-  SpinnerIcon
+  SpinnerIcon,
 } from './icons'
 import {
   ArrowUpRight,
@@ -32,7 +32,7 @@ import {
   Search,
   Snowflake,
   TextSelect,
-  X
+  X,
 } from 'lucide-react'
 
 // ÆTHER's dedicated Android shell: Samsung-style bottom chrome (mini tab strip
@@ -140,7 +140,7 @@ export function MobileShell({
   onOpenSettings,
   onSavePortal,
   onSelectCollection,
-  onSelectTab
+  onSelectTab,
 }: MobileShellProps): React.JSX.Element {
   const [chromeHidden, setChromeHidden] = useState(false)
   const [gridOpen, setGridOpen] = useState(false)
@@ -843,7 +843,7 @@ function MobileSheet({
   children,
   className,
   label,
-  onClose
+  onClose,
 }: {
   children: ReactNode
   className: string
@@ -862,7 +862,7 @@ function MobileSheet({
     offset: 0,
     lastY: 0,
     lastT: 0,
-    velocity: 0
+    velocity: 0,
   })
   const suppressClickRef = useRef(false)
   const closingRef = useRef(false)

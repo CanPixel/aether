@@ -10,7 +10,7 @@ import { useLayoutEffect, type RefObject } from 'react'
 // covered by a live page.
 export function useWebContentBounds(
   ref: RefObject<HTMLElement | null>,
-  deps: unknown[] = []
+  deps: unknown[] = [],
 ): void {
   useLayoutEffect(() => {
     const host = ref.current
@@ -37,7 +37,7 @@ export function useWebContentBounds(
           top,
           left: rect.left,
           width: rect.width,
-          height
+          height,
         })
         .catch(() => undefined)
     }

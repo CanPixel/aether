@@ -14,7 +14,7 @@ type DismissableOverlay = {
 // must not be abandoned cannot be dismissed by an errant click or keypress.
 export function useDismissableOverlay(
   onDismiss: () => void,
-  dismissable = true
+  dismissable = true,
 ): DismissableOverlay {
   // A click only counts when the gesture both started and ended on the backdrop.
   // Selecting text inside the card and releasing outside it fires a click whose target
@@ -51,6 +51,6 @@ export function useDismissableOverlay(
       const dismissed = pressedBackdrop.current && isBackdrop(event)
       pressedBackdrop.current = false
       if (dismissed && dismissable) onDismiss()
-    }
+    },
   }
 }

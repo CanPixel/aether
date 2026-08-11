@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
   type RefObject,
-  type WheelEvent
+  type WheelEvent,
 } from 'react'
 import {
   ChatResult,
@@ -15,7 +15,7 @@ import {
   SearchResult,
   SemanticTrailItem,
   SemanticTrailResult,
-  SystemStatus
+  SystemStatus,
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
 import {
@@ -23,7 +23,7 @@ import {
   countLabel,
   formatDate,
   formatVisibleModelName,
-  getCaptureHost
+  getCaptureHost,
 } from '../utils/aether-ui'
 import { claimTextForCitation, renderAnswerMarkdown } from './answer-markdown'
 import { buildEvidenceBundle } from '../utils/evidence-bundle'
@@ -125,7 +125,7 @@ function IntelligencePanelComponent({
   onClearHistory,
   onOpenSemanticTrailItem,
   onUpdateModels,
-  onOpenModelSetup
+  onOpenModelSetup,
 }: IntelligencePanelProps): React.JSX.Element {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [trailPanelOpen, setTrailPanelOpen] = useState(false)
@@ -151,7 +151,7 @@ function IntelligencePanelComponent({
     semanticTrailResult &&
     (hasFocusLens
       ? !semanticTrailResult.root.url && semanticTrailResult.query.trim() === normalizedTrailQuery
-      : Boolean(semanticTrailResult.root.url))
+      : Boolean(semanticTrailResult.root.url)),
   )
   // The newest stored turn and chatResult are the same exchange; drop it here so the
   // live answer card is not duplicated above itself.
@@ -200,7 +200,7 @@ function IntelligencePanelComponent({
     normalizedTrailQuery,
     onBuildSemanticTrail,
     trailBlocked,
-    trailPanelOpen
+    trailPanelOpen,
   ])
 
   function handlePanelWheel(event: WheelEvent<HTMLElement>): void {
@@ -251,10 +251,10 @@ function IntelligencePanelComponent({
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                padding: '30px 0'
+                padding: '30px 0',
               }
             : {
-                display: 'none'
+                display: 'none',
               }
         }
       >
@@ -264,7 +264,7 @@ function IntelligencePanelComponent({
             fontWeight: '800',
             color: 'var(--text-secondary)',
             letterSpacing: '0.08em',
-            marginTop: '-3px'
+            marginTop: '-3px',
           }}
           className="custom-font"
         >
@@ -398,7 +398,7 @@ function IntelligencePanelComponent({
                     answer: turn.answer,
                     model: turn.model,
                     citations: turn.citations,
-                    metrics: turn.metrics
+                    metrics: turn.metrics,
                   }}
                   onOpenCitation={onOpenCitation}
                 />
@@ -477,7 +477,7 @@ function IntelligencePanelComponent({
                   className="ask-current-badge"
                   style={{
                     borderColor: canUseCurrentPage && currentPageTint ? currentPageTint : undefined,
-                    color: canUseCurrentPage && currentPageTint ? currentPageTint : undefined
+                    color: canUseCurrentPage && currentPageTint ? currentPageTint : undefined,
                   }}
                   aria-hidden="true"
                 >
@@ -486,7 +486,7 @@ function IntelligencePanelComponent({
                 <span className="ask-current-text">
                   <strong
                     style={{
-                      color: canUseCurrentPage && currentPageTint ? currentPageTint : 'var(--ink)'
+                      color: canUseCurrentPage && currentPageTint ? currentPageTint : 'var(--ink)',
                     }}
                   >
                     Current Page
@@ -613,7 +613,7 @@ function IntelligencePanelComponent({
 
 function SemanticTrailView({
   result,
-  onOpenItem
+  onOpenItem,
 }: {
   result: SemanticTrailResult
   onOpenItem: (item: SemanticTrailItem) => Promise<void>
@@ -681,7 +681,7 @@ function SemanticTrailView({
 
 function AnswerLoading({
   phase,
-  onCancel
+  onCancel,
 }: {
   phase: string | null
   onCancel: () => void
@@ -716,7 +716,7 @@ function StreamingAnswerCard({
   citations,
   text,
   onCancel,
-  onOpenCitation
+  onOpenCitation,
 }: {
   citations: SearchResult[]
   text: string
@@ -760,7 +760,7 @@ function AskContextControls({
   collections,
   onAskCollectionChange,
   onAskCurrentPageOnlyChange,
-  onAskIncludeCurrentPageChange
+  onAskIncludeCurrentPageChange,
 }: {
   askCollectionId: string
   askCurrentPageOnly: boolean
@@ -798,7 +798,7 @@ function AskContextControls({
               className="ask-current-badge"
               style={{
                 borderColor: currentPageActive ? 'var(--prism)' : undefined,
-                color: currentPageActive ? 'purple' : undefined
+                color: currentPageActive ? 'purple' : undefined,
               }}
               aria-hidden="true"
             >
@@ -833,7 +833,7 @@ function AskContextControls({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    marginBottom: '-3px'
+                    marginBottom: '-3px',
                   }}
                 >
                   <CollectionIcon icon={collection.icon} />
@@ -867,7 +867,7 @@ function LocalModelSettings({
   settingsRef,
   status,
   onUpdateModels,
-  onOpenModelSetup
+  onOpenModelSetup,
 }: {
   busy: string | null
   developerMode: boolean
@@ -880,7 +880,7 @@ function LocalModelSettings({
   const chatModels = modelOptionsWithSelected(status?.chatModels ?? [], status?.chatModel)
   const embeddingModels = modelOptionsWithSelected(
     status?.embeddingModels ?? [],
-    status?.embeddingModel
+    status?.embeddingModel,
   )
   const modelLabel =
     formatVisibleModelName(status?.chatModel, { developerMode, role: 'chat' }) ?? 'No chat model'
@@ -989,7 +989,7 @@ function formatAnswerMetrics(result: ChatResult): string {
 
 function AnswerCard({
   result,
-  onOpenCitation
+  onOpenCitation,
 }: {
   result: ChatResult
   onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>

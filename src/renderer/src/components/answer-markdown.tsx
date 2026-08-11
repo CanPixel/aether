@@ -9,7 +9,7 @@ import { getCaptureHost } from '../utils/aether-ui'
 export function renderAnswerMarkdown(
   markdown: string,
   citations: SearchResult[],
-  onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>
+  onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>,
 ): React.ReactNode[] {
   const blocks: React.ReactNode[] = []
   const lines = markdown.split(/\r?\n/)
@@ -40,7 +40,7 @@ export function renderAnswerMarkdown(
       blocks.push(
         <h3 key={`h-${index}`} className={`answer-heading level-${heading[1].length}`}>
           {renderInlineMarkdown(heading[2], citations, onOpenCitation)}
-        </h3>
+        </h3>,
       )
       return
     }
@@ -57,7 +57,7 @@ export function renderAnswerMarkdown(
     if (bullet) {
       orderedItems = []
       listItems.push(
-        <li key={`li-${index}`}>{renderInlineMarkdown(bullet[1], citations, onOpenCitation)}</li>
+        <li key={`li-${index}`}>{renderInlineMarkdown(bullet[1], citations, onOpenCitation)}</li>,
       )
       return
     }
@@ -66,14 +66,16 @@ export function renderAnswerMarkdown(
     if (numbered) {
       listItems = []
       orderedItems.push(
-        <li key={`oli-${index}`}>{renderInlineMarkdown(numbered[1], citations, onOpenCitation)}</li>
+        <li key={`oli-${index}`}>
+          {renderInlineMarkdown(numbered[1], citations, onOpenCitation)}
+        </li>,
       )
       return
     }
 
     flushLists()
     blocks.push(
-      <p key={`p-${index}`}>{renderInlineMarkdown(trimmed, citations, onOpenCitation)}</p>
+      <p key={`p-${index}`}>{renderInlineMarkdown(trimmed, citations, onOpenCitation)}</p>,
     )
   })
 
@@ -118,7 +120,7 @@ function renderInlineMarkdown(
   text: string,
   citations: SearchResult[],
   onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>,
-  claimText?: string
+  claimText?: string,
 ): React.ReactNode[] {
   // The first (block-level) call establishes the claim; nested calls (e.g. inside
   // bold spans) inherit it so a citation always carries its full sentence.
@@ -141,13 +143,13 @@ function renderInlineMarkdown(
       nodes.push(
         <strong key={nodes.length}>
           {renderInlineMarkdown(token.slice(2, -2), citations, onOpenCitation, claim)}
-        </strong>
+        </strong>,
       )
     } else if (token.startsWith('*') && token.endsWith('*')) {
       nodes.push(
         <em key={nodes.length}>
           {renderInlineMarkdown(token.slice(1, -1), citations, onOpenCitation, claim)}
-        </em>
+        </em>,
       )
     } else if (/^\[(?:\d+\s*,\s*)*\d+\]$/.test(token)) {
       const citationNodes = renderCitationToken(
@@ -155,14 +157,14 @@ function renderInlineMarkdown(
         citations,
         onOpenCitation,
         nodes.length,
-        claim
+        claim,
       )
       nodes.push(...citationNodes)
     } else {
       nodes.push(
         <span className="answer-inline-math" key={nodes.length}>
           {formatInlineMath(token)}
-        </span>
+        </span>,
       )
     }
 
@@ -181,7 +183,7 @@ function renderCitationToken(
   citations: SearchResult[],
   onOpenCitation: (citation: SearchResult, claimText?: string) => Promise<void>,
   keyOffset: number,
-  claimText?: string
+  claimText?: string,
 ): React.ReactNode[] {
   const indexes = token
     .slice(1, -1)
@@ -210,7 +212,7 @@ function renderCitationToken(
         type="button"
       >
         [{citationNumber}]
-      </button>
+      </button>,
     )
   })
 

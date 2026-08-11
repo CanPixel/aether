@@ -27,7 +27,7 @@ export function buildEvidenceBundle(result: ChatResult): string {
         `Source: ${citation.url}`,
         `Captured: ${citation.capturedAt}`,
         `Capture ID: ${citation.captureId}`,
-        `Passage: chunk ${citation.chunkIndex + 1}`
+        `Passage: chunk ${citation.chunkIndex + 1}`,
       )
     })
   } else {

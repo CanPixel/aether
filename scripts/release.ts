@@ -28,9 +28,9 @@ runCommand(
     'package.json',
     'src-tauri/Cargo.toml',
     'src-tauri/Cargo.lock',
-    'src-tauri/tauri.conf.json'
+    'src-tauri/tauri.conf.json',
   ],
-  'Staging release files'
+  'Staging release files',
 )
 
 runCommand(['git', 'commit', '-m', `chore: release ${versionTag}`], 'Committing changes')

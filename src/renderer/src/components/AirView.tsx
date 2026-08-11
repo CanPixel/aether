@@ -9,7 +9,7 @@ import {
   CollectionSummary,
   FlowGraphResult,
   SavedIceberg,
-  SystemStatus
+  SystemStatus,
 } from '../../../shared/aether'
 import {
   BookOpen,
@@ -21,7 +21,7 @@ import {
   Search,
   Sparkles,
   WandSparkles,
-  Wind
+  Wind,
 } from 'lucide-react'
 import { countLabel, formatDate, formatVisibleModelName } from '../utils/aether-ui'
 
@@ -62,7 +62,7 @@ const QUICK_LENSES: Array<{
   { kind: 'flow', label: 'Flow', icon: Sparkles },
   { kind: 'hub', label: 'Hub', icon: BookOpen },
   { kind: 'answer', label: 'AiON', icon: WandSparkles },
-  { kind: 'iceberg', label: 'iCE', icon: Layers3 }
+  { kind: 'iceberg', label: 'iCE', icon: Layers3 },
 ]
 
 export function AirView({
@@ -90,7 +90,7 @@ export function AirView({
   onRevealFile,
   onSelectFlowNode,
   onSelectHub,
-  onUseLens
+  onUseLens,
 }: AirViewProps): React.JSX.Element {
   const isBusy = Boolean(busy)
   const hasPrepared = Boolean(prepared)
@@ -101,7 +101,7 @@ export function AirView({
     selectedCollection,
     selectedHub,
     chatResult,
-    activeSavedIceberg
+    activeSavedIceberg,
   })
 
   async function submit(event: FormEvent): Promise<void> {
@@ -190,7 +190,7 @@ export function AirView({
                 flowGraphResult,
                 selectedCollection,
                 chatResult,
-                activeSavedIceberg
+                activeSavedIceberg,
               })
               return (
                 <button
@@ -206,8 +206,8 @@ export function AirView({
                         selectedCollection,
                         selectedHub,
                         chatResult,
-                        activeSavedIceberg
-                      })
+                        activeSavedIceberg,
+                      }),
                     )
                   }
                   type="button"
@@ -358,7 +358,7 @@ function quickLensDisabled(
     selectedHub?: CollectionSummary
     chatResult: ChatResult | null
     activeSavedIceberg: SavedIceberg | null
-  }
+  },
 ): boolean {
   if (kind === 'flow') return !context.flowGraphResult
   if (kind === 'hub') return !context.selectedHub && !context.selectedCollection
@@ -377,7 +377,7 @@ function quickLensValue(
     selectedHub?: CollectionSummary
     chatResult: ChatResult | null
     activeSavedIceberg: SavedIceberg | null
-  }
+  },
 ): string {
   if (kind === 'flow')
     return (
@@ -403,7 +403,7 @@ function quickLensLabel(
     selectedHub?: CollectionSummary
     chatResult: ChatResult | null
     activeSavedIceberg: SavedIceberg | null
-  }
+  },
 ): string {
   const value = quickLensValue(kind, currentLens, context).trim()
   return value ? `${kindLabel(kind)} · ${value}` : kindLabel(kind)

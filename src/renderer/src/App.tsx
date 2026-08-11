@@ -6,7 +6,7 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
 } from 'react'
 import { addPluginListener, invoke, type PluginListener } from '@tauri-apps/api/core'
 import packageManifest from '../../../package.json'
@@ -52,7 +52,7 @@ import {
   DiagnosticEntry,
   UpdateCheckResult,
   UpdateInstallProgress,
-  UpdateInstallResult
+  UpdateInstallResult,
 } from '../../shared/aether'
 import { BrowserChrome } from './components/BrowserChrome'
 import { MobileShell } from './components/MobileShell'
@@ -82,7 +82,7 @@ import {
   formatVisibleModelName,
   getQuickActions,
   getTabTint,
-  normalizeComparableUrl
+  normalizeComparableUrl,
 } from './utils/aether-ui'
 import { HAS_NATIVE_TAB_WEBVIEWS, IS_ANDROID, IS_DESKTOP } from './utils/platform'
 import { useDismissableOverlay } from './utils/dismissable-overlay'
@@ -101,7 +101,7 @@ import {
   SunMoon,
   Trash2,
   Waves,
-  Wind
+  Wind,
 
   /*   ZodiacAquarius,
   SunSnow,
@@ -116,7 +116,7 @@ const START_PAGE_URL = 'aether://start'
 const APPEARANCE_OPTIONS: Array<{ id: Appearance; name: string; description: string }> = [
   { id: 'light', name: 'Light', description: 'The pale glass theme.' },
   { id: 'system', name: 'System', description: 'Follow the desktop appearance.' },
-  { id: 'dark', name: 'Dark', description: 'Deep navy, for night reading.' }
+  { id: 'dark', name: 'Dark', description: 'Deep navy, for night reading.' },
 ]
 // AiON panel sizing. Must stay in step with --panel-collapsed-width in foundation.css
 // and PANEL_COLLAPSED_WIDTH in src-tauri/src/lib.rs.
@@ -141,7 +141,7 @@ const DASHBOARD_ADDRESSES = new Set([
   'æther://dashboard',
   'ice://crystallizer',
   'flow://semantic-graph',
-  'air://renderer'
+  'air://renderer',
 ])
 
 const SHORTCUT_HELP: Array<{ keys: string; action: string; scope: string }> = [
@@ -152,7 +152,7 @@ const SHORTCUT_HELP: Array<{ keys: string; action: string; scope: string }> = [
   { keys: 'Cmd/Ctrl + 2', action: 'Open iCE', scope: 'Global' },
   { keys: 'Cmd/Ctrl + 3', action: 'Open Browser', scope: 'Global' },
   { keys: 'Cmd/Ctrl + Shift + A', action: 'Toggle AiON', scope: 'Global' },
-  { keys: 'Cmd/Ctrl + Shift + C', action: 'Capture current page', scope: 'Browser' }
+  { keys: 'Cmd/Ctrl + Shift + C', action: 'Capture current page', scope: 'Browser' },
 ]
 
 function getShortcutFromKeyboardEvent(event: KeyboardEvent): AetherShortcutId | null {
@@ -196,16 +196,16 @@ const TEXT_INPUT_TYPES = new Set([
   'search',
   'tel',
   'text',
-  'url'
+  'url',
 ])
 
 function getEditableShortcutTarget(
-  target: EventTarget | null
+  target: EventTarget | null,
 ): HTMLInputElement | HTMLTextAreaElement | HTMLElement | null {
   if (!(target instanceof HTMLElement)) return null
 
   const editable = target.closest(
-    'input, textarea, [contenteditable="true"], [contenteditable="plaintext-only"]'
+    'input, textarea, [contenteditable="true"], [contenteditable="plaintext-only"]',
   )
   if (!editable) return null
   if (editable instanceof HTMLInputElement) {
@@ -265,7 +265,7 @@ const CLAIM_STOPWORDS = new Set([
   'or',
   'by',
   'be',
-  'but'
+  'but',
 ])
 
 function normalizeAnchorWord(word: string): string {
@@ -294,7 +294,7 @@ function minimalCoveringSpan(
   words: string[],
   lo: number,
   hi: number,
-  weights: Map<string, number>
+  weights: Map<string, number>,
 ): { start: number; end: number; length: number } | null {
   const targets = new Set<string>()
   for (let index = lo; index < hi; index += 1) {
@@ -421,7 +421,7 @@ function getErrorMessage(error: unknown): string {
 
 function upsertModelProgress(
   current: ModelDownloadProgress[],
-  progress: ModelDownloadProgress
+  progress: ModelDownloadProgress,
 ): ModelDownloadProgress[] {
   const index = current.findIndex((item) => item.id === progress.id)
   if (index === -1) return [...current, progress]
@@ -465,11 +465,11 @@ function App(): React.JSX.Element {
       defaultSearchEngine: 'duckduckgo',
       aiFreeSearch: true,
       proxy: { enabled: false, url: 'socks5://127.0.0.1:9050' },
-      pinTimezone: false
+      pinTimezone: false,
     },
     developerMode: false,
     updates: { autoCheck: true },
-    appearance: 'light'
+    appearance: 'light',
   })
   const [updateCheck, setUpdateCheck] = useState<UpdateCheckResult | null>(null)
   const [updateChecking, setUpdateChecking] = useState(false)
@@ -491,7 +491,7 @@ function App(): React.JSX.Element {
   const [indexStatus, setIndexStatus] = useState<LibraryIndexStatus | null>(null)
   const [dashboardOpen, setDashboardOpen] = useState(true)
   const [workspaceMode, setWorkspaceMode] = useState<'dashboard' | 'crystallizer' | 'flow' | 'air'>(
-    'dashboard'
+    'dashboard',
   )
   const [activeTabId, setActiveTabId] = useState('')
   const [selectedCollectionId, setSelectedCollectionId] = useState('')
@@ -581,12 +581,12 @@ function App(): React.JSX.Element {
       // and they tend to be the longest.
       showToast({ message, tone, durationMs: tone === 'error' ? 7000 : undefined })
     },
-    [showToast]
+    [showToast],
   )
 
   const reportError = useCallback(
     (error: unknown): void => report(getErrorMessage(error), 'error'),
-    [report]
+    [report],
   )
 
   const reportSuccess = useCallback((message: string): void => report(message, 'success'), [report])
@@ -597,21 +597,21 @@ function App(): React.JSX.Element {
 
   const activeTab = useMemo(
     () => tabs.find((tab) => tab.id === activeTabId) ?? tabs.find((tab) => tab.isActive) ?? tabs[0],
-    [activeTabId, tabs]
+    [activeTabId, tabs],
   )
   const activeApp = useMemo(() => apps.find((app) => app.isActive) ?? apps[0], [apps])
   const selectedCollection = useMemo(
     () =>
       collections.find((collection) => collection.id === selectedCollectionId) ?? collections[0],
-    [collections, selectedCollectionId]
+    [collections, selectedCollectionId],
   )
   const selectedAirHub = useMemo(
     () => collections.find((collection) => collection.id === airHubId) ?? selectedCollection,
-    [airHubId, collections, selectedCollection]
+    [airHubId, collections, selectedCollection],
   )
   const selectedFlowNode = useMemo(
     () => flowGraphResult?.nodes.find((node) => node.id === flowSelectedNodeId) ?? null,
-    [flowGraphResult, flowSelectedNodeId]
+    [flowGraphResult, flowSelectedNodeId],
   )
   const selectedAirFlowNode = useMemo(
     () =>
@@ -621,16 +621,16 @@ function App(): React.JSX.Element {
       flowGraphResult?.nodes.find((node) => node.kind === 'hub') ??
       flowGraphResult?.nodes[0] ??
       null,
-    [airFlowNodeId, flowGraphResult, selectedFlowNode]
+    [airFlowNodeId, flowGraphResult, selectedFlowNode],
   )
   const askCollection = useMemo(
     () => collections.find((collection) => collection.id === askCollectionId),
-    [askCollectionId, collections]
+    [askCollectionId, collections],
   )
   const usableAskCollections = useMemo(
     () =>
       collections.filter((collection) => collection.captureCount > 0 && collection.chunkCount > 0),
-    [collections]
+    [collections],
   )
   const isStartPage = activeTab?.url === START_PAGE_URL
   const canUseCurrentPage = Boolean(activeTab?.url) && !isStartPage
@@ -649,8 +649,8 @@ function App(): React.JSX.Element {
   const modelSetupBusy = Boolean(
     busy === 'Installing local models' ||
     modelDownloadProgress.some(
-      (progress) => progress.status === 'queued' || progress.status === 'downloading'
-    )
+      (progress) => progress.status === 'queued' || progress.status === 'downloading',
+    ),
   )
   const modelSetupVisible = modelSetupRequested || (modelSetupNeeded && !modelSetupDismissed)
   const quickActions = useMemo<QuickAction[]>(() => getQuickActions(activeTab), [activeTab])
@@ -663,7 +663,7 @@ function App(): React.JSX.Element {
       usableAskCollections.some((collection) => collection.id === selectedCollectionId)
         ? selectedCollectionId
         : (usableAskCollections[0]?.id ?? ''),
-    [usableAskCollections, selectedCollectionId]
+    [usableAskCollections, selectedCollectionId],
   )
   // What the address bar shows when nobody is typing in it. The draft itself now
   // lives in BrowserChrome (and MobileShell owns its own input), so this is purely
@@ -688,7 +688,7 @@ function App(): React.JSX.Element {
   const activeTabHubNeedsMetadata = Boolean(
     activeTabHubShortcut &&
     ((!activeTabHubShortcut.themeColor && activeTab?.themeColor) ||
-      (!activeTabHubShortcut.favicon && activeTab?.favicon))
+      (!activeTabHubShortcut.favicon && activeTab?.favicon)),
   )
   const activeSemanticTrailResult = useMemo(() => {
     if (!semanticTrailResult) return null
@@ -728,7 +728,7 @@ function App(): React.JSX.Element {
         .find(activeTab.id, trimmed, action)
         .catch((error) => reportError(error))
     },
-    [activeTab?.id, reportError]
+    [activeTab?.id, reportError],
   )
 
   const closeFindBar = useCallback((): void => {
@@ -747,8 +747,8 @@ function App(): React.JSX.Element {
       const captureEntries = await Promise.all(
         nextCollections.map(async (collection) => [
           collection.id,
-          await window.aether.collections.captures(collection.id)
-        ])
+          await window.aether.collections.captures(collection.id),
+        ]),
       )
       const nextCapturesByCollection = Object.fromEntries(captureEntries) as Record<
         string,
@@ -769,10 +769,10 @@ function App(): React.JSX.Element {
       setAskCollectionId((current) =>
         current && nextCollections.some((collection) => collection.id === current)
           ? current
-          : nextSelected
+          : nextSelected,
       )
     },
-    [selectedCollectionId]
+    [selectedCollectionId],
   )
 
   const refreshShell = useCallback(async (): Promise<void> => {
@@ -780,7 +780,7 @@ function App(): React.JSX.Element {
       window.aether.apps.list(),
       window.aether.tabs.list(),
       window.aether.system.status(),
-      window.aether.system.settings()
+      window.aether.system.settings(),
     ])
     setApps(nextApps)
     setTabs(nextTabs)
@@ -807,7 +807,7 @@ function App(): React.JSX.Element {
       refreshCollections(),
       refreshShortcuts(),
       refreshSavedIcebergs(),
-      refreshAirRecent()
+      refreshAirRecent(),
     ])
   }, [refreshAirRecent, refreshCollections, refreshSavedIcebergs, refreshShell, refreshShortcuts])
 
@@ -821,13 +821,13 @@ function App(): React.JSX.Element {
           ...current,
           updates: {
             ...current.updates,
-            lastCheckedAt: result.checkedAt
-          }
+            lastCheckedAt: result.checkedAt,
+          },
         }))
         if (result.updateAvailable) {
           report(
             `ÆTHER ${result.latestVersion ?? result.latestName ?? 'update'} is available.`,
-            'info'
+            'info',
           )
         } else if (!options?.quiet && result.error) {
           report(result.error, 'error')
@@ -840,7 +840,7 @@ function App(): React.JSX.Element {
         if (!options?.quiet) setUpdateChecking(false)
       }
     },
-    [report, reportError, reportSuccess]
+    [report, reportError, reportSuccess],
   )
 
   const searchLibrary = useCallback(
@@ -855,7 +855,7 @@ function App(): React.JSX.Element {
         setSearching(false)
       }
     },
-    [reportError]
+    [reportError],
   )
 
   const clearSearch = useCallback((): void => setSearchResult(null), [])
@@ -901,7 +901,7 @@ function App(): React.JSX.Element {
   // the ask is not scoped to a hub.
   const activeThreadCollectionId = useMemo(
     () => (askCurrentPageOnly ? undefined : askCollectionId || undefined),
-    [askCollectionId, askCurrentPageOnly]
+    [askCollectionId, askCurrentPageOnly],
   )
 
   const clearChatHistory = useCallback((): void => {
@@ -946,7 +946,7 @@ function App(): React.JSX.Element {
         setCapturingLink(false)
       }
     },
-    [refreshCollections, reportError, reportSuccess]
+    [refreshCollections, reportError, reportSuccess],
   )
 
   const captureOpenTabs = useCallback(
@@ -971,7 +971,7 @@ function App(): React.JSX.Element {
           result.failures.length > 0
             ? `${saved} Skipped: ${result.failures.map((item) => item.reason).join(' ')}`
             : saved,
-          result.failures.length > 0 ? 'info' : 'success'
+          result.failures.length > 0 ? 'info' : 'success',
         )
       } catch (error) {
         reportError(error)
@@ -979,7 +979,7 @@ function App(): React.JSX.Element {
         setCapturingLink(false)
       }
     },
-    [refreshCollections, report, reportBlocked, reportError, tabs]
+    [refreshCollections, report, reportBlocked, reportError, tabs],
   )
 
   const refreshDiagnostics = useCallback(async (): Promise<void> => {
@@ -1023,7 +1023,7 @@ function App(): React.JSX.Element {
       reportSuccess(
         `Exported ${countLabel(result.captureCount, 'source')} (${formatByteSize(result.byteSize)}) to ${
           result.path
-        }`
+        }`,
       )
     } catch (error) {
       reportError(error)
@@ -1053,7 +1053,7 @@ function App(): React.JSX.Element {
         result.stillPending > 0
           ? `Re-indexed ${result.embedded} passages at ${result.dim} dims — ${result.stillPending} could not be embedded.`
           : `Re-indexed ${result.embedded} passages at ${result.dim} dims.`,
-        result.stillPending > 0 ? 'info' : 'success'
+        result.stillPending > 0 ? 'info' : 'success',
       )
       await refreshIndexStatus()
     } catch (error) {
@@ -1094,7 +1094,7 @@ function App(): React.JSX.Element {
         return null
       }
     },
-    [refreshShell, reportError]
+    [refreshShell, reportError],
   )
 
   useEffect(() => {
@@ -1149,7 +1149,7 @@ function App(): React.JSX.Element {
         setFindCurrent(result.current)
         setFindTotal(result.total)
       }),
-    [activeTab?.id]
+    [activeTab?.id],
   )
 
   useEffect(() => {
@@ -1261,7 +1261,7 @@ function App(): React.JSX.Element {
       showToast({
         message,
         tone: 'info',
-        durationMs: 0
+        durationMs: 0,
       })
     })
 
@@ -1285,7 +1285,7 @@ function App(): React.JSX.Element {
       const folder = progress.path?.replace(/[/\\][^/\\]+$/, '')
       showToast({
         message: folder ? `Saved ${progress.filename} to ${folder}` : `Saved ${progress.filename}`,
-        tone: 'success'
+        tone: 'success',
       })
     })
 
@@ -1330,8 +1330,8 @@ function App(): React.JSX.Element {
       current.includes(model)
         ? current.filter((item) => item !== model)
         : [...current, model].sort((first, second) =>
-            first === second ? 0 : first === 'lite' ? -1 : second === 'lite' ? 1 : 0
-          )
+            first === second ? 0 : first === 'lite' ? -1 : second === 'lite' ? 1 : 0,
+          ),
     )
   }
 
@@ -1358,7 +1358,7 @@ function App(): React.JSX.Element {
 
   async function startModelSetup(): Promise<void> {
     const modelsToInstall = selectedSetupModels.filter(
-      (model) => !installedSetupModels.includes(model)
+      (model) => !installedSetupModels.includes(model),
     )
     if (modelsToInstall.length === 0 && modelSetupCoreInstalled) {
       setModelSetupError('All selected AiON models are already installed.')
@@ -1374,7 +1374,7 @@ function App(): React.JSX.Element {
 
     try {
       const nextStatus = await window.aether.system.downloadModels({
-        chatModels: modelsToInstall
+        chatModels: modelsToInstall,
       })
       setStatus(nextStatus)
       setModelSetupComplete(true)
@@ -1597,13 +1597,13 @@ function App(): React.JSX.Element {
                 id: collectionDialog.collection.id,
                 name: input.name,
                 description: input.description,
-                icon: input.icon
+                icon: input.icon,
               })
         await closeCollectionDialog()
         await refreshCollections(collection.id)
         setFlowGraphResult(null)
         reportSuccess(`${collection.name} is ready.`)
-      }
+      },
     )
   }
 
@@ -1694,7 +1694,7 @@ function App(): React.JSX.Element {
 
     await runTask('Capturing page', async () => {
       const result = await window.aether.capture.currentPage({
-        collectionId: selectedCollection.id
+        collectionId: selectedCollection.id,
       })
       setLastCapture(result)
       await refreshCollections(result.collectionId)
@@ -1707,7 +1707,7 @@ function App(): React.JSX.Element {
       setSemanticTrailResult(null)
       setFlowGraphResult(null)
       reportSuccess(
-        `Saved ${countLabel(result.chunkCount, 'chunk')} into ${result.collectionName}.`
+        `Saved ${countLabel(result.chunkCount, 'chunk')} into ${result.collectionName}.`,
       )
     })
   }
@@ -1721,7 +1721,7 @@ function App(): React.JSX.Element {
 
     await runTask('Capturing selection', async () => {
       const result = await window.aether.capture.selection({
-        collectionId: selectedCollection.id
+        collectionId: selectedCollection.id,
       })
       setLastCapture(result)
       await refreshCollections(result.collectionId)
@@ -1729,7 +1729,7 @@ function App(): React.JSX.Element {
       setSemanticTrailResult(null)
       setFlowGraphResult(null)
       reportSuccess(
-        `Saved ${countLabel(result.provenance?.wordCount ?? 0, 'selected word')} into ${result.collectionName}.`
+        `Saved ${countLabel(result.provenance?.wordCount ?? 0, 'selected word')} into ${result.collectionName}.`,
       )
     })
   }
@@ -1762,7 +1762,7 @@ function App(): React.JSX.Element {
 
   async function askPrompt(
     prompt: string,
-    contextOverride?: { collectionId?: string; includeCurrentPage?: boolean }
+    contextOverride?: { collectionId?: string; includeCurrentPage?: boolean },
   ): Promise<void> {
     const hasKnowledgeHubs = usableAskCollections.length > 0
     const selectedAskCollection =
@@ -1805,7 +1805,7 @@ function App(): React.JSX.Element {
           prompt,
           collectionId,
           includeCurrentPage,
-          requestId
+          requestId,
         })
 
         setChatResult(result)
@@ -1863,7 +1863,7 @@ function App(): React.JSX.Element {
         title: activeTab.title || activeTab.host || activeTab.url,
         url: activeTab.url,
         favicon: activeTab.favicon,
-        themeColor: activeTab.themeColor
+        themeColor: activeTab.themeColor,
       })
       await refreshShortcuts()
       reportSuccess(updatingPortal ? 'Updated portal appearance.' : 'Saved to Hub.')
@@ -1936,7 +1936,7 @@ function App(): React.JSX.Element {
       try {
         const result = await window.aether.semanticTrail.generate({
           query: trimmedQuery || undefined,
-          limit: 12
+          limit: 12,
         })
         if (semanticTrailRequestRef.current !== requestId) return
         if (
@@ -1958,13 +1958,13 @@ function App(): React.JSX.Element {
         }
       }
     },
-    [canUseCurrentPage, dashboardOpen, reportError, semanticTrailQuery, status?.embeddingModel]
+    [canUseCurrentPage, dashboardOpen, reportError, semanticTrailQuery, status?.embeddingModel],
   )
 
   async function buildFlowGraph(query = flowGraphQuery): Promise<void> {
     await runTask('Mapping Flow', async () => {
       const result = await window.aether.flow.graph({
-        query: query.trim() || undefined
+        query: query.trim() || undefined,
       })
       setFlowGraphResult(result)
       const fallbackNodeId =
@@ -1973,10 +1973,10 @@ function App(): React.JSX.Element {
         result.nodes[0]?.id ??
         null
       setFlowSelectedNodeId((current) =>
-        current && result.nodes.some((node) => node.id === current) ? current : fallbackNodeId
+        current && result.nodes.some((node) => node.id === current) ? current : fallbackNodeId,
       )
       setAirFlowNodeId((current) =>
-        current && result.nodes.some((node) => node.id === current) ? current : null
+        current && result.nodes.some((node) => node.id === current) ? current : null,
       )
     })
   }
@@ -2007,7 +2007,7 @@ function App(): React.JSX.Element {
         airLensKind === 'flow' && flowNode?.kind === 'source' ? flowNode.captureId : undefined,
       savedIcebergId: airLensKind === 'iceberg' ? activeSavedIceberg?.id : undefined,
       answer: airLensKind === 'answer' ? (chatResult ?? undefined) : undefined,
-      limit: 12
+      limit: 12,
     }
   }
 
@@ -2099,9 +2099,9 @@ function App(): React.JSX.Element {
         capturedAt: item.capturedAt,
         chunkIndex: item.chunkIndex,
         text: item.excerpt,
-        score: item.score.total
+        score: item.score.total,
       },
-      item.excerpt
+      item.excerpt,
     )
   }
 
@@ -2114,7 +2114,7 @@ function App(): React.JSX.Element {
       reportSuccess(
         `Mapped ${countLabel(result.items.length, 'topic')} with ${
           formatVisibleModelName(result.model) ?? result.model
-        }.`
+        }.`,
       )
       return result
     } catch (error) {
@@ -2247,7 +2247,7 @@ function App(): React.JSX.Element {
   async function updateDefaultSearchEngine(defaultSearchEngine: SearchEngineId): Promise<void> {
     await runTask('Updating settings', async () => {
       const nextSettings = await window.aether.system.updateSettings({
-        browser: { defaultSearchEngine }
+        browser: { defaultSearchEngine },
       })
       setSettings(nextSettings)
       // status.aiFreeSearch describes the *selected* engine, so it goes stale the
@@ -2261,7 +2261,7 @@ function App(): React.JSX.Element {
   async function updateAiFreeSearch(aiFreeSearch: boolean): Promise<void> {
     await runTask('Updating settings', async () => {
       const nextSettings = await window.aether.system.updateSettings({
-        browser: { aiFreeSearch }
+        browser: { aiFreeSearch },
       })
       setSettings(nextSettings)
       setStatus(await window.aether.system.status())
@@ -2272,7 +2272,7 @@ function App(): React.JSX.Element {
   async function updateProxyEnabled(enabled: boolean): Promise<void> {
     await runTask('Updating settings', async () => {
       const nextSettings = await window.aether.system.updateSettings({
-        browser: { proxy: { enabled } }
+        browser: { proxy: { enabled } },
       })
       setSettings(nextSettings)
       setStatus(await window.aether.system.status())
@@ -2289,7 +2289,7 @@ function App(): React.JSX.Element {
     }
     await runTask('Updating settings', async () => {
       const nextSettings = await window.aether.system.updateSettings({
-        browser: { proxy: { url } }
+        browser: { proxy: { url } },
       })
       setSettings(nextSettings)
       setStatus(await window.aether.system.status())
@@ -2300,7 +2300,7 @@ function App(): React.JSX.Element {
   async function updatePinTimezone(pinTimezone: boolean): Promise<void> {
     await runTask('Updating settings', async () => {
       const nextSettings = await window.aether.system.updateSettings({
-        browser: { pinTimezone }
+        browser: { pinTimezone },
       })
       setSettings(nextSettings)
       setStatus(await window.aether.system.status())
@@ -2329,7 +2329,7 @@ function App(): React.JSX.Element {
   async function updateAutoCheck(autoCheck: boolean): Promise<void> {
     await runTask('Updating settings', async () => {
       const nextSettings = await window.aether.system.updateSettings({
-        updates: { autoCheck }
+        updates: { autoCheck },
       })
       setSettings(nextSettings)
       reportSuccess(autoCheck ? 'Update checks enabled.' : 'Update checks disabled.')
@@ -2451,7 +2451,7 @@ function App(): React.JSX.Element {
       showToast({
         message: label,
         tone: 'info',
-        durationMs: label === 'Capturing page' ? 0 : 2600
+        durationMs: label === 'Capturing page' ? 0 : 2600,
       })
     }
 
@@ -2518,7 +2518,7 @@ function App(): React.JSX.Element {
   // is over every tab).
   const openTabCount = useMemo(
     () => tabs.filter((tab) => tab.url && !tab.url.startsWith('aether://')).length,
-    [tabs]
+    [tabs],
   )
 
   // Shared between the desktop and mobile shells so the two trees stay in sync
@@ -2701,7 +2701,7 @@ function App(): React.JSX.Element {
             onCancel: cancelAsk,
             onChatPromptChange: setChatPrompt,
             onOpenCitation: openCitation,
-            onOpenModelSetup: openModelSetup
+            onOpenModelSetup: openModelSetup,
           }}
           backInterceptorRef={mobileBackInterceptorRef}
           openAionRef={mobileOpenAionRef}
@@ -3056,7 +3056,7 @@ function FindBar({
   onSearch,
   onNext,
   onPrev,
-  onClose
+  onClose,
 }: {
   inputRef: RefObject<HTMLInputElement | null>
   query: string
@@ -3154,7 +3154,7 @@ function formatSettingsDate(value?: string): string {
   if (Number.isNaN(date.getTime())) return value
   return new Intl.DateTimeFormat(undefined, {
     dateStyle: 'medium',
-    timeStyle: 'short'
+    timeStyle: 'short',
   }).format(date)
 }
 
@@ -3224,7 +3224,7 @@ function SettingsModal({
   onOpenUpdateRelease,
   onAppearanceChange,
   onUpdateAutoCheck,
-  onOpenModelSetup
+  onOpenModelSetup,
 }: {
   busy: string | null
   exportingLibrary: boolean
@@ -3266,7 +3266,7 @@ function SettingsModal({
     () => {
       void onClose()
     },
-    !exportingLibrary && !reindexing && !updateInstalling
+    !exportingLibrary && !reindexing && !updateInstalling,
   )
   const installedVersion = updateCheck?.currentVersion ?? APP_VERSION
   const releaseNotes = parseReleaseNotes(updateCheck?.releaseNotes)
@@ -3275,7 +3275,7 @@ function SettingsModal({
     { id: 'bing', name: 'Bing', description: 'Microsoft web search.' },
     { id: 'yahoo', name: 'Yahoo!', description: 'Classic portal search.' },
     { id: 'ecosia', name: 'Ecosia', description: 'Privacy-aware search that funds trees.' },
-    { id: 'duckduckgo', name: 'DuckDuckGo', description: 'Private search by default.' }
+    { id: 'duckduckgo', name: 'DuckDuckGo', description: 'Private search by default.' },
   ]
 
   return (
@@ -3303,7 +3303,7 @@ function SettingsModal({
                     fontWeight: 'bold',
                     marginRight: '-1px',
                     color: 'var(--accent-strong)',
-                    fontSize: '23px'
+                    fontSize: '23px',
                   }}
                 >
                   Æ
@@ -3369,8 +3369,8 @@ function SettingsModal({
                     {describeAiFreeSearch(
                       systemStatus.aiFreeSearch,
                       searchEngines.find(
-                        (engine) => engine.id === settings.browser.defaultSearchEngine
-                      )?.name ?? 'This engine'
+                        (engine) => engine.id === settings.browser.defaultSearchEngine,
+                      )?.name ?? 'This engine',
                     )}
                   </small>
                 </span>
@@ -3546,7 +3546,7 @@ function SettingsModal({
                 <small>
                   {libraryExport
                     ? `Last export: ${countLabel(libraryExport.captureCount, 'source')}, ${formatByteSize(
-                        libraryExport.byteSize
+                        libraryExport.byteSize,
                       )} — ${libraryExport.path}`
                     : 'ÆTHER keeps no cloud copy. Save a snapshot of your hubs, sources, and maps.'}
                 </small>
@@ -3700,9 +3700,9 @@ function SettingsModal({
                             width: `${Math.min(
                               100,
                               Math.round(
-                                (updateProgress.downloadedBytes / updateProgress.totalBytes) * 100
-                              )
-                            )}%`
+                                (updateProgress.downloadedBytes / updateProgress.totalBytes) * 100,
+                              ),
+                            )}%`,
                           }
                         : undefined
                     }
@@ -3798,7 +3798,7 @@ function SettingsModal({
                           <kbd>{shortcut.keys}</kbd>
                           <span>{shortcut.action}</span>
                         </div>
-                      )
+                      ),
                     )}
                   </div>
                 </div>

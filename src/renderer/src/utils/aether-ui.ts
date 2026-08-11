@@ -7,7 +7,7 @@ import {
   ProxyStatus,
   SavedIcebergSummary,
   TimezonePinStatus,
-  UpdateInstallProgress
+  UpdateInstallProgress,
 } from '../../../shared/aether'
 import { QuickAction } from '../types/ui'
 
@@ -87,10 +87,10 @@ export function getPortalTint(host: string, themeColor?: string): string {
     'github.com': '#6e7681',
     'duckduckgo.com': '#de5833',
     'ecosia.org': '#39a96b',
-    'wikipedia.org': '#727b86'
+    'wikipedia.org': '#727b86',
   }
   const matchedBrand = Object.entries(brandColors).find(
-    ([domain]) => normalized === domain || normalized.endsWith(`.${domain}`)
+    ([domain]) => normalized === domain || normalized.endsWith(`.${domain}`),
   )
   if (matchedBrand) return matchedBrand[1]
   if (themeColor) return themeColor
@@ -180,7 +180,7 @@ function formatLocalModelName(model?: string | null): string | null {
 }
 function formatBrandedModelName(
   model?: string | null,
-  role: 'chat' | 'embedding' = 'chat'
+  role: 'chat' | 'embedding' = 'chat',
 ): string | null {
   if (!model) return null
 
@@ -233,28 +233,28 @@ const CHAT_MODEL_LADDER: Array<{
     id: 'tiny',
     name: 'AiON TiNY',
     detail: 'Community build',
-    matches: (normalized, isCommunity) => normalized.includes('gemma-4-e2b') && isCommunity
+    matches: (normalized, isCommunity) => normalized.includes('gemma-4-e2b') && isCommunity,
   },
   {
     id: 'lite',
     name: 'AiON LiTE',
     detail: 'Faster, everyday answers',
     installChoice: 'lite',
-    matches: (normalized, isCommunity) => normalized.includes('gemma-4-e2b') && !isCommunity
+    matches: (normalized, isCommunity) => normalized.includes('gemma-4-e2b') && !isCommunity,
   },
   {
     id: 'wise',
     name: 'AiON WiSE',
     detail: 'Deeper synthesis and iCE maps',
     installChoice: 'wise',
-    matches: (normalized) => normalized.includes('gemma-4-e4b')
+    matches: (normalized) => normalized.includes('gemma-4-e4b'),
   },
   {
     id: 'prime',
     name: 'AiON PRiME',
     detail: 'Largest, slowest',
-    matches: (normalized) => normalized.includes('gemma-4-12b')
-  }
+    matches: (normalized) => normalized.includes('gemma-4-12b'),
+  },
 ]
 
 function modelMatchesRung(model: string, rung: (typeof CHAT_MODEL_LADDER)[number]): boolean {
@@ -286,8 +286,8 @@ export function chatModelRungs(installed: string[]): ChatModelRung[] {
         name: rung.name,
         detail: rung.detail,
         model,
-        installChoice: rung.installChoice
-      }
+        installChoice: rung.installChoice,
+      },
     ]
   })
 
@@ -298,7 +298,7 @@ export function chatModelRungs(installed: string[]): ChatModelRung[] {
       key: model,
       name: formatBrandedModelName(model, 'chat') ?? model,
       detail: 'Installed locally',
-      model
+      model,
     }))
 
   return [...rungs, ...extras]
@@ -306,7 +306,7 @@ export function chatModelRungs(installed: string[]): ChatModelRung[] {
 
 export function formatVisibleModelName(
   model?: string | null,
-  options: { developerMode?: boolean; role?: 'chat' | 'embedding' } = {}
+  options: { developerMode?: boolean; role?: 'chat' | 'embedding' } = {},
 ): string | null {
   return options.developerMode
     ? formatLocalModelName(model)
@@ -314,7 +314,7 @@ export function formatVisibleModelName(
 }
 
 export function inferIcebergIcon(
-  source: Pick<SavedIcebergSummary, 'keyword'> & { title?: string; items?: IcebergItem[] }
+  source: Pick<SavedIcebergSummary, 'keyword'> & { title?: string; items?: IcebergItem[] },
 ): string {
   const text = `${source.keyword} ${source.title} ${
     source.items?.map((item) => `${item.name} ${item.description}`).join(' ') ?? ''
@@ -323,7 +323,7 @@ export function inferIcebergIcon(
   const matches: Array<[string, RegExp]> = [
     [
       'code',
-      /\b(code|software|programming|developer|javascript|typescript|python|api|github|compiler)\b/
+      /\b(code|software|programming|developer|javascript|typescript|python|api|github|compiler)\b/,
     ],
     ['cpu', /\b(ai|machine learning|llm|neural|computer|hardware|semiconductor|chip|robotics)\b/],
     ['brain', /\b(brain|mind|psychology|cognition|learning|intelligence|memory|behavior)\b/],
@@ -341,7 +341,7 @@ export function inferIcebergIcon(
     ['shield', /\b(security|privacy|cryptography|threat|malware|safety|defense)\b/],
     ['telescope', /\b(space|astronomy|cosmos|planet|star|galaxy|telescope)\b/],
     ['book', /\b(literature|philosophy|book|education|language|writing|research)\b/],
-    ['globe', /\b(world|global|culture|geography|travel|internet|web)\b/]
+    ['globe', /\b(world|global|culture|geography|travel|internet|web)\b/],
   ]
 
   return matches.find(([, pattern]) => pattern.test(text))?.[0] ?? 'snowflake'
@@ -357,13 +357,13 @@ export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {
     {
       id: 'summarize',
       label: 'Summarize',
-      prompt: 'Summarize the current page clearly, using concise sections and local citations.'
+      prompt: 'Summarize the current page clearly, using concise sections and local citations.',
     },
     {
       id: 'key-points',
       label: 'Key points',
-      prompt: 'Extract the key points from the current page and explain what matters most.'
-    }
+      prompt: 'Extract the key points from the current page and explain what matters most.',
+    },
   ]
 
   if (activeTab.host.includes('wikipedia.org')) {
@@ -373,20 +373,20 @@ export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {
         id: 'wiki-overview',
         label: 'Wikipedia overview',
         prompt:
-          'Give me a clean overview of this Wikipedia article, including the topic, why it matters, and the most important sections.'
+          'Give me a clean overview of this Wikipedia article, including the topic, why it matters, and the most important sections.',
       },
       {
         id: 'wiki-timeline',
         label: 'Timeline',
         prompt:
-          'Create a brief timeline from this Wikipedia article if dates or historical events appear.'
+          'Create a brief timeline from this Wikipedia article if dates or historical events appear.',
       },
       {
         id: 'wiki-related',
         label: 'Related concepts',
         prompt:
-          'Identify related concepts, people, places, and terms from this Wikipedia article that are worth exploring next.'
-      }
+          'Identify related concepts, people, places, and terms from this Wikipedia article that are worth exploring next.',
+      },
     ]
   }
 
@@ -397,14 +397,14 @@ export function getQuickActions(activeTab?: BrowserTabSummary): QuickAction[] {
         id: 'repo-summary',
         label: 'Repo summary',
         prompt:
-          'Summarize this GitHub page and explain the project purpose, setup, and important files or issues.'
+          'Summarize this GitHub page and explain the project purpose, setup, and important files or issues.',
       },
       {
         id: 'risk-scan',
         label: 'Risks',
         prompt:
-          'Review this GitHub page for risks, open questions, missing setup details, or maintenance concerns.'
-      }
+          'Review this GitHub page for risks, open questions, missing setup details, or maintenance concerns.',
+      },
     ]
   }
 

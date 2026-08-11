@@ -5,21 +5,21 @@ import {
   PointerEvent as ReactPointerEvent,
   useLayoutEffect,
   useMemo,
-  useRef
+  useRef,
 } from 'react'
 import {
   CollectionSummary,
   FlowGraphEdge,
   FlowGraphNode,
   FlowGraphResult,
-  SystemStatus
+  SystemStatus,
 } from '../../../shared/aether'
 import {
   countLabel,
   formatDate,
   formatVisibleModelName,
   getCaptureHost,
-  plural
+  plural,
 } from '../utils/aether-ui'
 import { ExternalLink, LocateFixed, Network, Search, Waves } from 'lucide-react'
 
@@ -86,7 +86,7 @@ function FlowViewComponent({
   onOpenHub,
   onOpenSource,
   onQueryChange,
-  onSelectedNodeChange
+  onSelectedNodeChange,
 }: FlowViewProps): React.JSX.Element {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const simNodesRef = useRef<SimNode[]>([])
@@ -165,7 +165,7 @@ function FlowViewComponent({
         simIndexRef.current,
         alphaRef,
         now,
-        Boolean(reduceMotion)
+        Boolean(reduceMotion),
       )
       writeNodePositions(simNodesRef.current, nodeElsRef.current)
       writeEdgePaths(simEdgesRef.current, simIndexRef.current, edgeElsRef.current)
@@ -478,7 +478,7 @@ function FlowMatchCard({
   active,
   node,
   onOpen,
-  onSelect
+  onSelect,
 }: {
   active: boolean
   node: FlowGraphNode
@@ -543,7 +543,7 @@ function FlowNodeDetail({
   node,
   onOpenHub,
   onOpenSource,
-  onUseNodeAsLens
+  onUseNodeAsLens,
 }: {
   busy: string | null
   node: FlowGraphNode
@@ -616,7 +616,7 @@ function nodeRadius(node: FlowGraphNode): number {
 // force loop relax it. Positions of nodes that survived a previous build are carried over.
 function buildSimulation(
   result: FlowGraphResult,
-  previous: Map<string, SimNode>
+  previous: Map<string, SimNode>,
 ): { nodes: SimNode[]; edges: SimEdge[] } {
   const hubNodes = result.nodes.filter((node) => node.kind === 'hub')
   const sourceNodes = result.nodes.filter((node) => node.kind === 'source')
@@ -638,7 +638,7 @@ function buildSimulation(
       fx: null,
       fy: null,
       phase: hashUnit(node.id) * Math.PI * 2,
-      isQuery: node.kind === 'query'
+      isQuery: node.kind === 'query',
     })
   }
 
@@ -669,7 +669,7 @@ function buildSimulation(
       make(
         node,
         hubPosition.x + Math.cos(angle) * radius,
-        hubPosition.y + Math.sin(angle) * radius * 0.82
+        hubPosition.y + Math.sin(angle) * radius * 0.82,
       )
     })
   }
@@ -682,7 +682,7 @@ function buildSimulation(
       to: edge.to,
       rest,
       strength,
-      bend: (hashUnit(edge.id) - 0.5) * 0.72
+      bend: (hashUnit(edge.id) - 0.5) * 0.72,
     }
   })
 
@@ -701,7 +701,7 @@ function stepSimulation(
   index: Map<string, SimNode>,
   alphaRef: { current: number },
   now: number,
-  reduceMotion: boolean
+  reduceMotion: boolean,
 ): void {
   const alpha = alphaRef.current
 
@@ -783,7 +783,7 @@ function writeNodePositions(nodes: SimNode[], elements: Map<string, SVGGElement>
 function writeEdgePaths(
   edges: SimEdge[],
   index: Map<string, SimNode>,
-  elements: Map<string, SVGPathElement>
+  elements: Map<string, SVGPathElement>,
 ): void {
   for (const edge of edges) {
     const a = index.get(edge.from)

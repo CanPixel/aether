@@ -1,6 +1,6 @@
 {
   "name": "aether-browser",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "productName": "ÆTHER",
   "description": "Local AI-powered engine and knowledge hub",
   "keywords": [
@@ -23,6 +23,7 @@
     "test:web": "bun test src/renderer/src/utils/evidence-bundle.test.ts src/renderer/src/utils/extraction-receipt.test.ts",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --lib && bun run test:web",
     "check:platforms": "bash scripts/check-platforms.sh",
+    "audit": "bash scripts/audit.sh",
     "version:bump": "bun scripts/bump-version.ts",
     "version:check": "bun scripts/bump-version.ts --check",
     "release": "bun scripts/release.ts",
@@ -48,7 +49,8 @@
     "tauri": "tauri"
   },
   "overrides": {
-    "brace-expansion": "^5.0.7",
+    "brace-expansion": "^5.0.9",
+    "nanoid": "^3.3.18",
     "@babel/core": "^7.29.1"
   },
   "dependencies": {
@@ -57,7 +59,7 @@
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",
-    "brace-expansion": "^5.0.8",
+    "brace-expansion": "^5.0.9",
     "@eslint/js": "^9.39.5",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/cli": "^2.11.4",
@@ -77,5 +79,8 @@
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.65.0",
     "vite": "^8.1.5"
+  },
+  "patchedDependencies": {
+    "image-size@0.7.5": "patches/image-size@0.7.5.patch"
   }
 }

@@ -26,8 +26,8 @@ test('serializes the complete persistent extraction receipt', () => {
       contentScope: 'page',
       contentSelector: 'article',
       wordCount: 320,
-      fallbackReason: 'Live DOM unavailable.'
-    }
+      fallbackReason: 'Live DOM unavailable.',
+    },
   }
 
   const receipt = buildExtractionReceipt(capture)

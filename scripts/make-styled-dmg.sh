@@ -17,6 +17,15 @@
 #   runs appdmg against the already-built .app, and VERIFIES that the picture
 #   background actually landed before declaring success.
 #
+# Known `bun audit` findings:
+#   appdmg (0.6.6, last published 2023) pulls in image-size@0.7.5, which is
+#   covered by GHSA-w3rx-r6r6-pgpr and GHSA-5p2g-fcmc-qvqq. Both advisories span
+#   every published version (<= 2.0.2) and neither has a patched release, so
+#   there is nothing to upgrade to. The ICNS loop is fixed locally in
+#   patches/image-size@0.7.5.patch; the JXL/HEIF one does not apply to 0.7.5.
+#   See scripts/audit.sh for the full reasoning and `bun run audit` for a check
+#   that withdraws the suppression if either premise stops holding.
+#
 # Usage: bun run dmg        (expects `tauri build --bundles app` to have produced the .app)
 #        AETHER_TAURI_TARGET=universal-apple-darwin bun run dmg
 #        (expects `tauri build --target universal-apple-darwin`)

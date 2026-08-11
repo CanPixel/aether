@@ -23,7 +23,7 @@ export function CollectionDialog({
   state,
   onClose,
   onDelete,
-  onSave
+  onSave,
 }: CollectionDialogProps): React.JSX.Element | null {
   const collection = state && 'collection' in state ? state.collection : null
   const [name, setName] = useState(collection?.name ?? '')

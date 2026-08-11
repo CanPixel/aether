@@ -19,7 +19,7 @@ import {
   Shield,
   Snowflake,
   Sprout,
-  Telescope
+  Telescope,
 } from 'lucide-react'
 import {
   CaptureSummary,
@@ -27,7 +27,7 @@ import {
   HubShortcutSummary,
   LibrarySearchHit,
   LibrarySearchResult,
-  SavedIcebergSummary
+  SavedIcebergSummary,
 } from '../../../shared/aether'
 import { CollectionIcon } from '../utils/collection-icons'
 import {
@@ -37,7 +37,7 @@ import {
   getCaptureHost,
   getPortalTint,
   getRootDomainLetter,
-  inferIcebergIcon
+  inferIcebergIcon,
 } from '../utils/aether-ui'
 import { ChevronRightIcon, AetherSigilIcon, CloseIcon, CubeIcon } from './icons'
 import { SquarePen, Trash2 as TrashIcon } from 'lucide-react'
@@ -134,7 +134,7 @@ function DashboardComponent({
   selectedCollectionId,
   savedIcebergs,
   shortcuts,
-  selectCollection
+  selectCollection,
 }: DashboardProps): React.JSX.Element {
   const [openCollectionId, setOpenCollectionId] = useState(selectedCollectionId)
   const [draggedShortcutId, setDraggedShortcutId] = useState('')
@@ -158,7 +158,7 @@ function DashboardComponent({
 
   function getCaptureCollections(capture: CaptureSummary): CollectionSummary[] {
     const matches = collections.filter((collection) =>
-      (capturesByCollection[collection.id] ?? []).some((item) => item.url === capture.url)
+      (capturesByCollection[collection.id] ?? []).some((item) => item.url === capture.url),
     )
     return matches.length > 0
       ? matches
@@ -232,7 +232,7 @@ function DashboardComponent({
     collectionId: string,
     captures: CaptureSummary[],
     draggedId: string,
-    targetId: string
+    targetId: string,
   ): void {
     if (!draggedId || draggedId === targetId) return
 
@@ -313,7 +313,7 @@ function DashboardComponent({
                   }}
                   style={
                     {
-                      '--portal-tint': getPortalTint(shortcut.host, shortcut.themeColor)
+                      '--portal-tint': getPortalTint(shortcut.host, shortcut.themeColor),
                     } as CSSProperties
                   }
                 >
@@ -665,7 +665,7 @@ function DashboardComponent({
                     }
 
                     const collectionId = event.dataTransfer.getData(
-                      'application/x-aether-collection'
+                      'application/x-aether-collection',
                     )
                     if (collectionId && canDropCollection) {
                       await reorderCollection(collection.id)
@@ -692,7 +692,7 @@ function DashboardComponent({
                       onClick={() => {
                         selectCollection(collection.id)
                         setOpenCollectionId((current) =>
-                          current === collection.id ? '' : collection.id
+                          current === collection.id ? '' : collection.id,
                         )
                       }}
                       type="button"
@@ -763,7 +763,7 @@ function DashboardComponent({
                             collection.id,
                             collectionCaptures,
                             info.id,
-                            dragOverCaptureId
+                            dragOverCaptureId,
                           )
                           setDragOverCaptureId('')
                         }}
@@ -821,7 +821,7 @@ function CaptureCard({
   onDragEnd,
   onDragStart,
   onReorderEnter,
-  openCapture
+  openCapture,
 }: {
   capture: CaptureSummary
   collections: CollectionSummary[]
@@ -1024,7 +1024,7 @@ function IcebergFlairIcon({ icon }: { icon: string }): React.JSX.Element {
     shield: Shield,
     snowflake: Snowflake,
     sprout: Sprout,
-    telescope: Telescope
+    telescope: Telescope,
   }
   const Icon = icons[icon] ?? Snowflake
 

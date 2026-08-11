@@ -17,15 +17,15 @@ const result: ChatResult = {
       capturedAt: '2026-08-02T10:00:00Z',
       chunkIndex: 2,
       text: 'Exact retrieved text.\nSecond line.',
-      score: 0.92
-    }
+      score: 0.92,
+    },
   ],
   metrics: {
     generatedTokens: 14,
     tokensPerSecond: 8,
     elapsedSeconds: 2,
-    chunks: 1
-  }
+    chunks: 1,
+  },
 }
 
 describe('buildEvidenceBundle', () => {

@@ -26,7 +26,7 @@ function usage(): void {
 function assertVersion(version: string): void {
   if (!VERSION_PATTERN.test(version)) {
     console.error(
-      `Invalid version "${version}". Use SemVer without a leading "v", for example 1.2.3.`
+      `Invalid version "${version}". Use SemVer without a leading "v", for example 1.2.3.`,
     )
     process.exit(1)
   }
@@ -60,7 +60,7 @@ function updateCargoPackageVersion(content: string, version: string): string {
 
 function readCargoLockPackageVersion(content: string): string {
   const match = content.match(
-    /^\[\[package\]\]\s*\nname\s*=\s*"aether"\s*\nversion\s*=\s*"([^"]+)"/m
+    /^\[\[package\]\]\s*\nname\s*=\s*"aether"\s*\nversion\s*=\s*"([^"]+)"/m,
   )
   if (!match) throw new Error('Could not find aether package version in src-tauri/Cargo.lock')
   return match[1]
@@ -69,7 +69,7 @@ function readCargoLockPackageVersion(content: string): string {
 function updateCargoLockPackageVersion(content: string, version: string): string {
   const next = content.replace(
     /^(\[\[package\]\]\s*\nname\s*=\s*"aether"\s*\nversion\s*=\s*)"([^"]+)"/m,
-    `$1"${version}"`
+    `$1"${version}"`,
   )
   if (next === content) {
     throw new Error('Could not update aether package version in src-tauri/Cargo.lock')
@@ -82,7 +82,7 @@ async function readVersions(): Promise<ManifestVersions> {
     readFile('package.json', 'utf8'),
     readFile('src-tauri/Cargo.toml', 'utf8'),
     readFile('src-tauri/Cargo.lock', 'utf8'),
-    readFile('src-tauri/tauri.conf.json', 'utf8')
+    readFile('src-tauri/tauri.conf.json', 'utf8'),
   ])
   const packageJson = JSON.parse(packageRaw) as { version?: string }
   const tauriConfig = JSON.parse(tauriRaw) as { version?: string }
@@ -94,7 +94,7 @@ async function readVersions(): Promise<ManifestVersions> {
     packageJson: packageJson.version,
     cargoToml: readCargoPackageVersion(cargoRaw),
     cargoLock: readCargoLockPackageVersion(cargoLockRaw),
-    tauriConfig: tauriConfig.version
+    tauriConfig: tauriConfig.version,
   }
 }
 
@@ -117,7 +117,7 @@ async function bumpVersion(version: string): Promise<void> {
     readFile('package.json', 'utf8'),
     readFile('src-tauri/Cargo.toml', 'utf8'),
     readFile('src-tauri/Cargo.lock', 'utf8'),
-    readFile('src-tauri/tauri.conf.json', 'utf8')
+    readFile('src-tauri/tauri.conf.json', 'utf8'),
   ])
 
   const packageJson = JSON.parse(packageRaw) as { version: string }
@@ -129,7 +129,7 @@ async function bumpVersion(version: string): Promise<void> {
     writeFile('package.json', `${JSON.stringify(packageJson, null, 2)}\n`),
     writeFile('src-tauri/Cargo.toml', updateCargoPackageVersion(cargoRaw, version)),
     writeFile('src-tauri/Cargo.lock', updateCargoLockPackageVersion(cargoLockRaw, version)),
-    writeFile('src-tauri/tauri.conf.json', `${JSON.stringify(tauriConfig, null, 2)}\n`)
+    writeFile('src-tauri/tauri.conf.json', `${JSON.stringify(tauriConfig, null, 2)}\n`),
   ])
 
   console.log(`Synced app version to ${version}`)
