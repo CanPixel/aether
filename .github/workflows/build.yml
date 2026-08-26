@@ -108,7 +108,9 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - run: pnpm install --frozen-lockfile
+      # appdmg is macOS-only, but pnpm still sees its native helper in the
+      # locked dependency graph. Do not run dependency build scripts here.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run typecheck:web
       # Unit tests are platform-independent, so one runner is enough.
       - run: pnpm run test
@@ -163,7 +165,9 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - run: pnpm install --frozen-lockfile
+      # appdmg is macOS-only, but pnpm still sees its native helper in the
+      # locked dependency graph. Do not run dependency build scripts here.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run typecheck:web
       - run: pnpm run tauri build --bundles deb
       - run: scripts/normalize-deb-package.sh src-tauri/target/release/bundle/deb/*.deb
@@ -194,7 +198,9 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - run: pnpm install --frozen-lockfile
+      # appdmg is macOS-only, but pnpm still sees its native helper in the
+      # locked dependency graph. Do not run dependency build scripts here.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run typecheck:web
 
       - id: updater
@@ -257,7 +263,9 @@ jobs:
           echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
-      - run: pnpm install --frozen-lockfile
+      # appdmg is macOS-only, but pnpm still sees its native helper in the
+      # locked dependency graph. Do not run dependency build scripts here.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run tauri android build --apk --target aarch64
 
       - uses: actions/upload-artifact@v4

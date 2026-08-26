@@ -40,7 +40,9 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      # appdmg is macOS-only, but pnpm still sees its native helper in the
+      # locked dependency graph. Do not run dependency build scripts here.
+      - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run lint
       - run: pnpm run typecheck:web
 
