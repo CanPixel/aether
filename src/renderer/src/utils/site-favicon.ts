@@ -35,7 +35,7 @@ function resolveFavicon(api: AetherApi, iconUrl: string): Promise<string | null>
  */
 export function useSiteFavicon(iconUrl?: string): string | undefined {
   const [dataUri, setDataUri] = useState<string | undefined>(() =>
-    iconUrl ? (resolved.get(iconUrl) ?? undefined) : undefined
+    iconUrl ? (resolved.get(iconUrl) ?? undefined) : undefined,
   )
 
   useEffect(() => {

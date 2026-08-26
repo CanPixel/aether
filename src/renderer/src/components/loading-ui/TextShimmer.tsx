@@ -11,7 +11,7 @@ export function TextShimmer({
   children,
   className,
   duration = 2.4,
-  spread = 48
+  spread = 48,
 }: TextShimmerProps) {
   return (
     <span
@@ -19,7 +19,7 @@ export function TextShimmer({
       style={
         {
           '--text-shimmer-duration': `${duration}s`,
-          '--text-shimmer-spread': `${spread}px`
+          '--text-shimmer-spread': `${spread}px`,
         } as CSSProperties
       }
     >

@@ -7,7 +7,7 @@ import { cleanTitle, getPortalTint, getRootDomainLetter } from '../utils/aether-
 // search box that hands the query straight to the active tab's navigation.
 export function StartPage({
   shortcuts,
-  onNavigate
+  onNavigate,
 }: {
   shortcuts: HubShortcutSummary[]
   onNavigate: (input: string) => void
@@ -76,7 +76,7 @@ export function StartPage({
                 type="button"
                 style={
                   {
-                    '--portal-tint': getPortalTint(shortcut.host, shortcut.themeColor)
+                    '--portal-tint': getPortalTint(shortcut.host, shortcut.themeColor),
                   } as CSSProperties
                 }
               >

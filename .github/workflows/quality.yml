@@ -1,0 +1,30 @@
+name: Quality
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+  push:
+    branches:
+      - $default-branch
+    paths-ignore:
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  ts-checks:
+    uses: CanPixel/.github/.github/workflows/typescript-checks.yml@main
+    secrets: inherit
+    with:
+      package-manager: auto
+      node-version: '22'
+      run-lint: true
+      # The reusable workflow runs on bare Ubuntu and cannot install Tauri's
+      # GTK/WebKit system libraries. checks.yml typechecks the renderer and
+      # compiles Rust on all desktop platforms with the required native SDKs.
+      run-tsc: false
+      run-prettier: true

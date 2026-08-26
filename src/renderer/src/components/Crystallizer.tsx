@@ -8,7 +8,7 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
 } from 'react'
 import {
   Archive,
@@ -22,14 +22,14 @@ import {
   Save,
   Search,
   Snowflake,
-  Trash2
+  Trash2,
 } from 'lucide-react'
 import {
   IcebergItem,
   IcebergResult,
   SaveIcebergInput,
   SavedIceberg,
-  SavedIcebergSummary
+  SavedIcebergSummary,
 } from '../../../shared/aether'
 import { countLabel, formatVisibleModelName, inferIcebergIcon } from '../utils/aether-ui'
 import { ChevronRightIcon } from './icons'
@@ -104,13 +104,13 @@ const NODE_FIELD = {
   minX: 600,
   maxX: CANVAS_WIDTH - 430,
   topInset: 128,
-  bottomInset: 58
+  bottomInset: 58,
 }
 const ICEBERG_BOUNDS = {
   minX: 172,
   maxX: 2028,
   minY: 120,
-  maxY: 1790
+  maxY: 1790,
 }
 
 const LAYERS: LayerDefinition[] = [
@@ -119,36 +119,36 @@ const LAYERS: LayerDefinition[] = [
     name: 'Surface',
     shortName: 'Surface',
     caption: 'Common language',
-    accent: '#0f8cc2'
+    accent: '#0f8cc2',
   },
   {
     level: 2,
     name: 'Formation',
     shortName: 'Formation',
     caption: 'Adjacent concepts',
-    accent: '#0f8f80'
+    accent: '#0f8f80',
   },
   {
     level: 3,
     name: 'Cold Current',
     shortName: 'Current',
     caption: 'Methods and mechanisms',
-    accent: '#64748b'
+    accent: '#64748b',
   },
   {
     level: 4,
     name: 'Black Ice',
     shortName: 'Black Ice',
     caption: 'Specialist patterns',
-    accent: '#7560b1'
+    accent: '#7560b1',
   },
   {
     level: 5,
     name: 'Abyssal Deep',
     shortName: 'Abyssal',
     caption: 'Hidden edge knowledge',
-    accent: '#b76e2d'
-  }
+    accent: '#b76e2d',
+  },
 ]
 
 const LAYER_HEIGHT = CANVAS_HEIGHT / LAYERS.length
@@ -188,7 +188,7 @@ function getCenteredPan(zoom: number): { x: number; y: number } {
 
   return {
     x: CANVAS_WIDTH / 2 - icebergCenterX * zoom,
-    y: CANVAS_HEIGHT / 2 - icebergCenterY * zoom
+    y: CANVAS_HEIGHT / 2 - icebergCenterY * zoom,
   }
 }
 
@@ -222,8 +222,8 @@ function positionTopics(items: IcebergItem[]): PositionedTopic[] {
         displayY: clamp(
           layerItems.length > 1 ? yMin + index * yStep : layerTop + LAYER_HEIGHT / 2,
           yMin,
-          yMax
-        )
+          yMax,
+        ),
       }
     })
   })
@@ -237,7 +237,7 @@ function CrystallizerComponent({
   onGenerate,
   onOpenSaved,
   onOpenTopic,
-  onSave
+  onSave,
 }: CrystallizerProps): React.JSX.Element {
   const [keyword, setKeyword] = useState(openedIceberg?.keyword ?? '')
   const [loading, setLoading] = useState(false)
@@ -249,13 +249,13 @@ function CrystallizerComponent({
           keyword: openedIceberg.keyword,
           model: openedIceberg.model,
           generatedAt: openedIceberg.generatedAt,
-          items: openedIceberg.items
+          items: openedIceberg.items,
         }
-      : null
+      : null,
   )
   const [savedId, setSavedId] = useState<string | null>(openedIceberg?.id ?? null)
   const [selectedItem, setSelectedItem] = useState<IcebergItem | null>(
-    openedIceberg?.items[0] ?? null
+    openedIceberg?.items[0] ?? null,
   )
   const [coverage, setCoverage] = useState<Record<string, TopicCoverage>>({})
   const coverageRequested = useRef<Set<string>>(new Set())
@@ -291,7 +291,7 @@ function CrystallizerComponent({
       accent,
       left: centerX - width / 2,
       top: nodeRect.top - shellRect.top,
-      width
+      width,
     })
     setRaisedVisible(true)
   }
@@ -302,11 +302,11 @@ function CrystallizerComponent({
       activeLayer === 'all'
         ? positionedItems
         : positionedItems.filter(({ item }) => item.level === activeLayer),
-    [activeLayer, positionedItems]
+    [activeLayer, positionedItems],
   )
   const visibleItems = useMemo(
     () => visiblePositionedItems.map(({ item }) => item),
-    [visiblePositionedItems]
+    [visiblePositionedItems],
   )
   const activeSelectedItem =
     selectedItem && visibleItems.some((item) => item.id === selectedItem.id)
@@ -331,8 +331,8 @@ function CrystallizerComponent({
             status: 'ready',
             hits: found.hits.length,
             capped: found.hits.length >= COVERAGE_LOOKUP_LIMIT,
-            mode: found.mode
-          }
+            mode: found.mode,
+          },
         }))
       })
       .catch(() => {
@@ -427,7 +427,7 @@ function CrystallizerComponent({
         model: result.model,
         icon: inferIcebergIcon(result),
         generatedAt: result.generatedAt,
-        items: result.items
+        items: result.items,
       })
       setSavedId(saved.id)
     } catch (error) {
@@ -485,7 +485,7 @@ function CrystallizerComponent({
     setZoom(nextZoom)
     setPan({
       x: cursorX - worldX * nextZoom,
-      y: cursorY - worldY * nextZoom
+      y: cursorY - worldY * nextZoom,
     })
   }
 
@@ -508,7 +508,7 @@ function CrystallizerComponent({
       setZoom(startZoom + (nextZoom - startZoom) * eased)
       setPan({
         x: startPan.x + (nextPan.x - startPan.x) * eased,
-        y: startPan.y + (nextPan.y - startPan.y) * eased
+        y: startPan.y + (nextPan.y - startPan.y) * eased,
       })
 
       if (progress < 1) {
@@ -532,7 +532,7 @@ function CrystallizerComponent({
     const nextZoom = clamp(Math.max(zoom, FOCUSED_ZOOM), MIN_ZOOM, MAX_ZOOM)
     animateView(nextZoom, {
       x: CANVAS_WIDTH / 2 - positionedItem.displayX * nextZoom,
-      y: CANVAS_HEIGHT / 2 - positionedItem.displayY * nextZoom
+      y: CANVAS_HEIGHT / 2 - positionedItem.displayY * nextZoom,
     })
   }
 
@@ -560,7 +560,7 @@ function CrystallizerComponent({
       x: event.clientX,
       y: event.clientY,
       panX: pan.x,
-      panY: pan.y
+      panY: pan.y,
     }
     setDragging(true)
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -577,7 +577,7 @@ function CrystallizerComponent({
 
     setPan({
       x: dragStart.current.panX + deltaX,
-      y: dragStart.current.panY + deltaY
+      y: dragStart.current.panY + deltaY,
     })
   }
 
@@ -690,7 +690,7 @@ function CrystallizerComponent({
                   {
                     '--layer-accent': layer.accent,
                     display: 'grid',
-                    gridTemplateColumns: '24px 1fr 40px'
+                    gridTemplateColumns: '24px 1fr 40px',
                   } as CSSProperties
                 }
                 type="button"
@@ -847,7 +847,7 @@ function CrystallizerComponent({
                     style={
                       {
                         '--layer-accent': layer.accent,
-                        '--reveal-index': index
+                        '--reveal-index': index,
                       } as CSSProperties
                     }
                     tabIndex={0}
@@ -952,7 +952,7 @@ function CrystallizerComponent({
                     '--layer-accent': raisedCard.accent,
                     left: `${raisedCard.left}px`,
                     top: `${raisedCard.top}px`,
-                    width: `${raisedCard.width}px`
+                    width: `${raisedCard.width}px`,
                   } as CSSProperties)
                 : undefined
             }
@@ -1044,7 +1044,7 @@ function CrystallizerComponent({
                 style={
                   {
                     '--layer-accent': getLayer(item.level).accent,
-                    '--reveal-index': index
+                    '--reveal-index': index,
                   } as CSSProperties
                 }
                 type="button"

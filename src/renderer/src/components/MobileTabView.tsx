@@ -20,7 +20,7 @@ export function MobileTabView(): React.JSX.Element {
           top: rect.top,
           left: rect.left,
           width: rect.width,
-          height: rect.height
+          height: rect.height,
         })
         .catch(() => undefined)
     }

@@ -16,7 +16,7 @@ export function CaptureDetailCard({
   onAskCapture,
   onDelete,
   onOpenCapture,
-  onUpdateNote
+  onUpdateNote,
 }: CaptureDetailCardProps): React.JSX.Element {
   const [noteDraft, setNoteDraft] = useState(capture.metadata?.note ?? '')
 

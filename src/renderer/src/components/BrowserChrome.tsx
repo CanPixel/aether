@@ -10,7 +10,7 @@ import {
   GlobeIcon,
   IncognitoIcon,
   PlusIcon,
-  SpinnerIcon
+  SpinnerIcon,
 } from './icons'
 
 const CREATE_COLLECTION_VALUE = '__create_collection__'
@@ -23,7 +23,7 @@ const DASHBOARD_ADDRESSES = new Set([
   'æther://dashboard',
   'ice://crystallizer',
   'flow://semantic-graph',
-  'air://renderer'
+  'air://renderer',
 ])
 
 type BrowserChromeProps = {
@@ -108,7 +108,7 @@ export function BrowserChrome({
   onSelectTab,
   onSelectCollection,
   onTabMenuClose,
-  onTabMenuOpen
+  onTabMenuOpen,
 }: BrowserChromeProps): React.JSX.Element {
   const startPageActive = activeTab?.url === 'aether://start'
 
@@ -168,7 +168,7 @@ export function BrowserChrome({
     setTabMenu({
       tabId,
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8))
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)),
     })
   }
 
@@ -513,7 +513,7 @@ export function BrowserChrome({
 
 function getTabStyle(tab: BrowserTabSummary): CSSProperties {
   return {
-    '--tab-tint': getTabTint(tab.host, tab.themeColor)
+    '--tab-tint': getTabTint(tab.host, tab.themeColor),
   } as CSSProperties
 }
 

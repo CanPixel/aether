@@ -11,16 +11,16 @@ export default defineConfig({
     // loads from; the server must bind there (or 0.0.0.0) to be reachable.
     host: process.env.TAURI_DEV_HOST || '127.0.0.1',
     port: 1420,
-    strictPort: true
+    strictPort: true,
   },
   build: {
     outDir: resolve('dist'),
-    emptyOutDir: true
+    emptyOutDir: true,
   },
   resolve: {
     alias: {
-      '@renderer': resolve('src/renderer/src')
-    }
+      '@renderer': resolve('src/renderer/src'),
+    },
   },
-  plugins: [react()]
+  plugins: [react()],
 })

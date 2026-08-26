@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# make-styled-dmg.sh — build a *reliably styled* ÆTHER installer DMG.
+# make-styled-dmg.sh: build a reliably styled ÆTHER installer DMG.
 #
 # Why this exists:
 #   Tauri's built-in DMG bundler copies the background PNG into the image but
@@ -9,16 +9,14 @@
 #   silently reverts to a solid-colour background when the build runs without GUI
 #   Finder automation (sandbox / headless tool runners) or when a stale volume of
 #   the same name is mounted. The shipped .DS_Store then carries only
-#   `backgroundColor*` and no `backgroundImageAlias` — i.e. a "stock" installer.
+#   `backgroundColor*` and no `backgroundImageAlias`, producing a stock installer.
 #
-#   appdmg writes the .DS_Store background alias directly (via the `ds-store`
-#   library), so it does NOT depend on Finder and is deterministic / CI-safe.
-#   This wrapper derives the layout from tauri.conf.json (single source of truth),
-#   runs appdmg against the already-built .app, and VERIFIES that the picture
-#   background actually landed before declaring success.
+#   This wrapper writes the .DS_Store background alias directly, builds the disk
+#   image with native macOS tools, and verifies the result. It does not depend on
+#   Finder automation or the vulnerable appdmg > image-size dependency chain.
 #
-# Usage: bun run dmg        (expects `tauri build --bundles app` to have produced the .app)
-#        AETHER_TAURI_TARGET=universal-apple-darwin bun run dmg
+# Usage: pnpm run dmg        (expects `tauri build --bundles app` to have produced the .app)
+#        AETHER_TAURI_TARGET=universal-apple-darwin pnpm run dmg
 #        (expects `tauri build --target universal-apple-darwin`)
 set -euo pipefail
 
@@ -33,7 +31,7 @@ else
 fi
 APP="${BUNDLE_DIR}/macos/${VOLNAME}.app"
 OUT_DIR="${BUNDLE_DIR}/dmg"
-VERSION="$(bun -e 'console.log(require("./src-tauri/tauri.conf.json").version)')"
+VERSION="$(node -e 'console.log(require("./src-tauri/tauri.conf.json").version)')"
 if [[ "${AETHER_TAURI_TARGET:-}" == "universal-apple-darwin" ]]; then
   ARCH="universal"
 else
@@ -47,38 +45,10 @@ OUT="${OUT_DIR}/${VOLNAME}_${VERSION}_${ARCH}.dmg"
 BG_PNG="build/dmg-background.png"
 BG_TIFF="build/dmg-background.tiff"
 
-[[ -d "$APP" ]] || { echo "ERROR: built app not found at $APP — run 'bun run build' (or 'tauri build') first." >&2; exit 1; }
+[[ "$(uname -s)" == "Darwin" ]] || { echo "ERROR: DMG creation requires macOS." >&2; exit 1; }
+[[ -d "$APP" ]] || { echo "ERROR: built app not found at $APP. Run 'pnpm run build' first." >&2; exit 1; }
 
 bash scripts/prepare-dmg-background.sh
-
-# Derive everything from tauri.conf.json so the DMG never drifts from config.
-SPEC="$(mktemp -u -t aether-appdmg).json"
-trap 'rm -f "$SPEC" 2>/dev/null || true' EXIT
-BUNDLE_DIR="$BUNDLE_DIR" SPEC="$SPEC" bun -e '
-  const fs = require("fs");
-  const path = require("path");
-  const conf = require("./src-tauri/tauri.conf.json");
-  const d = conf.bundle.macOS.dmg;
-  // tauri.conf paths are relative to src-tauri/; resolve to repo root.
-  const fromTauri = (p) => path.resolve("src-tauri", p);
-  const spec = {
-    title: conf.productName,
-    icon: fromTauri(conf.bundle.icon.find((i) => i.endsWith(".icns")) || "../build/icon.icns"),
-    background: path.resolve("build/dmg-background.png"),
-    "background-color": "#effbff",
-    "icon-size": 128,
-    format: "UDZO",
-    window: { size: { width: d.windowSize.width, height: d.windowSize.height } },
-    contents: [
-      { x: d.appPosition.x, y: d.appPosition.y, type: "file",
-        path: path.resolve(process.env.BUNDLE_DIR + "/macos/" + conf.productName + ".app") },
-      { x: d.applicationFolderPosition.x, y: d.applicationFolderPosition.y, type: "link", path: "/Applications" },
-    ],
-  };
-  fs.writeFileSync(process.env.SPEC, JSON.stringify(spec, null, 2));
-  console.log(`window ${spec.window.size.width}x${spec.window.size.height}  app(${d.appPosition.x},${d.appPosition.y})  apps(${d.applicationFolderPosition.x},${d.applicationFolderPosition.y})`);
-'
-echo "==> spec derived from tauri.conf.json"
 echo "==> background rendered from SVG: $BG_PNG + $BG_TIFF"
 
 # Hygiene: clear any stale mounts of the same volume name.
@@ -101,13 +71,72 @@ done < <(find /Volumes -maxdepth 1 \( -name "${VOLNAME}" -o -name "${VOLNAME} *"
 
 mkdir -p "$OUT_DIR"
 rm -f "$OUT"
-echo "==> building DMG with appdmg"
-bunx appdmg "$SPEC" "$OUT"
+
+WORK_DIR="$(mktemp -d -t aether-dmg)"
+TEMP_IMAGE="${WORK_DIR}/writable.dmg"
+RW_MOUNT=""
+VERIFY_DEV=""
+
+cleanup() {
+  if [[ -n "$VERIFY_DEV" ]]; then
+    hdiutil detach "$VERIFY_DEV" -force >/dev/null 2>&1 || true
+  fi
+  if [[ -n "$RW_MOUNT" ]]; then
+    hdiutil detach "$RW_MOUNT" -force >/dev/null 2>&1 || true
+  fi
+  rm -f "$TEMP_IMAGE"
+  rmdir "$WORK_DIR" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+detach_with_retry() {
+  local target="$1"
+  local delay
+  for delay in 1 2 4 8 16; do
+    if hdiutil detach "$target" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$delay"
+  done
+  return 1
+}
+
+# Use 1.5 times the app size plus 32 MiB for image metadata, the background, and
+# filesystem block overhead.
+APP_MB="$(du -sm "$APP" | awk '{print $1}')"
+IMAGE_MB=$(( (APP_MB * 3 + 1) / 2 + 32 ))
+
+echo "==> creating ${IMAGE_MB} MiB writable image"
+hdiutil create "$TEMP_IMAGE" -ov -fs HFS+ -size "${IMAGE_MB}m" -volname "$VOLNAME" >/dev/null
+ATTACH_OUTPUT="$(hdiutil attach "$TEMP_IMAGE" -nobrowse -noverify -noautoopen)"
+RW_MOUNT="$(printf '%s\n' "$ATTACH_OUTPUT" | awk '/\/Volumes\// {i=index($0,"/Volumes/"); print substr($0,i); exit}')"
+[[ -n "$RW_MOUNT" ]] || { echo "ERROR: failed to locate mounted writable image." >&2; exit 2; }
+
+mkdir "$RW_MOUNT/.background"
+cp "$BG_TIFF" "$RW_MOUNT/.background/dmg-background.tiff"
+cp -R "$APP" "$RW_MOUNT/${VOLNAME}.app"
+ln -s /Applications "$RW_MOUNT/Applications"
+cp build/icon.icns "$RW_MOUNT/.VolumeIcon.icns"
+
+# Set the custom-icon Finder flag without a native Node xattr dependency.
+xattr -wx com.apple.FinderInfo \
+  0000000000000000040000000000000000000000000000000000000000000000 \
+  "$RW_MOUNT"
+
+node_modules/.bin/aether-dmg-metadata "$RW_MOUNT"
+sync
+bless --folder "$RW_MOUNT" >/dev/null
+detach_with_retry "$RW_MOUNT" || { echo "ERROR: could not detach writable image." >&2; exit 2; }
+RW_MOUNT=""
+
+echo "==> compressing DMG"
+hdiutil convert "$TEMP_IMAGE" -ov -format UDZO -imagekey zlib-level=9 -o "$OUT" >/dev/null
 
 # Verify the picture background is actually wired into .DS_Store (not a colour).
 echo "==> verifying baked background"
-DEV=$(hdiutil attach -readonly -noautoopen -nobrowse "$OUT" | grep -E '^/dev/' | tail -1 | awk '{print $1}')
-MNT=$(hdiutil info | awk -v d="$DEV" '$0 ~ d && /\/Volumes\// {i=index($0,"/Volumes/"); print substr($0,i); exit}')
+VERIFY_OUTPUT="$(hdiutil attach -readonly -noautoopen -nobrowse "$OUT")"
+VERIFY_DEV="$(printf '%s\n' "$VERIFY_OUTPUT" | awk '/^\/dev\// {print $1}' | tail -1)"
+MNT="$(printf '%s\n' "$VERIFY_OUTPUT" | awk '/\/Volumes\// {i=index($0,"/Volumes/"); print substr($0,i); exit}')"
 ok=0
 if [[ -n "$MNT" ]] \
   && strings -a "$MNT/.DS_Store" 2>/dev/null | grep -q "backgroundImageAlias" \
@@ -115,7 +144,8 @@ if [[ -n "$MNT" ]] \
   && tiffutil -info "$MNT/.background/dmg-background.tiff" | grep -q "Image Width: 1320 Image Length: 840"; then
   ok=1
 fi
-hdiutil detach "$DEV" -force >/dev/null 2>&1 || true
+hdiutil detach "$VERIFY_DEV" -force >/dev/null 2>&1 || true
+VERIFY_DEV=""
 if [[ "$ok" -ne 1 ]]; then
   echo "ERROR: DMG is missing a baked retina picture background." >&2
   exit 2

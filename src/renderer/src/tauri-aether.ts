@@ -43,7 +43,7 @@ import {
   DiagnosticsExportResult,
   UpdateCheckResult,
   UpdateInstallProgress,
-  UpdateInstallResult
+  UpdateInstallResult,
 } from '../../shared/aether'
 import { IS_ANDROID } from './utils/platform'
 
@@ -60,7 +60,7 @@ if (isTauri) {
       activate: (appId) => call<void>('aether_apps_activate', { appId }),
       navigate: (appId, url) => call<void>('aether_apps_navigate', { appId, url }),
       goBack: (appId) => call<void>('aether_apps_go_back', { appId }),
-      goForward: (appId) => call<void>('aether_apps_go_forward', { appId })
+      goForward: (appId) => call<void>('aether_apps_go_forward', { appId }),
     },
     tabs: {
       list: () => call<BrowserTabSummary[]>('aether_tabs_list'),
@@ -75,16 +75,16 @@ if (isTauri) {
       goForward: (tabId) => call<void>('aether_tabs_go_forward', { tabId }),
       thumbnail: (tabId) => call<string | null>('aether_tabs_thumbnail', { tabId }),
       favicon: (url) => call<string | null>('aether_browser_favicon', { url }),
-      clearBrowsingData: () => call<void>('aether_browser_clear_data')
+      clearBrowsingData: () => call<void>('aether_browser_clear_data'),
     },
     dashboard: {
-      open: () => call<void>('aether_dashboard_open')
+      open: () => call<void>('aether_dashboard_open'),
     },
     hub: {
       list: () => call<HubShortcutSummary[]>('aether_hub_list'),
       create: (input) => call<HubShortcutSummary>('aether_hub_create', { input }),
       reorder: (ids) => call<HubShortcutSummary[]>('aether_hub_reorder', { ids }),
-      delete: (id) => call<void>('aether_hub_delete', { id })
+      delete: (id) => call<void>('aether_hub_delete', { id }),
     },
     collections: {
       list: () => call<CollectionSummary[]>('aether_collections_list'),
@@ -93,7 +93,7 @@ if (isTauri) {
       reorder: (ids) => call<CollectionSummary[]>('aether_collections_reorder', { ids }),
       delete: (id) => call<void>('aether_collections_delete', { id }),
       captures: (collectionId) =>
-        call<CaptureSummary[]>('aether_collections_captures', { collectionId })
+        call<CaptureSummary[]>('aether_collections_captures', { collectionId }),
     },
     capture: {
       currentPage: (input) => call<CaptureResult>('aether_capture_current_page', { input }),
@@ -102,17 +102,17 @@ if (isTauri) {
       urls: (input) => call<BulkCaptureResult>('aether_capture_urls', { input }),
       move: (input) => call<CaptureSummary>('aether_capture_move', { input }),
       delete: (captureId) => call<void>('aether_capture_delete', { captureId }),
-      suggestHub: () => call<CaptureHubSuggestion | null>('aether_capture_suggest_hub')
+      suggestHub: () => call<CaptureHubSuggestion | null>('aether_capture_suggest_hub'),
     },
     search: {
       collection: (input) => call<SearchResult[]>('aether_search_collection', { input }),
-      library: (input) => call<LibrarySearchResult>('aether_search_library', { input })
+      library: (input) => call<LibrarySearchResult>('aether_search_library', { input }),
     },
     semanticTrail: {
-      generate: (input) => call<SemanticTrailResult>('aether_semantic_trail_generate', { input })
+      generate: (input) => call<SemanticTrailResult>('aether_semantic_trail_generate', { input }),
     },
     flow: {
-      graph: (input) => call<FlowGraphResult>('aether_flow_graph', { input })
+      graph: (input) => call<FlowGraphResult>('aether_flow_graph', { input }),
     },
     air: {
       prepare: (input: AirDossierInput) =>
@@ -120,13 +120,13 @@ if (isTauri) {
       render: (input: AirDossierInput) => call<AirRenderResult>('aether_air_render', { input }),
       listRecent: () => call<AirRecentFile[]>('aether_air_list_recent'),
       open: (path) => call<void>('aether_air_open', { path }),
-      reveal: (path) => call<void>('aether_air_reveal', { path })
+      reveal: (path) => call<void>('aether_air_reveal', { path }),
     },
     chat: {
       ask: (input) => call<ChatResult>('aether_chat_ask', { input }),
       cancel: () => call<void>('aether_chat_cancel'),
       history: (collectionId) => call<ConversationTurn[]>('aether_chat_history', { collectionId }),
-      clearHistory: (collectionId) => call<void>('aether_chat_clear_history', { collectionId })
+      clearHistory: (collectionId) => call<void>('aether_chat_clear_history', { collectionId }),
     },
     crystallizer: {
       generate: (input) => call<IcebergResult>('aether_crystallizer_generate', { input }),
@@ -135,7 +135,7 @@ if (isTauri) {
       save: (input: SaveIcebergInput) => call<SavedIceberg>('aether_crystallizer_save', { input }),
       reorderSaved: (ids) =>
         call<SavedIcebergSummary[]>('aether_crystallizer_reorder_saved', { ids }),
-      deleteSaved: (id) => call<void>('aether_crystallizer_delete_saved', { id })
+      deleteSaved: (id) => call<void>('aether_crystallizer_delete_saved', { id }),
     },
     system: {
       status: () => call<SystemStatus>('aether_system_status'),
@@ -151,7 +151,7 @@ if (isTauri) {
       indexStatus: () => call<LibraryIndexStatus>('aether_library_index_status'),
       reindexLibrary: () => call<LibraryReindexResult>('aether_library_reindex'),
       openExternalUrl: (url) => call<void>('aether_system_open_external_url', { url }),
-      downloadModels: (input) => call<SystemStatus>('aether_system_download_models', { input })
+      downloadModels: (input) => call<SystemStatus>('aether_system_download_models', { input }),
     },
     layout: {
       setIntelligencePanelCollapsed: (collapsed) =>
@@ -161,10 +161,10 @@ if (isTauri) {
         call<void>('aether_layout_show_status_toast', { input }),
       windowInsets: () =>
         call<{ top: number; bottom: number; left: number; right: number }>(
-          'aether_layout_window_insets'
+          'aether_layout_window_insets',
         ),
       setWebContentBounds: (bounds) =>
-        call<void>('aether_layout_set_web_content_bounds', { ...bounds })
+        call<void>('aether_layout_set_web_content_bounds', { ...bounds }),
     },
     events: {
       onState: (listener: (state: AetherState) => void) => {
@@ -179,7 +179,7 @@ if (isTauri) {
       },
       onCaptureProgress: (listener: (progress: CaptureProgress) => void) => {
         const unlisten = listen<CaptureProgress>('aether:capture-progress', (event) =>
-          listener(event.payload)
+          listener(event.payload),
         )
 
         return () => {
@@ -188,7 +188,7 @@ if (isTauri) {
       },
       onModelDownloadProgress: (listener: (progress: ModelDownloadProgress) => void) => {
         const unlisten = listen<ModelDownloadProgress>('aether:model-download-progress', (event) =>
-          listener(event.payload)
+          listener(event.payload),
         )
 
         return () => {
@@ -197,7 +197,7 @@ if (isTauri) {
       },
       onUpdateProgress: (listener: (progress: UpdateInstallProgress) => void) => {
         const unlisten = listen<UpdateInstallProgress>('aether:update-progress', (event) =>
-          listener(event.payload)
+          listener(event.payload),
         )
 
         return () => {
@@ -206,7 +206,7 @@ if (isTauri) {
       },
       onChatStream: (listener: (event: ChatStreamEvent) => void) => {
         const unlisten = listen<ChatStreamEvent>('aether:chat-stream', (event) =>
-          listener(event.payload)
+          listener(event.payload),
         )
 
         return () => {
@@ -215,7 +215,7 @@ if (isTauri) {
       },
       onDownload: (listener: (progress: DownloadProgress) => void) => {
         const unlisten = listen<DownloadProgress>('aether:download', (event) =>
-          listener(event.payload)
+          listener(event.payload),
         )
 
         return () => {
@@ -224,7 +224,7 @@ if (isTauri) {
       },
       onShortcut: (listener: (shortcut: AetherShortcutId) => void) => {
         const unlisten = listen<AetherShortcutId>('aether:shortcut', (event) =>
-          listener(event.payload)
+          listener(event.payload),
         )
 
         return () => {
@@ -240,14 +240,14 @@ if (isTauri) {
       },
       onFindResult: (listener: (result: FindResult) => void) => {
         const unlisten = listen<FindResult>('aether:find-result', (event) =>
-          listener(event.payload)
+          listener(event.payload),
         )
 
         return () => {
           void unlisten.then((dispose) => dispose())
         }
-      }
-    }
+      },
+    },
   }
 
   window.aether = api

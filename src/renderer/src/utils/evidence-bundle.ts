@@ -1,4 +1,4 @@
-import { ChatResult } from '../../../shared/aether'
+import type { ChatResult } from '../../../shared/aether'
 
 function quoteMarkdown(text: string): string {
   return text
@@ -27,7 +27,7 @@ export function buildEvidenceBundle(result: ChatResult): string {
         `Source: ${citation.url}`,
         `Captured: ${citation.capturedAt}`,
         `Capture ID: ${citation.captureId}`,
-        `Passage: chunk ${citation.chunkIndex + 1}`
+        `Passage: chunk ${citation.chunkIndex + 1}`,
       )
     })
   } else {

@@ -1,0 +1,47 @@
+# pnpm settings for ÆTHER.
+#
+# This file replaces bunfig.toml and the npm-style `overrides` /
+# `patchedDependencies` blocks that used to live in package.json. pnpm reads
+# NONE of those: a top-level `overrides` key is an npm/bun convention that pnpm
+# silently ignores, so anything left there is decoration, not enforcement.
+# Everything that must actually bind lives here.
+
+# Refuse to install any package version published less than 3 days ago.
+#
+# Carried over from bunfig.toml. This is a supply-chain measure, not a stability
+# one. The dangerous window for a compromised or typosquatted release is the
+# first hours after publish, before registries, scanners, and other maintainers
+# have noticed. Three days does not make a package safe; it means someone else
+# is very likely to have hit the bad version first.
+#
+# NOTE THE UNIT: bun's minimumReleaseAge is in SECONDS (259200), pnpm's is in
+# MINUTES. 3 days = 4320. Copying bun's 259200 across would freeze installs for
+# 180 days.
+minimumReleaseAge: 4320
+
+# Packages allowed to bypass the wait. Deliberately empty.
+#
+# The reason to add one is a genuine emergency -- a security patch needed before
+# the window closes -- and in that case prefer a one-off
+# `pnpm install --minimum-release-age=0` over a permanent hole here, so the
+# exemption expires with the command instead of living in the repo.
+minimumReleaseAgeExclude: []
+
+overrides:
+  # CVE-2026-14257 mitigation bypass (DoS via unbounded intermediate arrays).
+  # Reaches us through eslint > @eslint/config-array > minimatch and through
+  # typescript-eslint > ... > minimatch.
+  brace-expansion: ^5.0.9
+  # GHSA-2v37-7h3g-55p8: custom generators loop forever when size is zero.
+  # Transitive via vite > postcss. Pinned to the patched 3.x line because that
+  # is the major postcss consumes; do not "upgrade" this to 6.x.
+  nanoid: ^3.3.18
+  # Pre-existing pin, predates the pnpm move. Keeps the toolchain on Babel 7
+  # even though a devDependency range would otherwise admit 8.x.
+  '@babel/core': ^7.29.1
+
+# Native build scripts are blocked by default. The DS_Store writer needs
+# macos-alias to encode the background image path on macOS. Everything else
+# stays blocked.
+allowBuilds:
+  macos-alias: true

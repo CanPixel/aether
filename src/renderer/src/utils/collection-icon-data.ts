@@ -32,7 +32,7 @@ export const COLLECTION_ICON_OPTIONS: CollectionIconOption[] = [
   { id: 'briefcase', label: 'Work', keywords: 'work business client company project' },
   { id: 'pin', label: 'Places', keywords: 'pin location travel place map' },
   { id: 'star', label: 'Priority', keywords: 'star favorite priority important' },
-  { id: 'archive', label: 'Archive', keywords: 'archive files records storage reference' }
+  { id: 'archive', label: 'Archive', keywords: 'archive files records storage reference' },
 ]
 
 export function normalizeCollectionIcon(icon?: string): CollectionIconId {

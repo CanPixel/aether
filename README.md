@@ -543,7 +543,7 @@ Renderer responsibilities:
 ## Tests
 
 ```bash
-bun run test
+pnpm run test
 ```
 
 Runs the Rust unit suite (also run in CI on the Linux job). Alongside the usual unit
@@ -568,7 +568,10 @@ AETHER_EMBEDDING_MODEL=/path/to/embedding.gguf cargo test --manifest-path src-ta
 
 Required:
 
-- Bun for dependency management and scripts.
+- Node.js 24 or newer. The release scripts and the test suite are TypeScript run
+  directly by Node, which needs the native type stripping added in 22.6.
+- pnpm for dependency management and scripts. The version is pinned in the
+  `packageManager` field of `package.json`; `corepack enable pnpm` will match it.
 - Rust and the Tauri platform prerequisites for your target OS.
 - CMake, required for building the bundled llama.cpp Rust binding.
 - macOS, Windows, or Linux for desktop development.
@@ -579,27 +582,27 @@ Required:
 Install dependencies:
 
 ```bash
-bun install
+pnpm install
 ```
 
 Run the app in development:
 
 ```bash
-bun run dev
+pnpm run dev
 ```
 
 Run checks:
 
 ```bash
-bun run typecheck
-bun run lint
-bun run build:vite
+pnpm run typecheck
+pnpm run lint
+pnpm run build:vite
 ```
 
 Build compiled app bundles:
 
 ```bash
-bun run build
+pnpm run build
 ```
 
 ## Android Build
@@ -614,7 +617,7 @@ Install Android Studio, then install these SDK pieces through Android Studio's S
 - Android NDK
 - Android Emulator, if you want emulator testing
 
-The `bun run android:*` scripts go through `scripts/android.sh`, which resolves `ANDROID_HOME`, picks the newest installed NDK, and exports the NDK variable spellings the whole toolchain needs (llama.cpp's build script reads `ANDROID_NDK_ROOT`, which the Tauri CLI does not set). If your SDK lives somewhere other than `~/Library/Android/sdk`, set the variables in your shell profile:
+The `pnpm run android:*` scripts go through `scripts/android.sh`, which resolves `ANDROID_HOME`, picks the newest installed NDK, and exports the NDK variable spellings the whole toolchain needs (llama.cpp's build script reads `ANDROID_NDK_ROOT`, which the Tauri CLI does not set). If your SDK lives somewhere other than `~/Library/Android/sdk`, set the variables in your shell profile:
 
 ```bash
 export ANDROID_HOME="$HOME/Library/Android/sdk"
@@ -638,13 +641,13 @@ yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
 Initialize the Android project once:
 
 ```bash
-bun run android:init
+pnpm run android:init
 ```
 
 Run on a connected device or emulator:
 
 ```bash
-bun run android:dev
+pnpm run android:dev
 ```
 
 If this reports `No available Android Emulator detected`, start an emulator from Android Studio's Device Manager or connect a physical device with USB debugging enabled, then confirm it is visible:
@@ -656,19 +659,19 @@ adb devices
 Build Android release artifacts:
 
 ```bash
-bun run android:build
+pnpm run android:build
 ```
 
 Build an APK:
 
 ```bash
-bun run android:build:apk
+pnpm run android:build:apk
 ```
 
 Build an AAB for Play Store distribution:
 
 ```bash
-bun run android:build:aab
+pnpm run android:build:aab
 ```
 
 Android outputs are generated under:
@@ -684,17 +687,17 @@ Android browser behavior: Tauri's per-tab child webviews (`Window::add_child`) a
 Use the Docker-based Linux build script (`scripts/build-linux.sh`) to build a Linux package from macOS or another non-Linux host. Arch is parametrized, defaulting to arm64:
 
 ```bash
-bun run linux:arm64:build   # aarch64 .deb
-bun run linux:x64:build     # x86_64 .deb
+pnpm run linux:arm64:build   # aarch64 .deb
+pnpm run linux:x64:build     # x86_64 .deb
 ```
 
-This runs an `ubuntu:24.04` container, installs the Linux Tauri + llama.cpp build dependencies (including `cmake`/`clang`), installs Bun and Rust inside Docker volumes, and builds a `.deb`.
+This runs an `ubuntu:24.04` container, installs the Linux Tauri + llama.cpp build dependencies (including `cmake`/`clang`), installs Node, pnpm, and Rust inside Docker volumes, and builds a `.deb`.
 
 The default export is a Debian package for Ubuntu:
 
 ```bash
-bun run linux:arm64:deb
-bun run linux:x64:deb
+pnpm run linux:arm64:deb
+pnpm run linux:x64:deb
 ```
 
 Artifacts are generated under (slug is `arm64` or `x64`):
@@ -703,16 +706,16 @@ Artifacts are generated under (slug is `arm64` or `x64`):
 src-tauri/target-linux-<slug>/<target-triple>/release/bundle/
 ```
 
-The script keeps Linux-specific dependencies out of the host project by mounting per-arch Docker volumes for `/work/node_modules`, `/root/.cargo`, `/root/.rustup`, and `/root/.bun`.
+The script keeps Linux-specific dependencies out of the host project by mounting per-arch Docker volumes for `/work/node_modules`, `/root/.cargo`, `/root/.rustup`, and `/root/.local/share/pnpm`.
 
 Note: building x86_64 on an arm64 Mac (or vice-versa) runs under QEMU emulation, which is very slow for the llama.cpp C++ compile. For the non-native arch, prefer CI (see below).
 
 Optional overrides:
 
 ```bash
-LINUX_IMAGE=ubuntu:24.04 bun run linux:arm64:build
-LINUX_BUNDLES=deb,appimage bun run linux:arm64:build
-LINUX_DOCKER_PLATFORM=linux/amd64 LINUX_TARGET=x86_64-unknown-linux-gnu LINUX_ARCH_SLUG=x64 bun run linux:arm64:build
+LINUX_IMAGE=ubuntu:24.04 pnpm run linux:arm64:build
+LINUX_BUNDLES=deb,appimage pnpm run linux:arm64:build
+LINUX_DOCKER_PLATFORM=linux/amd64 LINUX_TARGET=x86_64-unknown-linux-gnu LINUX_ARCH_SLUG=x64 pnpm run linux:arm64:build
 ```
 
 ## macOS, Windows, and Linux via CI
@@ -740,8 +743,8 @@ GitHub also adds source archives automatically. On a manual `workflow_dispatch` 
 Keep release versions synced from `package.json`:
 
 ```bash
-bun run version:bump 1.0.1
-bun run version:check
+pnpm run version:bump 1.0.1
+pnpm run version:check
 git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json
 git commit -m "chore: release v1.0.1"
 git tag v1.0.1
@@ -752,34 +755,34 @@ git push origin v1.0.1
 Build the current desktop app with Tauri:
 
 ```bash
-bun run build
+pnpm run build
 ```
 
 ## Project Scripts
 
-| Script                          | Purpose                                                                                          |
-| ------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `bun run dev`                   | Start the Tauri desktop app in development.                                                      |
-| `bun run start`                 | Alias for the Tauri desktop development app.                                                     |
-| `bun run dev:vite`              | Start only the Vite renderer dev server on `127.0.0.1:1420`.                                     |
-| `bun run format`                | Format the project with Prettier.                                                                |
-| `bun run typecheck:web`         | Run renderer TypeScript checks.                                                                  |
-| `bun run typecheck:tauri`       | Run Rust `cargo check` for the Tauri backend.                                                    |
-| `bun run typecheck`             | Run renderer TypeScript checks and Rust `cargo check` for the Tauri backend.                     |
-| `bun run version:bump 1.2.3`    | Sync `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to one app version. |
-| `bun run version:check`         | Verify the app version manifests match `package.json`.                                           |
-| `bun run lint`                  | Run ESLint.                                                                                      |
-| `bun run build:vite`            | Build only the Vite renderer assets into `dist/`.                                                |
-| `bun run build`                 | Typecheck and build the Tauri desktop app.                                                       |
-| `bun run build:macos-universal` | Typecheck and build the universal Apple Silicon + Intel macOS app and DMG.                       |
-| `bun run build:desktop-local`   | Build local desktop packages for the current Tauri target plus Docker Linux arm64/x64 packages.  |
-| `bun run android:dev`           | Run the Tauri Android app on a connected device or emulator.                                     |
-| `bun run android:build:apk`     | Build an Android APK.                                                                            |
-| `bun run android:build:aab`     | Build an Android App Bundle.                                                                     |
-| `bun run linux:arm64:build`     | Build an Ubuntu arm64 Tauri package in Docker.                                                   |
-| `bun run linux:x64:build`       | Build an Ubuntu x86_64 Tauri package in Docker.                                                  |
-| `bun run linux:arm64:deb`       | Build an Ubuntu arm64 `.deb` package in Docker.                                                  |
-| `bun run linux:x64:deb`         | Build an Ubuntu x86_64 `.deb` package in Docker.                                                 |
+| Script                           | Purpose                                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `pnpm run dev`                   | Start the Tauri desktop app in development.                                                      |
+| `pnpm run start`                 | Alias for the Tauri desktop development app.                                                     |
+| `pnpm run dev:vite`              | Start only the Vite renderer dev server on `127.0.0.1:1420`.                                     |
+| `pnpm run format`                | Format the project with Prettier.                                                                |
+| `pnpm run typecheck:web`         | Run renderer TypeScript checks.                                                                  |
+| `pnpm run typecheck:tauri`       | Run Rust `cargo check` for the Tauri backend.                                                    |
+| `pnpm run typecheck`             | Run renderer TypeScript checks and Rust `cargo check` for the Tauri backend.                     |
+| `pnpm run version:bump 1.2.3`    | Sync `package.json`, `src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json` to one app version. |
+| `pnpm run version:check`         | Verify the app version manifests match `package.json`.                                           |
+| `pnpm run lint`                  | Run ESLint.                                                                                      |
+| `pnpm run build:vite`            | Build only the Vite renderer assets into `dist/`.                                                |
+| `pnpm run build`                 | Typecheck and build the Tauri desktop app.                                                       |
+| `pnpm run build:macos-universal` | Typecheck and build the universal Apple Silicon + Intel macOS app and DMG.                       |
+| `pnpm run build:desktop-local`   | Build local desktop packages for the current Tauri target plus Docker Linux arm64/x64 packages.  |
+| `pnpm run android:dev`           | Run the Tauri Android app on a connected device or emulator.                                     |
+| `pnpm run android:build:apk`     | Build an Android APK.                                                                            |
+| `pnpm run android:build:aab`     | Build an Android App Bundle.                                                                     |
+| `pnpm run linux:arm64:build`     | Build an Ubuntu arm64 Tauri package in Docker.                                                   |
+| `pnpm run linux:x64:build`       | Build an Ubuntu x86_64 Tauri package in Docker.                                                  |
+| `pnpm run linux:arm64:deb`       | Build an Ubuntu arm64 `.deb` package in Docker.                                                  |
+| `pnpm run linux:x64:deb`         | Build an Ubuntu x86_64 `.deb` package in Docker.                                                 |
 
 ## Build Outputs
 
@@ -805,10 +808,10 @@ src-tauri/gen/android/app/build/outputs/
 For quick local desktop testing, prefer:
 
 ```bash
-bun run dev
+pnpm run dev
 ```
 
-Use `bun run build` when you need packaged Tauri desktop artifacts.
+Use `pnpm run build` when you need packaged Tauri desktop artifacts.
 
 ## Desktop Packaging Notes
 
@@ -823,7 +826,7 @@ Local desktop builds are suitable for development on your own machine. For exter
 If a packaged app behaves differently from development, rebuild from a clean package state:
 
 ```bash
-bun run build
+pnpm run build
 ```
 
 ## Troubleshooting
@@ -858,8 +861,8 @@ The desktop app allows browser popups through Tauri child webview handling and r
 Move the missing runtime package into `dependencies`, reinstall, and rebuild:
 
 ```bash
-bun install
-bun run build
+pnpm install
+pnpm run build
 ```
 
 ### Packaged app has missing dashboard images or renderer assets
@@ -871,8 +874,8 @@ Use Vite-compatible asset imports or renderer-public assets. Avoid assuming `/so
 Recheck and rebuild the Tauri backend:
 
 ```bash
-bun run typecheck:tauri
-bun run build
+pnpm run typecheck:tauri
+pnpm run build
 ```
 
 ### macOS packaged app has stale bundle behavior
@@ -880,7 +883,7 @@ bun run build
 Stale package output can preserve old assets or bundle metadata. Rebuild from a fresh package state:
 
 ```bash
-bun run build
+pnpm run build
 ```
 
 If needed, delete stale `dist/` and `src-tauri/target/release/bundle/` output manually before rebuilding.

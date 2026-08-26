@@ -14,7 +14,7 @@ const stroke = {
   stroke: 'currentColor',
   strokeWidth: 1.7,
   strokeLinecap: 'round',
-  strokeLinejoin: 'round'
+  strokeLinejoin: 'round',
 } as const
 
 export const portals: Feature = {
@@ -29,7 +29,7 @@ export const portals: Feature = {
       <path d="M4 20h16" />
       <path d="M9.5 20v-8.5a2.5 2.5 0 0 1 5 0V20" />
     </svg>
-  )
+  ),
 }
 
 export const knowledgeHubs: Feature = {
@@ -43,7 +43,7 @@ export const knowledgeHubs: Feature = {
       <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3Z" />
       <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
     </svg>
-  )
+  ),
 }
 
 export const capture: Feature = {
@@ -58,7 +58,7 @@ export const capture: Feature = {
       <path d="M8 10l4 4 4-4" />
       <path d="M5 16v2a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2" />
     </svg>
-  )
+  ),
 }
 
 export const aion: Feature = {
@@ -73,14 +73,14 @@ export const aion: Feature = {
       <path d="M21 21l-4.8-4.8" />
       <path d="M11 8.2a2.8 2.8 0 1 1 0 5.6" />
     </svg>
-  )
+  ),
 }
 
 export const FEATURES: Record<string, Feature> = {
   portals,
   knowledgeHubs,
   capture,
-  aion
+  aion,
 }
 
 export const FEATURES_ARRAY = Object.values(FEATURES)
