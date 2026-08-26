@@ -23,5 +23,8 @@ jobs:
       package-manager: auto
       node-version: '22'
       run-lint: true
-      run-tsc: true
+      # The reusable workflow runs on bare Ubuntu and cannot install Tauri's
+      # GTK/WebKit system libraries. checks.yml typechecks the renderer and
+      # compiles Rust on all desktop platforms with the required native SDKs.
+      run-tsc: false
       run-prettier: true
