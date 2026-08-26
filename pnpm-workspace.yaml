@@ -40,17 +40,8 @@ overrides:
   # even though a devDependency range would otherwise admit 8.x.
   '@babel/core': ^7.29.1
 
-patchedDependencies:
-  # GHSA-w3rx-r6r6-pgpr: the ICNS parser spins forever on an entry that declares
-  # length 0. Every published image-size version (<= 2.0.2) is affected and there
-  # is no fixed release, so we carry the fix ourselves. See scripts/audit.sh.
-  image-size@0.7.5: patches/image-size@0.7.5.patch
-
-# Native build scripts are blocked by default -- one of the main reasons to be on
-# pnpm. These two are the exception: appdmg needs both to produce the styled DMG
-# (fs-xattr sets extended attributes, macos-alias writes the .DS_Store background
-# alias). Without them `pnpm run dmg` fails at require() time. Everything else
+# Native build scripts are blocked by default. The DS_Store writer needs
+# macos-alias to encode the background image path on macOS. Everything else
 # stays blocked.
 allowBuilds:
-  fs-xattr: true
   macos-alias: true

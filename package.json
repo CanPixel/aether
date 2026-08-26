@@ -25,7 +25,7 @@
     "test:web": "node --test 'src/renderer/src/**/*.test.ts'",
     "test": "cargo test --manifest-path src-tauri/Cargo.toml --lib && pnpm run test:web",
     "check:platforms": "bash scripts/check-platforms.sh",
-    "audit": "bash scripts/audit.sh",
+    "audit": "pnpm audit",
     "version:bump": "node scripts/bump-version.ts",
     "version:check": "node scripts/bump-version.ts --check",
     "release": "node scripts/release.ts",
@@ -55,7 +55,7 @@
     "lucide-react": "^1.26.0"
   },
   "optionalDependencies": {
-    "appdmg": "^0.6.6"
+    "@aether/dmg-metadata": "file:tools/dmg-metadata"
   },
   "devDependencies": {
     "@babel/core": "^8.0.1",

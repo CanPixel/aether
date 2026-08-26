@@ -84,9 +84,10 @@ user to override their OS's security check is the wrong first impression.
    ```
    `spctl` must report `accepted source=Notarized Developer ID`.
 
-**Note on the DMG.** The installer is built by `scripts/make-styled-dmg.sh` via
-`appdmg`, not by Tauri's bundler, so the `.dmg` itself needs signing and stapling as
-a separate step after it is assembled — signing the `.app` alone is not enough.
+**Note on the DMG.** The installer is built by `scripts/make-styled-dmg.sh` with
+native macOS disk-image tools, not by Tauri's bundler, so the `.dmg` itself needs
+signing and stapling as a separate step after it is assembled. Signing the `.app`
+alone is not enough.
 
 ## Windows — Azure Trusted Signing
 
