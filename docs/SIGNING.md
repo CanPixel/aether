@@ -131,7 +131,7 @@ Install button reports `unconfigured` — _"This build has no update signing key
    anyone with the private key can push an update to every ÆTHER install.
 
    ```bash
-   bun run tauri signer generate -w ~/.tauri/aether-updater.key
+   pnpm run tauri signer generate -w ~/.tauri/aether-updater.key
    ```
 
    This prints a public key and writes the private key to that path. **Back both up

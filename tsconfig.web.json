@@ -16,6 +16,9 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // *.test.ts import the module under test with an explicit .ts extension so
+    // `node --test` can resolve it without a bundler. Permits, does not require.
+    "allowImportingTsExtensions": true,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "noUnusedLocals": true,

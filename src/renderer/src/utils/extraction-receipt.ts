@@ -1,4 +1,4 @@
-import { CaptureSummary } from '../../../shared/aether'
+import type { CaptureSummary } from '../../../shared/aether'
 
 export function buildExtractionReceipt(capture: CaptureSummary): string {
   const provenance = capture.provenance

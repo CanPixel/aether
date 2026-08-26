@@ -38,7 +38,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
@@ -46,20 +50,20 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - run: bun install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
       - id: updater
         uses: ./.github/actions/updater-flags
 
       # Keep this in step with `build:macos-universal`. The updater config must be
       # inserted into the Tauri invocation, so CI spells the command out here.
-      - run: bun run typecheck
-      - run: bun run tauri build --bundles app --target universal-apple-darwin ${{ steps.updater.outputs.config }}
+      - run: pnpm run typecheck
+      - run: pnpm run tauri build --bundles app --target universal-apple-darwin ${{ steps.updater.outputs.config }}
       - name: Verify universal app binary
         run: |
           lipo "src-tauri/target/universal-apple-darwin/release/bundle/macos/ÆTHER.app/Contents/MacOS/aether" \
             -verify_arch arm64 x86_64
-      - run: AETHER_TAURI_TARGET=universal-apple-darwin bun run dmg
+      - run: AETHER_TAURI_TARGET=universal-apple-darwin pnpm run dmg
 
       - uses: actions/upload-artifact@v4
         with:
@@ -94,21 +98,25 @@ jobs:
             libssl-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
-      - run: bun install --frozen-lockfile
-      - run: bun run typecheck:web
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck:web
       # Unit tests are platform-independent, so one runner is enough.
-      - run: bun run test
+      - run: pnpm run test
 
       - id: updater
         uses: ./.github/actions/updater-flags
 
-      - run: bun run tauri build --bundles deb,appimage ${{ steps.updater.outputs.config }}
+      - run: pnpm run tauri build --bundles deb,appimage ${{ steps.updater.outputs.config }}
       - run: scripts/normalize-deb-package.sh src-tauri/target/release/bundle/deb/*.deb
 
       - uses: actions/upload-artifact@v4
@@ -145,15 +153,19 @@ jobs:
             libssl-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
-      - run: bun install --frozen-lockfile
-      - run: bun run typecheck:web
-      - run: bun run tauri build --bundles deb
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck:web
+      - run: pnpm run tauri build --bundles deb
       - run: scripts/normalize-deb-package.sh src-tauri/target/release/bundle/deb/*.deb
 
       - uses: actions/upload-artifact@v4
@@ -172,19 +184,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
-      - run: bun install --frozen-lockfile
-      - run: bun run typecheck:web
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck:web
 
       - id: updater
         uses: ./.github/actions/updater-flags
 
-      - run: bun run tauri build --bundles nsis ${{ steps.updater.outputs.config }}
+      - run: pnpm run tauri build --bundles nsis ${{ steps.updater.outputs.config }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -215,7 +231,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -237,8 +257,8 @@ jobs:
           echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
-      - run: bun install --frozen-lockfile
-      - run: bun run tauri android build --apk --target aarch64
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run tauri android build --apk --target aarch64
 
       - uses: actions/upload-artifact@v4
         with:

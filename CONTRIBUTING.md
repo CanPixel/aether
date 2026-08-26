@@ -51,10 +51,10 @@ Setup and prerequisites are in the [README](README.md#development-prerequisites)
 Before opening a pull request:
 
 ```bash
-bun run typecheck   # tsc + cargo check
-bun run lint        # eslint
-bun run test        # cargo test --lib
-bun run format      # prettier
+pnpm run typecheck   # tsc + cargo check
+pnpm run lint        # eslint
+pnpm run test        # cargo test --lib
+pnpm run format      # prettier
 ```
 
 Rust also needs to be clippy-clean:

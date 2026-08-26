@@ -1,9 +1,9 @@
-import { spawnSync } from 'bun'
+import { spawnSync } from 'node:child_process'
 
-const version = Bun.argv[2]
+const version = process.argv[2]
 
 if (!version) {
-  console.error('❌ Please provide a version number. Example: bun run release 1.0.1')
+  console.error('❌ Please provide a version number. Example: pnpm run release 1.0.1')
   process.exit(1)
 }
 
@@ -11,15 +11,22 @@ const versionTag = `v${version}`
 
 function runCommand(cmd: string[], description: string) {
   console.log(`\n🚀 ${description}...`)
-  const result = spawnSync(cmd, { stdout: 'inherit', stderr: 'inherit' })
-  if (result.exitCode !== 0) {
+  const [command, ...args] = cmd
+  const result = spawnSync(command, args, { stdio: 'inherit' })
+  if (result.error) {
+    console.error(`❌ Failed: ${description} — ${result.error.message}`)
+    process.exit(1)
+  }
+  // status is null when the child was killed by a signal; treat that as failure
+  // rather than exiting 0 and letting a half-done release look successful.
+  if (result.status !== 0) {
     console.error(`❌ Failed: ${description}`)
-    process.exit(result.exitCode)
+    process.exit(result.status ?? 1)
   }
 }
 
-runCommand(['bun', 'run', 'version:bump', version], 'Bumping version')
-runCommand(['bun', 'run', 'version:check'], 'Checking version integrity')
+runCommand(['pnpm', 'run', 'version:bump', version], 'Bumping version')
+runCommand(['pnpm', 'run', 'version:check'], 'Checking version integrity')
 
 runCommand(
   [

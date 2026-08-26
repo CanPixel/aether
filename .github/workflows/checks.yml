@@ -32,10 +32,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install --frozen-lockfile
-      - run: bun run lint
-      - run: bun run typecheck:web
+      # action-setup must precede setup-node: the pnpm cache key setup-node
+      # computes needs the pnpm binary to already be on PATH. It reads the
+      # version from the "packageManager" field in package.json.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run lint
+      - run: pnpm run typecheck:web
 
   rust:
     name: ${{ matrix.name }}

@@ -17,17 +17,17 @@
 #   runs appdmg against the already-built .app, and VERIFIES that the picture
 #   background actually landed before declaring success.
 #
-# Known `bun audit` findings:
+# Known audit findings:
 #   appdmg (0.6.6, last published 2023) pulls in image-size@0.7.5, which is
 #   covered by GHSA-w3rx-r6r6-pgpr and GHSA-5p2g-fcmc-qvqq. Both advisories span
 #   every published version (<= 2.0.2) and neither has a patched release, so
 #   there is nothing to upgrade to. The ICNS loop is fixed locally in
 #   patches/image-size@0.7.5.patch; the JXL/HEIF one does not apply to 0.7.5.
-#   See scripts/audit.sh for the full reasoning and `bun run audit` for a check
+#   See scripts/audit.sh for the full reasoning and `pnpm run audit` for a check
 #   that withdraws the suppression if either premise stops holding.
 #
-# Usage: bun run dmg        (expects `tauri build --bundles app` to have produced the .app)
-#        AETHER_TAURI_TARGET=universal-apple-darwin bun run dmg
+# Usage: pnpm run dmg        (expects `tauri build --bundles app` to have produced the .app)
+#        AETHER_TAURI_TARGET=universal-apple-darwin pnpm run dmg
 #        (expects `tauri build --target universal-apple-darwin`)
 set -euo pipefail
 
@@ -42,7 +42,7 @@ else
 fi
 APP="${BUNDLE_DIR}/macos/${VOLNAME}.app"
 OUT_DIR="${BUNDLE_DIR}/dmg"
-VERSION="$(bun -e 'console.log(require("./src-tauri/tauri.conf.json").version)')"
+VERSION="$(node -e 'console.log(require("./src-tauri/tauri.conf.json").version)')"
 if [[ "${AETHER_TAURI_TARGET:-}" == "universal-apple-darwin" ]]; then
   ARCH="universal"
 else
@@ -56,14 +56,14 @@ OUT="${OUT_DIR}/${VOLNAME}_${VERSION}_${ARCH}.dmg"
 BG_PNG="build/dmg-background.png"
 BG_TIFF="build/dmg-background.tiff"
 
-[[ -d "$APP" ]] || { echo "ERROR: built app not found at $APP — run 'bun run build' (or 'tauri build') first." >&2; exit 1; }
+[[ -d "$APP" ]] || { echo "ERROR: built app not found at $APP — run 'pnpm run build' (or 'tauri build') first." >&2; exit 1; }
 
 bash scripts/prepare-dmg-background.sh
 
 # Derive everything from tauri.conf.json so the DMG never drifts from config.
 SPEC="$(mktemp -u -t aether-appdmg).json"
 trap 'rm -f "$SPEC" 2>/dev/null || true' EXIT
-BUNDLE_DIR="$BUNDLE_DIR" SPEC="$SPEC" bun -e '
+BUNDLE_DIR="$BUNDLE_DIR" SPEC="$SPEC" node -e '
   const fs = require("fs");
   const path = require("path");
   const conf = require("./src-tauri/tauri.conf.json");
@@ -111,7 +111,7 @@ done < <(find /Volumes -maxdepth 1 \( -name "${VOLNAME}" -o -name "${VOLNAME} *"
 mkdir -p "$OUT_DIR"
 rm -f "$OUT"
 echo "==> building DMG with appdmg"
-bunx appdmg "$SPEC" "$OUT"
+pnpm exec appdmg "$SPEC" "$OUT"
 
 # Verify the picture background is actually wired into .DS_Store (not a colour).
 echo "==> verifying baked background"

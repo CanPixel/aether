@@ -48,4 +48,4 @@ if [ "${1:-}" = "build" ]; then
   esac
 fi
 
-exec bun tauri android "${args[@]}"
+exec pnpm exec tauri android "${args[@]}"

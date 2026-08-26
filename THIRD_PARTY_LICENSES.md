@@ -59,7 +59,7 @@ cargo install cargo-bundle-licenses
 cargo bundle-licenses --format yaml --output ../THIRD_PARTY_RUST.yaml
 
 # JavaScript dependencies
-bunx license-checker-rseidelsohn --production --markdown
+pnpm dlx license-checker-rseidelsohn --production --markdown
 ```
 
 ---

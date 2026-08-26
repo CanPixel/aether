@@ -1,5 +1,4 @@
-#!/usr/bin/env bun
-/// <reference types="bun" />
+#!/usr/bin/env node
 
 import { readFile, writeFile } from 'node:fs/promises'
 
@@ -18,8 +17,8 @@ const versionArg = args.find((arg: string) => !arg.startsWith('-'))
 
 function usage(): void {
   console.error('Usage:')
-  console.error('  bun run version:bump 1.2.3')
-  console.error('  bun run version:check')
+  console.error('  pnpm run version:bump 1.2.3')
+  console.error('  pnpm run version:check')
   process.exit(1)
 }
 

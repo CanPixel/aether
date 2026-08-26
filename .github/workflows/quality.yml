@@ -1,0 +1,47 @@
+name: Quality
+
+on:
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+  push:
+    branches:
+      - $default-branch
+    paths-ignore:
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  ts-checks:
+    uses: CanPixel/.github/.github/workflows/typescript-checks.yml@main
+    secrets: inherit
+    with:
+      package-manager: auto
+      node-version: '22'
+      run-lint: true
+      run-tsc: true
+      run-prettier: true
+
+  mobile-cargo-resolution:
+    name: Mobile Cargo dependency resolution
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup rust
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      # Mobile builds temporarily move ort from rc.9 to rc.12. Exercise that
+      # resolution on a clean runner so registry/cache assumptions fail here,
+      # before a release tag starts the full platform matrix.
+      - name: resolve mobile Rust dependencies
+        run: bash scripts/with-mobile-ort.sh true
+
+      - name: verify desktop dependency pins were restored
+        run: git diff --exit-code -- src-tauri/Cargo.toml src-tauri/Cargo.lock

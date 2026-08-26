@@ -1,4 +1,4 @@
-import { ChatResult } from '../../../shared/aether'
+import type { ChatResult } from '../../../shared/aether'
 
 function quoteMarkdown(text: string): string {
   return text

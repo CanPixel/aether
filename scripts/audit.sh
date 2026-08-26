@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 #
-# audit.sh — `bun audit` with a narrow, self-invalidating suppression list.
+# audit.sh — `pnpm audit` with a narrow, self-invalidating suppression list.
 #
 # Why this exists:
-#   `bun audit` matches advisories against the version string in bun.lock. It has
-#   no notion of `patchedDependencies`, so a dependency we have genuinely fixed in
-#   `patches/` is still reported forever. Plain `bun audit` therefore cannot reach
-#   a clean exit here, and a permanently-red audit is a red flag nobody reads.
+#   Advisories are matched against the version string in pnpm-lock.yaml, and
+#   `pnpm audit` has no notion of `patchedDependencies`, so a dependency we have
+#   genuinely fixed under patches/ is still reported forever. A plain audit
+#   therefore cannot reach a clean exit here, and a permanently-red audit is a
+#   red flag nobody reads.
 #
-#   Rather than blanket-ignoring, this wrapper suppresses two specific advisory
-#   IDs and re-proves the justification for each on every run. Anything else --
-#   including a *third* image-size advisory -- still fails the build.
+#   Rather than blanket-ignoring, this wrapper drops two specific advisory IDs
+#   and re-proves the justification for each on every run. Anything else --
+#   including a *third* image-size advisory -- still fails.
+#
+#   The suppression deliberately lives here and not in pnpm's `auditConfig`, so
+#   that a bare `pnpm audit` keeps telling the unvarnished truth. Use this
+#   wrapper for a pass/fail signal; use `pnpm audit` to see everything.
 #
 # The suppressed advisories, and why:
 #
@@ -23,13 +28,14 @@
 #
 #   GHSA-5p2g-fcmc-qvqq (image-size: JXL and HEIF infinite loops)
 #     Not applicable to the version we resolve. The advisory range is "<= 2.0.2"
-#     (every version ever published -- there is no patched release), but 0.7.5
-#     predates the JXL and HEIF parsers entirely; lib/types/ ships neither. There
-#     is no vulnerable code on disk to reach.
+#     (every version ever published -- there is no patched release, despite what
+#     the "Patched versions >=2.0.3" column claims), but 0.7.5 predates the JXL
+#     and HEIF parsers entirely; lib/types/ ships neither. There is no vulnerable
+#     code on disk to reach.
 #
 #   Reachability, for both: image-size arrives only via appdmg, which calls it at
 #   exactly one site -- measuring our own design-assets background PNG during
-#   `bun run dmg` on a developer/CI machine. appdmg copies the .icns volume icon
+#   `pnpm run dmg` on a developer/CI machine. appdmg copies the .icns volume icon
 #   with fs.copyFile and never parses it. No attacker-supplied image is decoded.
 #
 # The guards below exist so this file cannot quietly outlive its own reasoning:
@@ -44,15 +50,15 @@ cd "$ROOT"
 EXPECTED_VERSION="0.7.5"
 IGNORES=(GHSA-w3rx-r6r6-pgpr GHSA-5p2g-fcmc-qvqq)
 
-resolved="$(grep -oE '\["image-size@[0-9]+\.[0-9]+\.[0-9]+"' bun.lock | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
+resolved="$(grep -oE '^  image-size@[0-9]+\.[0-9]+\.[0-9]+' pnpm-lock.yaml | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || true)"
 
 justified=1
 if [[ "$resolved" != "$EXPECTED_VERSION" ]]; then
   echo "==> image-size resolves to '${resolved:-<absent>}', not ${EXPECTED_VERSION}."
   echo "    The suppression rationale in $(basename "${BASH_SOURCE[0]}") no longer applies."
   justified=0
-elif ! grep -q '"image-size@'"${EXPECTED_VERSION}"'"' package.json; then
-  echo "==> patchedDependencies no longer wires up image-size@${EXPECTED_VERSION}."
+elif ! grep -qE "^[[:space:]]*image-size@${EXPECTED_VERSION//./\\.}:[[:space:]]*patches/" pnpm-workspace.yaml; then
+  echo "==> pnpm-workspace.yaml no longer wires up image-size@${EXPECTED_VERSION}."
   echo "    The ICNS fix is not being applied; refusing to suppress."
   justified=0
 elif [[ ! -f "patches/image-size@${EXPECTED_VERSION}.patch" ]]; then
@@ -63,14 +69,50 @@ fi
 if [[ "$justified" -eq 0 ]]; then
   echo "==> running a bare audit; re-review the image-size finding before re-adding any ignore."
   echo
-  exec bun audit
+  exec pnpm audit
 fi
 
-args=()
-for id in "${IGNORES[@]}"; do
-  args+=(--ignore "$id")
-done
+report="$(mktemp -t aether-audit)"
+trap 'rm -f "$report"' EXIT
+# pnpm audit exits nonzero whenever anything is found; we decide pass/fail below.
+pnpm audit --json >"$report" 2>/dev/null || true
 
-echo "==> bun audit (suppressing ${#IGNORES[@]} reviewed image-size advisories; see $(basename "${BASH_SOURCE[0]}"))"
-bun audit "${args[@]}"
-echo "==> no unreviewed advisories"
+if [[ ! -s "$report" ]]; then
+  echo "==> pnpm audit produced no output (offline? registry error?)" >&2
+  exit 2
+fi
+
+echo "==> pnpm audit (suppressing ${#IGNORES[@]} reviewed image-size advisories; see $(basename "${BASH_SOURCE[0]}"))"
+node -e '
+const fs = require("fs");
+const [reportPath, ...ignored] = process.argv.slice(1);
+let data;
+try {
+  data = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+} catch {
+  console.error("==> could not parse pnpm audit output; running bare audit is advised");
+  process.exit(2);
+}
+const found = Object.values(data.advisories || {});
+const seen = new Set(found.map((a) => a.github_advisory_id));
+const remaining = found.filter((a) => !ignored.includes(a.github_advisory_id));
+
+// A suppression for something no longer reported is dead weight, and dead
+// suppressions are how an ignore list turns into a blanket one. Say so.
+for (const id of ignored) {
+  if (!seen.has(id)) {
+    console.log(`==> ${id} is no longer reported -- drop it from IGNORES in scripts/audit.sh`);
+  }
+}
+
+if (remaining.length === 0) {
+  console.log("==> no unreviewed advisories");
+  process.exit(0);
+}
+console.log(`==> ${remaining.length} unreviewed advisor${remaining.length === 1 ? "y" : "ies"}:`);
+for (const a of remaining) {
+  console.log(`  ${a.severity}: ${a.module_name} -- ${a.title}`);
+  console.log(`    ${a.github_advisory_id}  https://github.com/advisories/${a.github_advisory_id}`);
+}
+process.exit(1);
+' "$report" "${IGNORES[@]}"

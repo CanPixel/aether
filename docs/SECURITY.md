@@ -328,7 +328,7 @@ precise local timezone gives most of the location back.
 against three unrelated native APIs, and only one of them compiles on whatever
 machine you are sitting at. Two safety nets:
 
-- **`bun run check:platforms`** builds and tests all three locally. Linux goes
+- **`pnpm run check:platforms`** builds and tests all three locally. Linux goes
   through the same Docker image as `scripts/build-linux.sh`. Windows is a cross
   _type-check_: the whole crate cannot cross-compile (llama.cpp needs a C++
   toolchain) but `cargo check` never links, so the script assembles a scratch

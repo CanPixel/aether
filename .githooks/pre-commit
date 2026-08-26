@@ -1,0 +1,64 @@
+#!/bin/bash
+set -euo pipefail
+
+CONFIG=".canpixel-ci.json"
+RUN_TSC=true
+RUN_LINT=true
+RUN_PRETTIER=true
+
+if [ -f "$CONFIG" ]; then
+  RUN_TSC=$(jq -r '.run_tsc // true' "$CONFIG")
+  RUN_LINT=$(jq -r '.run_lint // true' "$CONFIG")
+  RUN_PRETTIER=$(jq -r '.run_prettier // true' "$CONFIG")
+fi
+
+if [ -f bun.lockb ] || [ -f bun.lock ]; then PM="bun"
+elif [ -f pnpm-lock.yaml ]; then PM="pnpm"
+elif [ -f yarn.lock ]; then PM="yarn"
+else PM="npm"; fi
+
+FAILED=()
+
+if [ "$RUN_TSC" = "true" ]; then
+  echo "→ tsc..." >&2
+  case "$PM" in
+    bun)  bun run typecheck 2>&1 || FAILED+=("tsc") ;;
+    pnpm) pnpm run typecheck 2>&1 || FAILED+=("tsc") ;;
+    yarn) yarn typecheck 2>&1 || FAILED+=("tsc") ;;
+    npm)  npm run typecheck 2>&1 || FAILED+=("tsc") ;;
+  esac
+fi
+
+if [ "$RUN_LINT" = "true" ]; then
+  echo "→ lint..." >&2
+  case "$PM" in
+    bun)  bun run lint 2>&1 || FAILED+=("lint") ;;
+    pnpm) pnpm run lint 2>&1 || FAILED+=("lint") ;;
+    yarn) yarn lint 2>&1 || FAILED+=("lint") ;;
+    npm)  npm run lint 2>&1 || FAILED+=("lint") ;;
+  esac
+fi
+
+if [ "$RUN_PRETTIER" = "true" ]; then
+  echo "→ prettier..." >&2
+  case "$PM" in
+    bun)  bunx prettier --check . 2>&1 || FAILED+=("prettier") ;;
+    pnpm) pnpm exec prettier --check . 2>&1 || FAILED+=("prettier") ;;
+    yarn) yarn format:check 2>&1 || FAILED+=("prettier") ;;
+    npm)  npx prettier --check . 2>&1 || FAILED+=("prettier") ;;
+  esac
+fi
+
+if [ ${#FAILED[@]} -gt 0 ]; then
+  echo "" >&2
+  echo "╔══════════════════════════════════════╗" >&2
+  echo "║  ✗ Commit blocked by CanPixel CI     ║" >&2
+  echo "╠══════════════════════════════════════╣" >&2
+  for check in "${FAILED[@]}"; do
+    printf "║  • %-34s║\n" "$check failed" >&2
+  done
+  echo "╚══════════════════════════════════════╝" >&2
+  exit 1
+fi
+
+echo "✓ all checks passed" >&2
