@@ -57,6 +57,21 @@ function updateCargoPackageVersion(content: string, version: string): string {
   return nextLines.join('\n')
 }
 
+function updateJsonVersion(content: string, version: string, filename: string): string {
+  const parsed = JSON.parse(content) as { version?: unknown }
+  if (typeof parsed.version !== 'string') {
+    throw new Error(`${filename} is missing version`)
+  }
+
+  let found = false
+  const next = content.replace(/^(\s*"version"\s*:\s*)"[^"]+"/m, (_match, prefix: string) => {
+    found = true
+    return `${prefix}"${version}"`
+  })
+  if (!found) throw new Error(`Could not update version in ${filename}`)
+  return next
+}
+
 function readCargoLockPackageVersion(content: string): string {
   const match = content.match(
     /^\[\[package\]\]\s*\nname\s*=\s*"aether"\s*\nversion\s*=\s*"([^"]+)"/m,
@@ -66,11 +81,15 @@ function readCargoLockPackageVersion(content: string): string {
 }
 
 function updateCargoLockPackageVersion(content: string, version: string): string {
+  let found = false
   const next = content.replace(
     /^(\[\[package\]\]\s*\nname\s*=\s*"aether"\s*\nversion\s*=\s*)"([^"]+)"/m,
-    `$1"${version}"`,
+    (_match, prefix: string) => {
+      found = true
+      return `${prefix}"${version}"`
+    },
   )
-  if (next === content) {
+  if (!found) {
     throw new Error('Could not update aether package version in src-tauri/Cargo.lock')
   }
   return next
@@ -119,16 +138,18 @@ async function bumpVersion(version: string): Promise<void> {
     readFile('src-tauri/tauri.conf.json', 'utf8'),
   ])
 
-  const packageJson = JSON.parse(packageRaw) as { version: string }
-  const tauriConfig = JSON.parse(tauriRaw) as { version: string }
-  packageJson.version = version
-  tauriConfig.version = version
+  // Finish every parse and transformation before starting any asynchronous
+  // writes. A validation failure must never leave a subset of manifests empty.
+  const packageNext = updateJsonVersion(packageRaw, version, 'package.json')
+  const cargoNext = updateCargoPackageVersion(cargoRaw, version)
+  const cargoLockNext = updateCargoLockPackageVersion(cargoLockRaw, version)
+  const tauriNext = updateJsonVersion(tauriRaw, version, 'src-tauri/tauri.conf.json')
 
   await Promise.all([
-    writeFile('package.json', `${JSON.stringify(packageJson, null, 2)}\n`),
-    writeFile('src-tauri/Cargo.toml', updateCargoPackageVersion(cargoRaw, version)),
-    writeFile('src-tauri/Cargo.lock', updateCargoLockPackageVersion(cargoLockRaw, version)),
-    writeFile('src-tauri/tauri.conf.json', `${JSON.stringify(tauriConfig, null, 2)}\n`),
+    writeFile('package.json', packageNext),
+    writeFile('src-tauri/Cargo.toml', cargoNext),
+    writeFile('src-tauri/Cargo.lock', cargoLockNext),
+    writeFile('src-tauri/tauri.conf.json', tauriNext),
   ])
 
   console.log(`Synced app version to ${version}`)
