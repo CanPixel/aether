@@ -87,6 +87,9 @@ if (commandSucceeded(['git', 'diff', '--quiet', '--', ...releaseFiles])) {
 
 runCommand(['git', 'push', 'origin', defaultBranch], `Pushing to ${defaultBranch}`)
 runCommand(['git', 'tag', versionTag], `Creating tag ${versionTag}`)
-runCommand(['git', 'push', 'origin', versionTag], 'Pushing tag to origin')
+runCommand(
+  ['git', 'push', 'origin', `refs/tags/${versionTag}:refs/tags/${versionTag}`],
+  'Pushing tag to origin',
+)
 
 console.log(`\n🎉 Successfully released ${versionTag}!`)
